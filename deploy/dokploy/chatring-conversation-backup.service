@@ -1,0 +1,11 @@
+[Unit]
+Description=Back up ChatRing Conversation Core to encrypted R2 storage
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/backup-chatring-conversation-core
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

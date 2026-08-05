@@ -30,6 +30,7 @@ Own the reproducible Phase 1 deployment of ChatRing Conversation Core through Do
 - Confirm Rails reports healthy, Sidekiq runs, and PostgreSQL and Redis pass their health checks.
 - Confirm no service in this topology publishes a host port.
 - Confirm the public route passes through Cloudflare and Dokploy/Traefik.
+- Back up PostgreSQL and application storage through encrypted Restic/R2 snapshots, and require an isolated database restore plus checksum validation before treating backups as operational.
 
 ## Child DOX Index
 

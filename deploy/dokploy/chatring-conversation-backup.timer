@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily ChatRing Conversation Core backup
+
+[Timer]
+OnCalendar=*-*-* 03:30:00 UTC
+Persistent=true
+RandomizedDelaySec=15m
+Unit=chatring-conversation-backup.service
+
+[Install]
+WantedBy=timers.target

@@ -7,7 +7,7 @@ x-chatring-app: &chatring-app
     CW_EDITION: ce
     DISABLE_ENTERPRISE: "true"
     ENABLE_ACCOUNT_SIGNUP: ${ENABLE_ACCOUNT_SIGNUP:-false}
-    FORCE_SSL: ${FORCE_SSL:-true}
+    FORCE_SSL: ${FORCE_SSL:-false}
     FRONTEND_URL: ${FRONTEND_URL:?required}
     INSTALLATION_ENV: docker
     MAILER_SENDER_EMAIL: ${MAILER_SENDER_EMAIL:-ChatRing <accounts@chatring.ai>}

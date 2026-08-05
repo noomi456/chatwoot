@@ -12,7 +12,7 @@ This is the Phase 1 ChatRing Conversation Core runtime. Dokploy stores the real 
 
 No service publishes a host port. Dokploy attaches the public `app-staging.chatring.ai` route to the `rails` service on port 3000; Cloudflare remains the only web ingress.
 
-The Rails health check stays on the private HTTP listener and supplies `X-Forwarded-Proto: https`, matching Cloudflare/Traefik's trusted external scheme without attempting TLS directly against Puma.
+Cloudflare terminates TLS and the Tunnel uses private HTTP to Traefik/Puma, so `FORCE_SSL` remains `false` at Rails. HTTPS redirection belongs at the Cloudflare edge; enabling Rails origin redirection on this topology causes a same-URL redirect loop. The Rails health check stays on the private HTTP listener and supplies `X-Forwarded-Proto: https` for compatibility.
 
 ## Deployment contract
 
@@ -26,3 +26,13 @@ The Rails health check stays on the private HTTP listener and supplies `X-Forwar
 ## Rollback
 
 Set `CHATRING_IMAGE` to the previous verified full-commit tag and redeploy. Do not roll back PostgreSQL after a migration unless the release explicitly documents a compatible database rollback. Preserve the three named volumes.
+
+## Backup and restore
+
+Install `backup-conversation-core.sh` as `/usr/local/sbin/backup-chatring-conversation-core`, then install and enable the provided systemd service and timer. The root-only environment at `/etc/chatring/r2-backup.env` supplies the encrypted Restic repository and bucket-scoped R2 credentials. It may also override `CHATRING_POSTGRES_CONTAINER`, `CHATRING_RAILS_CONTAINER`, `CHATRING_POSTGRES_DATABASE`, `CHATRING_POSTGRES_USERNAME`, and `CHATRING_BACKUP_STAGING` when the Dokploy application identity differs from the initial staging deployment.
+
+Each run stores a PostgreSQL custom-format dump, the Rails storage volume, checksums, immutable image identity, and record counts. `restore-test-conversation-core.sh` restores the latest snapshot into a temporary database, validates both checksums, reads the storage archive, compares record counts, and removes the temporary database. A backup does not pass the Phase 1 gate until this restore test succeeds.
+
+## AgentBot acceptance probe
+
+`phase1-test-adapter.py` is a disposable acceptance harness, not a deployable ChatRing service. It validates timestamped webhook signatures, delivery-ID deduplication, inbound-only processing, outgoing-event loop prevention, deterministic API replies, and human-only suppression after handoff. Run it only against disposable staging data and remove its container and credentials after the test.
