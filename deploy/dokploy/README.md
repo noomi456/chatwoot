@@ -12,6 +12,8 @@ This is the Phase 1 ChatRing Conversation Core runtime. Dokploy stores the real 
 
 No service publishes a host port. Dokploy attaches the public `app-staging.chatring.ai` route to the `rails` service on port 3000; Cloudflare remains the only web ingress.
 
+The Rails health check stays on the private HTTP listener and supplies `X-Forwarded-Proto: https`, matching Cloudflare/Traefik's trusted external scheme without attempting TLS directly against Puma.
+
 ## Deployment contract
 
 1. GitHub Actions must pass lint and ChatRing branding tests.
