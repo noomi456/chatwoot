@@ -14,6 +14,31 @@ No service publishes a host port. Dokploy attaches the public `app-staging.chatr
 
 Cloudflare terminates TLS and the Tunnel uses private HTTP to Traefik/Puma, so `FORCE_SSL` remains `false` at Rails. HTTPS redirection belongs at the Cloudflare edge; enabling Rails origin redirection on this topology causes a same-URL redirect loop. The Rails health check stays on the private HTTP listener and supplies `X-Forwarded-Proto: https` for compatibility.
 
+## Trusted client IPs
+
+The host Cloudflare Tunnel reaches Traefik's `web` entry point through the Docker host gateway. Traefik must trust forwarded client-IP headers only from that proven gateway; otherwise Rails sees every public visitor as `172.17.0.1` and Rack::Attack applies the login/IP throttle globally.
+
+The staging gateway is `172.17.0.1/32`. Configure `/etc/dokploy/traefik/traefik.yml` as follows and restart only `dokploy-traefik`:
+
+```yaml
+entryPoints:
+  web:
+    address: :80
+    forwardedHeaders:
+      trustedIPs:
+        - "172.17.0.1/32"
+```
+
+Before changing the shared entry point, back up the existing file and validate the candidate with the exact deployed Traefik image. After restart, require all of the following:
+
+- `/health` and the public application route return HTTP 200.
+- Rails logs the real client address rather than `172.17.0.1`.
+- A forged forwarding-header request through Cloudflare is rejected and does not reach Rails.
+- Five failed login attempts from one client make its sixth request return HTTP 429 while a separate client still receives the normal authentication response.
+- Direct HTTP and HTTPS connections to the VPS origin remain blocked.
+
+This trust rule is valid only while the Tunnel-to-Traefik source is `172.17.0.1`. Re-resolve and retest the gateway after changing the Docker network, Cloudflare Tunnel origin, or Traefik entry point; do not broaden the CIDR or enable insecure forwarded headers.
+
 ## Deployment contract
 
 1. GitHub Actions must pass lint and ChatRing branding tests.
