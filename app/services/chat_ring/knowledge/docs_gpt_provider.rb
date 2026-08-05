@@ -19,13 +19,13 @@ class ChatRing::Knowledge::DocsGptProvider
     @timeout_seconds = positive_integer(timeout_seconds, 'timeout_seconds')
   end
 
-  def retrieve(query:, knowledge_version_id:, source_content_hashes:, limit: 5)
+  def retrieve(query:, knowledge_version_id:, source_manifest: nil, source_content_hashes: nil, limit: 5)
     resolved_query = required_string(query, 'query')
     version_id = required_string(knowledge_version_id, 'knowledge_version_id')
     result_limit = result_limit(limit)
-    source_hashes = source_content_hashes.to_h.transform_keys(&:to_s)
+    manifest = normalize_manifest(source_manifest || source_content_hashes)
     hits = fetch_hits(resolved_query, result_limit)
-    items = hits.each_with_index.map { |hit, index| build_evidence(hit, index + 1, version_id, source_hashes) }.freeze
+    items = hits.each_with_index.map { |hit, index| build_evidence(hit, index + 1, version_id, manifest) }.freeze
 
     build_evidence_set(version_id, resolved_query, result_limit, items)
   rescue Net::OpenTimeout, Net::ReadTimeout, Timeout::Error, SocketError => e
@@ -61,13 +61,13 @@ class ChatRing::Knowledge::DocsGptProvider
     )
   end
 
-  def build_evidence(hit, rank, knowledge_version_id, source_hashes)
+  def build_evidence(hit, rank, knowledge_version_id, manifest)
     raise ResponseError, "DocsGPT result #{rank} must be an object" unless hit.is_a?(Hash)
 
     excerpt = required_response_string(hit['text'], rank, 'text')
     provider_source_id = required_response_string(hit['source'], rank, 'source')
-    source_content_hash = source_content_hash(source_hashes, provider_source_id, rank)
-    title = hit['title'].to_s.strip
+    source = manifest_entry(manifest, provider_source_id, rank)
+    title = source['source_title'].presence || hit['title'].to_s.strip
 
     ChatRing::Knowledge::Evidence.new(
       id: evidence_id(knowledge_version_id, provider_source_id, excerpt),
@@ -75,22 +75,42 @@ class ChatRing::Knowledge::DocsGptProvider
       provider: PROVIDER,
       provider_release: @provider_release,
       provider_source_id: provider_source_id,
-      source_reference: provider_source_id,
+      source_reference: source.fetch('source_reference'),
       source_title: title.presence,
-      locator: title.presence || provider_source_id,
+      locator: source['locator'].presence || title.presence || source.fetch('source_reference'),
       excerpt: excerpt,
-      source_content_hash: source_content_hash,
+      source_content_hash: source.fetch('content_hash'),
       rank: rank,
       score: nil,
       retrieval_strategy: RETRIEVAL_STRATEGY
     )
   end
 
-  def source_content_hash(source_hashes, provider_source_id, rank)
-    source_hash = source_hashes[provider_source_id]
-    return source_hash if source_hash.present?
+  def manifest_entry(manifest, provider_source_id, rank)
+    source = manifest[provider_source_id]
+    return source if source.present?
 
     raise ResponseError, "DocsGPT result #{rank} references a source outside the knowledge-version manifest"
+  end
+
+  def normalize_manifest(value)
+    value.to_h.transform_keys(&:to_s).transform_values do |entry|
+      if entry.is_a?(Hash)
+        normalized = entry.deep_stringify_keys
+        normalized['content_hash'] = required_string(normalized['content_hash'], 'source content_hash')
+        normalized['source_reference'] = required_string(normalized['source_reference'], 'source source_reference')
+        normalized
+      else
+        {
+          'content_hash' => required_string(entry, 'source content_hash'),
+          'source_reference' => nil
+        }
+      end
+    end.tap do |manifest|
+      manifest.each do |provider_source_id, entry|
+        entry['source_reference'] ||= provider_source_id
+      end
+    end
   end
 
   def evidence_id(knowledge_version_id, provider_source_id, excerpt)

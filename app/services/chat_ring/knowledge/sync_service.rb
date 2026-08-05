@@ -1,0 +1,207 @@
+require 'digest'
+require 'set'
+
+class ChatRing::Knowledge::SyncService
+  POLL_INTERVAL = 10.seconds
+  TERMINAL_TASK_FAILURES = %w[FAILURE REVOKED].freeze
+  ACTIVE_TASK_STATUSES = %w[PENDING STARTED PROGRESS RETRY].freeze
+
+  class Error < StandardError; end
+  class IncompleteCrawlError < Error; end
+  class ProviderIngestionError < Error; end
+
+  def self.start!(account:, inbox:, root_url:, publish_on_ready: false)
+    raise ArgumentError, 'inbox must belong to account' unless inbox.account_id == account.id
+
+    version = ChatRing::KnowledgeVersion.create!(
+      account: account,
+      inbox: inbox,
+      root_url: ChatRing::Knowledge::FirecrawlClient.canonical_url(root_url),
+      provider: 'docs_gpt',
+      provider_release: ENV.fetch('DOCSGPT_RELEASE', '616e6fe9c435bbc6bb472636db6b3ee2b9bcaf66'),
+      config_snapshot: {
+        'firecrawl_flow' => 'map_then_crawl',
+        'docs_gpt_source_config' => ChatRing::Knowledge::DocsGptClient::SOURCE_CONFIG.deep_stringify_keys,
+        'publish_on_ready' => ActiveModel::Type::Boolean.new.cast(publish_on_ready)
+      }
+    )
+    ChatRing::Knowledge::SyncJob.perform_later(version.id)
+    version
+  end
+
+  def initialize(version, firecrawl: nil, docs_gpt: nil)
+    @version = version
+    @firecrawl = firecrawl || build_firecrawl_client
+    @docs_gpt = docs_gpt || build_docs_gpt_client
+  end
+
+  def tick
+    case @version.reload.status
+    when 'pending' then start_crawl
+    when 'crawling' then process_crawl
+    when 'ingesting' then process_ingestion
+    when 'ready', 'published', 'retired', 'failed' then :complete
+    else raise Error, "Unknown knowledge version status #{@version.status.inspect}"
+    end
+  rescue ChatRing::Knowledge::FirecrawlClient::RequestError, ChatRing::Knowledge::DocsGptClient::RequestError
+    raise
+  rescue StandardError => e
+    @version.reload.fail!(code: e.class.name, message: e.message) unless @version.reload.status == 'failed'
+    raise
+  end
+
+  private
+
+  def start_crawl
+    if @version.firecrawl_start_started_at.present? && @version.firecrawl_crawl_id.blank?
+      raise IncompleteCrawlError, 'Firecrawl crawl start has an indeterminate prior result; create a new staged version'
+    end
+
+    mapped_manifest = @firecrawl.map(url: @version.root_url)
+    raise IncompleteCrawlError, 'Firecrawl map returned no URLs' if mapped_manifest.empty?
+
+    @version.update!(
+      firecrawl_start_started_at: Time.current,
+      mapped_manifest: mapped_manifest,
+      manifest_digest: Digest::SHA256.hexdigest(mapped_manifest.to_json)
+    )
+    crawl_id = @firecrawl.start_crawl(url: @version.root_url, limit: mapped_manifest.length)
+    @version.update!(
+      status: 'crawling',
+      firecrawl_crawl_id: crawl_id
+    )
+    :retry
+  end
+
+  def process_crawl
+    payload = @firecrawl.crawl_status(@version.firecrawl_crawl_id)
+    status = payload['status'].to_s
+    return :retry if %w[scraping pending].include?(status)
+    raise IncompleteCrawlError, "Firecrawl crawl ended with status #{status}" unless status == 'completed'
+
+    error_payload = @firecrawl.crawl_errors(@version.firecrawl_crawl_id)
+    documents = normalized_documents(payload.fetch('data', []))
+    mapped_urls = @version.mapped_manifest.map { |entry| entry.fetch('url') }.to_set
+    crawled_urls = documents.map { |entry| entry.fetch(:source_url) }.to_set
+    missing_urls = mapped_urls - crawled_urls
+    if missing_urls.any?
+      @version.update!(crawl_errors: sanitized_crawl_errors(error_payload, missing_urls))
+      raise IncompleteCrawlError, "Firecrawl crawl omitted #{missing_urls.length} mapped URL(s)"
+    end
+
+    @version.transaction do
+      @version.documents.delete_all
+      documents.select { |entry| mapped_urls.include?(entry.fetch(:source_url)) }.each do |entry|
+        @version.documents.create!(entry)
+      end
+      @version.update!(status: 'ingesting', crawl_errors: sanitized_crawl_errors(error_payload, []))
+    end
+    :retry
+  end
+
+  def process_ingestion
+    documents = @version.documents.order(:id).to_a
+    raise ProviderIngestionError, 'Knowledge version contains no documents' if documents.empty?
+
+    documents.each do |document|
+      start_document_upload(document) if document.provider_task_id.blank?
+    end
+
+    waiting = false
+    documents.each do |document|
+      document.reload
+      next if document.provider_status == 'ready'
+
+      status_payload = @docs_gpt.task_status(document.provider_task_id)
+      task_status = status_payload['status'].to_s.upcase
+      if ACTIVE_TASK_STATUSES.include?(task_status)
+        waiting = true
+      elsif TERMINAL_TASK_FAILURES.include?(task_status)
+        document.update!(provider_status: 'failed')
+        raise ProviderIngestionError, "DocsGPT ingestion failed for document #{document.id}"
+      elsif task_status == 'SUCCESS'
+        finalize_document(document)
+      else
+        raise ProviderIngestionError, "DocsGPT returned unknown task status #{task_status.inspect}"
+      end
+    end
+    return :retry if waiting || @version.documents.where.not(provider_status: 'ready').exists?
+
+    if @version.provider_agent_creation_started_at.present? && @version.provider_agent_id.blank?
+      raise ProviderIngestionError, 'DocsGPT agent creation has an indeterminate prior result; manual reconciliation is required'
+    end
+
+    @version.update!(provider_agent_creation_started_at: Time.current)
+    agent = @docs_gpt.create_agent(@version)
+    @version.update!(
+      status: 'ready',
+      provider_agent_id: agent.fetch(:id),
+      provider_agent_api_key: agent.fetch(:key),
+      ready_at: Time.current
+    )
+    if @version.config_snapshot['publish_on_ready']
+      ChatRing::Knowledge::PublicationService.publish!(@version)
+    end
+    :complete
+  end
+
+  def start_document_upload(document)
+    result = @docs_gpt.upload_document(document)
+    document.update!(
+      provider_task_id: result.fetch(:task_id),
+      provider_source_id: result.fetch(:source_id),
+      provider_status: 'processing'
+    )
+  end
+
+  def finalize_document(document)
+    chunks = @docs_gpt.chunks(document.provider_source_id)
+    raise ProviderIngestionError, "DocsGPT produced no chunks for document #{document.id}" if chunks.empty?
+
+    references = chunks.filter_map { |chunk| chunk.dig('metadata', 'source').to_s.presence }.uniq
+    raise ProviderIngestionError, "DocsGPT chunks have no source reference for document #{document.id}" if references.empty?
+    raise ProviderIngestionError, "DocsGPT produced multiple source references for document #{document.id}" if references.length > 1
+
+    document.update!(provider_status: 'ready', provider_source_reference: references.first)
+  end
+
+  def normalized_documents(records)
+    raise IncompleteCrawlError, 'Firecrawl crawl data must be an array' unless records.is_a?(Array)
+
+    records.filter_map do |record|
+      next unless record.is_a?(Hash)
+
+      markdown = record['markdown'].to_s.strip
+      metadata = record['metadata'].is_a?(Hash) ? record['metadata'] : {}
+      source = metadata['sourceURL'] || metadata['url'] || record['url']
+      next if markdown.blank? || source.blank?
+
+      canonical_url = ChatRing::Knowledge::FirecrawlClient.canonical_url(source)
+      content_hash = Digest::SHA256.hexdigest(markdown)
+      {
+        source_url: canonical_url,
+        title: metadata['title'].to_s.presence,
+        markdown: markdown,
+        content_hash: content_hash,
+        provider_file_name: "#{Digest::SHA256.hexdigest(canonical_url).first(24)}.md",
+        metadata: metadata.slice('title', 'description', 'language', 'statusCode', 'sourceURL')
+      }
+    end.uniq { |entry| entry.fetch(:source_url) }
+  end
+
+  def sanitized_crawl_errors(payload, missing_urls)
+    {
+      'errors' => Array(payload['errors']).first(100),
+      'robots_blocked' => Array(payload['robotsBlocked']).first(100),
+      'missing_urls' => Array(missing_urls).first(100)
+    }
+  end
+
+  def build_firecrawl_client
+    ChatRing::Knowledge::FirecrawlClient.new(api_key: ENV.fetch('FIRECRAWL_API_KEY'))
+  end
+
+  def build_docs_gpt_client
+    ChatRing::Knowledge::DocsGptClient.new(base_url: ENV.fetch('DOCSGPT_BASE_URL'))
+  end
+end

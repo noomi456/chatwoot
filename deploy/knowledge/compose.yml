@@ -1,0 +1,63 @@
+name: chatring-knowledge
+
+services:
+  docs-gpt-backend:
+    image: ${DOCSGPT_IMAGE:?DOCSGPT_IMAGE is required}
+    restart: unless-stopped
+    environment: &docs-gpt-environment
+      AUTH_TYPE: ""
+      LOCAL_MODE_ADMIN: "false"
+      VECTOR_STORE: pgvector
+      EMBEDDINGS_NAME: huggingface_sentence-transformers/all-mpnet-base-v2
+      POSTGRES_URI: ${DOCSGPT_POSTGRES_URI:?DOCSGPT_POSTGRES_URI is required}
+      PGVECTOR_CONNECTION_STRING: ${DOCSGPT_PGVECTOR_CONNECTION_STRING:?DOCSGPT_PGVECTOR_CONNECTION_STRING is required}
+      AUTO_CREATE_DB: "false"
+      AUTO_MIGRATE: "true"
+      CELERY_BROKER_URL: ${DOCSGPT_CELERY_BROKER_URL:?DOCSGPT_CELERY_BROKER_URL is required}
+      CELERY_RESULT_BACKEND: ${DOCSGPT_CELERY_RESULT_BACKEND:?DOCSGPT_CELERY_RESULT_BACKEND is required}
+      CACHE_REDIS_URL: ${DOCSGPT_CACHE_REDIS_URL:?DOCSGPT_CACHE_REDIS_URL is required}
+      API_URL: http://docs-gpt-backend:7091
+      STORAGE_TYPE: local
+      GRAPHRAG_ENABLED: "false"
+      VERSION_CHECK: "false"
+      FLASK_DEBUG_MODE: "false"
+    volumes: &docs-gpt-volumes
+      - docs_gpt_inputs:/app/inputs
+      - docs_gpt_indexes:/app/indexes
+      - docs_gpt_vectors:/app/vectors
+    networks:
+      - conversation-core
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:7091/api/health', timeout=5)"
+      interval: 10s
+      timeout: 6s
+      retries: 12
+      start_period: 90s
+
+  docs-gpt-worker:
+    image: ${DOCSGPT_IMAGE:?DOCSGPT_IMAGE is required}
+    restart: unless-stopped
+    command: celery -A application.app.celery worker -l INFO -B -Q docsgpt,parsing
+    environment:
+      <<: *docs-gpt-environment
+      AUTO_MIGRATE: "false"
+    volumes: *docs-gpt-volumes
+    networks:
+      - conversation-core
+    depends_on:
+      docs-gpt-backend:
+        condition: service_healthy
+
+networks:
+  conversation-core:
+    external: true
+    name: ${CHATRING_CORE_NETWORK:?CHATRING_CORE_NETWORK is required}
+
+volumes:
+  docs_gpt_inputs:
+  docs_gpt_indexes:
+  docs_gpt_vectors:

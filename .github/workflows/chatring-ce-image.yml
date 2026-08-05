@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - codex/chatring-ce-foundation
+      - codex/internal-assistant-spike
   workflow_dispatch:
 
 permissions:
