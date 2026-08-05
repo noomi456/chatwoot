@@ -10,10 +10,13 @@ x-chatring-app: &chatring-app
     DISABLE_ENTERPRISE: "true"
     ENABLE_ACCOUNT_SIGNUP: ${ENABLE_ACCOUNT_SIGNUP:-false}
     FORCE_SSL: ${FORCE_SSL:-false}
+    FIRECRAWL_API_KEY: ${FIRECRAWL_API_KEY:?required}
     FRONTEND_URL: ${FRONTEND_URL:?required}
     INSTALLATION_ENV: docker
     MAILER_SENDER_EMAIL: ${MAILER_SENDER_EMAIL:-ChatRing <accounts@chatring.ai>}
     NODE_ENV: production
+    DOCSGPT_BASE_URL: ${DOCSGPT_BASE_URL:?required}
+    DOCSGPT_RELEASE: ${DOCSGPT_RELEASE:?required}
     POSTGRES_DATABASE: ${POSTGRES_DATABASE:-chatring_conversation}
     POSTGRES_HOST: postgres
     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
