@@ -38,28 +38,24 @@ class ChatRing::Knowledge::FirecrawlClient
     normalized.uniq { |entry| entry['url'] }.sort_by { |entry| entry['url'] }.first(resolved_limit)
   end
 
-  def start_crawl(url:, limit: MAX_URLS)
+  def start_batch_scrape(urls:)
+    normalized_urls = Array(urls).map { |url| canonical_url(url) }.uniq
+    bounded_limit(normalized_urls.length)
     payload = request_json(
       :post,
-      '/v2/crawl',
+      '/v2/batch/scrape',
       body: {
-        url: canonical_url(url),
-        limit: bounded_limit(limit),
-        crawlEntireDomain: true,
-        allowSubdomains: false,
-        allowExternalLinks: false,
-        ignoreQueryParameters: true,
-        scrapeOptions: {
-          formats: ['markdown'],
-          onlyMainContent: true
-        }
+        urls: normalized_urls,
+        ignoreInvalidURLs: false,
+        formats: ['markdown'],
+        onlyMainContent: true
       }
     )
-    required_response_string(payload['id'], 'Firecrawl crawl response is missing id')
+    required_response_string(payload['id'], 'Firecrawl batch-scrape response is missing id')
   end
 
-  def crawl_status(crawl_id)
-    first_page = request_json(:get, "/v2/crawl/#{escape_segment(crawl_id)}")
+  def batch_status(batch_id)
+    first_page = request_json(:get, "/v2/batch/scrape/#{escape_segment(batch_id)}")
     return first_page unless first_page['status'] == 'completed'
 
     data = Array(first_page['data'])
@@ -72,8 +68,8 @@ class ChatRing::Knowledge::FirecrawlClient
     first_page.merge('data' => data, 'next' => nil)
   end
 
-  def crawl_errors(crawl_id)
-    request_json(:get, "/v2/crawl/#{escape_segment(crawl_id)}/errors")
+  def batch_errors(batch_id)
+    request_json(:get, "/v2/batch/scrape/#{escape_segment(batch_id)}/errors")
   end
 
   def self.canonical_url(value)

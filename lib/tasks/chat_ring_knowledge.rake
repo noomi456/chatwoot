@@ -1,7 +1,7 @@
 # rubocop:disable Metrics/BlockLength
 namespace :chatring do
   namespace :knowledge do
-    desc 'Start a Firecrawl map/crawl and DocsGPT knowledge build'
+    desc 'Start a Firecrawl map/exact batch scrape and DocsGPT knowledge build'
     task :start, [:account_id, :inbox_id, :root_url] => :environment do |_task, args|
       account = Account.find(args.fetch(:account_id))
       inbox = Inbox.find(args.fetch(:inbox_id))

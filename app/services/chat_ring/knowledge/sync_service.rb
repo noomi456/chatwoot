@@ -19,7 +19,7 @@ class ChatRing::Knowledge::SyncService
       provider: 'docs_gpt',
       provider_release: ENV.fetch('DOCSGPT_RELEASE', '616e6fe9c435bbc6bb472636db6b3ee2b9bcaf66'),
       config_snapshot: {
-        'firecrawl_flow' => 'map_then_crawl',
+        'firecrawl_flow' => 'map_then_batch_scrape',
         'docs_gpt_source_config' => ChatRing::Knowledge::DocsGptClient::SOURCE_CONFIG.deep_stringify_keys,
         'publish_on_ready' => ActiveModel::Type::Boolean.new.cast(publish_on_ready)
       }
@@ -36,8 +36,8 @@ class ChatRing::Knowledge::SyncService
 
   def tick
     case @version.reload.status
-    when 'pending' then start_crawl
-    when 'crawling' then process_crawl
+    when 'pending' then start_batch_scrape
+    when 'crawling' then process_batch_scrape
     when 'ingesting' then process_ingestion
     when 'ready', 'published', 'retired', 'failed' then :complete
     else raise Error, "Unknown knowledge version status #{@version.status.inspect}"
@@ -51,9 +51,9 @@ class ChatRing::Knowledge::SyncService
 
   private
 
-  def start_crawl
+  def start_batch_scrape
     if @version.firecrawl_start_started_at.present? && @version.firecrawl_crawl_id.blank?
-      raise IncompleteCrawlError, 'Firecrawl crawl start has an indeterminate prior result; create a new staged version'
+      raise IncompleteCrawlError, 'Firecrawl batch start has an indeterminate prior result; create a new staged version'
     end
 
     mapped_manifest = @firecrawl.map(url: @version.root_url)
@@ -64,28 +64,28 @@ class ChatRing::Knowledge::SyncService
       mapped_manifest: mapped_manifest,
       manifest_digest: Digest::SHA256.hexdigest(mapped_manifest.to_json)
     )
-    crawl_id = @firecrawl.start_crawl(url: @version.root_url, limit: mapped_manifest.length)
+    batch_id = @firecrawl.start_batch_scrape(urls: mapped_manifest.pluck('url'))
     @version.update!(
       status: 'crawling',
-      firecrawl_crawl_id: crawl_id
+      firecrawl_crawl_id: batch_id
     )
     :retry
   end
 
-  def process_crawl # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
-    payload = @firecrawl.crawl_status(@version.firecrawl_crawl_id)
+  def process_batch_scrape # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
+    payload = @firecrawl.batch_status(@version.firecrawl_crawl_id)
     status = payload['status'].to_s
     return :retry if %w[scraping pending].include?(status)
-    raise IncompleteCrawlError, "Firecrawl crawl ended with status #{status}" unless status == 'completed'
+    raise IncompleteCrawlError, "Firecrawl batch scrape ended with status #{status}" unless status == 'completed'
 
-    error_payload = @firecrawl.crawl_errors(@version.firecrawl_crawl_id)
+    error_payload = @firecrawl.batch_errors(@version.firecrawl_crawl_id)
     documents = normalized_documents(payload.fetch('data', []))
     mapped_urls = @version.mapped_manifest.to_set { |entry| entry.fetch('url') }
     crawled_urls = documents.to_set { |entry| entry.fetch(:source_url) }
     missing_urls = mapped_urls - crawled_urls
     if missing_urls.any?
       @version.update!(crawl_errors: sanitized_crawl_errors(error_payload, missing_urls))
-      raise IncompleteCrawlError, "Firecrawl crawl omitted #{missing_urls.length} mapped URL(s)"
+      raise IncompleteCrawlError, "Firecrawl batch scrape omitted #{missing_urls.length} mapped URL(s)"
     end
 
     @version.transaction do
