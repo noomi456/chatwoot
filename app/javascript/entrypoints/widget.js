@@ -9,6 +9,7 @@ import i18nMessages from '../widget/i18n';
 import router from '../widget/router';
 import { directive as onClickaway } from 'vue3-click-away';
 import { domPurifyConfig } from '../shared/helpers/HTMLSanitizer';
+import { replaceInstallationNameInTranslation } from '../shared/helpers/InstallationBranding';
 import { plugin, defaultConfig } from '@formkit/vue';
 
 import {
@@ -20,6 +21,7 @@ const i18n = createI18n({
   legacy: false, // https://github.com/intlify/vue-i18n/issues/1902
   locale: 'en',
   messages: i18nMessages,
+  postTranslation: replaceInstallationNameInTranslation,
 });
 
 const app = createApp(App);

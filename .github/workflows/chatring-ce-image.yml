@@ -1,0 +1,76 @@
+name: Build ChatRing Conversation Core
+
+on:
+  push:
+    branches:
+      - codex/chatring-ce-foundation
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/chatring-conversation-core
+
+jobs:
+  validate:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout pinned ChatRing CE source
+        uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run frontend lint
+        run: pnpm run eslint
+
+      - name: Run ChatRing branding tests
+        run: pnpm exec vitest app/javascript/shared/helpers/specs/InstallationBranding.spec.js --run --no-cache
+
+  build:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout pinned ChatRing CE source
+        uses: actions/checkout@v4
+
+      - name: Strip proprietary Enterprise source
+        run: |
+          rm -rf enterprise
+          rm -rf spec/enterprise
+          printf '\nENV CW_EDITION="ce"\nENV DISABLE_ENTERPRISE="true"\n' >> docker/Dockerfile
+
+      - name: Verify Community Edition source boundary
+        run: |
+          test ! -e enterprise
+          test ! -e spec/enterprise
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Sign in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish immutable image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
