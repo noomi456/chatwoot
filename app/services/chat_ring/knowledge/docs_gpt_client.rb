@@ -1,6 +1,5 @@
 require 'faraday'
-require 'faraday/multipart'
-require 'tempfile'
+require 'securerandom'
 require 'uri'
 
 class ChatRing::Knowledge::DocsGptClient
@@ -32,27 +31,21 @@ class ChatRing::Knowledge::DocsGptClient
     @timeout_seconds = Integer(timeout_seconds)
   end
 
-  def upload_document(document) # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
-    Tempfile.create(['chatring-knowledge-', '.md']) do |file|
-      file.binmode
-      file.write(document.markdown)
-      file.flush
-      part = Faraday::Multipart::FilePart.new(file.path, 'text/markdown', document.provider_file_name)
-      response = multipart_connection.post('/api/upload') do |request|
-        request.headers['Idempotency-Key'] = "chatring-knowledge-document-#{document.id}-#{document.content_hash}"
-        request.body = {
-          user: USER_ID,
-          name: "chatring-version-#{document.knowledge_version_id}-document-#{document.id}",
-          config: SOURCE_CONFIG.to_json,
-          file: part
-        }
-      end
-      parsed = parse_response(response, expected_statuses: [200])
-      {
-        task_id: required_value(parsed['task_id'], 'DocsGPT upload response is missing task_id'),
-        source_id: required_value(parsed['source_id'], 'DocsGPT upload response is missing source_id')
-      }
+  def upload_version(version)
+    documents = version.documents.order(:id).to_a
+    raise ResponseError, 'DocsGPT upload requires at least one document' if documents.empty?
+
+    boundary = "----ChatRingKnowledge#{SecureRandom.hex(16)}"
+    response = json_connection.post('/api/upload') do |request|
+      request.headers['Content-Type'] = "multipart/form-data; boundary=#{boundary}"
+      request.headers['Idempotency-Key'] = "chatring-knowledge-version-#{version.id}-#{version.manifest_digest}"
+      request.body = multipart_body(boundary, version, documents)
     end
+    parsed = parse_response(response, expected_statuses: [200])
+    {
+      task_id: required_value(parsed['task_id'], 'DocsGPT upload response is missing task_id'),
+      source_id: required_value(parsed['source_id'], 'DocsGPT upload response is missing source_id')
+    }
   rescue Faraday::Error => e
     raise RequestError, "DocsGPT request failed: #{e.class.name}"
   end
@@ -82,7 +75,7 @@ class ChatRing::Knowledge::DocsGptClient
   end
 
   def create_agent(version) # rubocop:disable Metrics/MethodLength
-    source_ids = version.documents.order(:id).pluck(:provider_source_id)
+    source_ids = version.documents.order(:id).pluck(:provider_source_id).compact_blank.uniq
     raise ResponseError, 'DocsGPT agent requires at least one ingested source' if source_ids.empty? || source_ids.any?(&:blank?)
 
     response = json_connection.post('/api/create_agent') do |request|
@@ -124,13 +117,26 @@ class ChatRing::Knowledge::DocsGptClient
     end
   end
 
-  def multipart_connection
-    @multipart_connection ||= Faraday.new(url: @base_url) do |connection|
-      connection.request :multipart
-      connection.options.timeout = @timeout_seconds
-      connection.options.open_timeout = [@timeout_seconds, 10].min
-      connection.adapter Faraday.default_adapter
-    end
+  def multipart_body(boundary, version, documents)
+    body = String.new(encoding: Encoding::BINARY)
+    append_form_part(body, boundary, 'user', USER_ID)
+    append_form_part(body, boundary, 'name', "chatring-version-#{version.id}")
+    append_form_part(body, boundary, 'config', SOURCE_CONFIG.to_json)
+    documents.each { |document| append_file_part(body, boundary, document) }
+    body << "--#{boundary}--\r\n"
+  end
+
+  def append_form_part(body, boundary, name, value)
+    body << "--#{boundary}\r\n"
+    body << "Content-Disposition: form-data; name=\"#{name}\"\r\n\r\n"
+    body << value.to_s.b << "\r\n"
+  end
+
+  def append_file_part(body, boundary, document)
+    body << "--#{boundary}\r\n"
+    body << "Content-Disposition: form-data; name=\"file\"; filename=\"#{document.provider_file_name}\"\r\n"
+    body << "Content-Type: text/markdown\r\n\r\n"
+    body << document.markdown.to_s.b << "\r\n"
   end
 
   def parse_response(response, expected_statuses:)

@@ -85,6 +85,7 @@ jobs:
       - name: Run Phase 2A contract tests
         run: >-
           bundle exec rspec
+          spec/services/chat_ring/knowledge/docs_gpt_client_spec.rb
           spec/services/chat_ring/knowledge/docs_gpt_provider_spec.rb
           spec/services/chat_ring/knowledge/firecrawl_client_spec.rb
           spec/services/chat_ring/knowledge/publication_service_spec.rb

@@ -102,29 +102,21 @@ class ChatRing::Knowledge::SyncService
     documents = @version.documents.order(:id).to_a
     raise ProviderIngestionError, 'Knowledge version contains no documents' if documents.empty?
 
-    documents.each do |document|
-      start_document_upload(document) if document.provider_task_id.blank?
+    start_version_upload(documents) if documents.all? { |document| document.provider_task_id.blank? }
+    if documents.any? { |document| document.reload.provider_task_id.blank? }
+      raise ProviderIngestionError, 'DocsGPT version upload is only partially recorded'
     end
 
-    waiting = false
-    documents.each do |document|
-      document.reload
-      next if document.provider_status == 'ready'
+    task_status = @docs_gpt.task_status(documents.first.provider_task_id)['status'].to_s.upcase
+    return :retry if ACTIVE_TASK_STATUSES.include?(task_status)
 
-      status_payload = @docs_gpt.task_status(document.provider_task_id)
-      task_status = status_payload['status'].to_s.upcase
-      if ACTIVE_TASK_STATUSES.include?(task_status)
-        waiting = true
-      elsif TERMINAL_TASK_FAILURES.include?(task_status)
-        document.update!(provider_status: 'failed')
-        raise ProviderIngestionError, "DocsGPT ingestion failed for document #{document.id}"
-      elsif task_status == 'SUCCESS'
-        finalize_document(document)
-      else
-        raise ProviderIngestionError, "DocsGPT returned unknown task status #{task_status.inspect}"
-      end
+    if TERMINAL_TASK_FAILURES.include?(task_status)
+      @version.documents.update_all(provider_status: 'failed')
+      raise ProviderIngestionError, "DocsGPT ingestion failed for knowledge version #{@version.id}"
     end
-    return :retry if waiting || @version.documents.where.not(provider_status: 'ready').exists?
+    raise ProviderIngestionError, "DocsGPT returned unknown task status #{task_status.inspect}" unless task_status == 'SUCCESS'
+
+    finalize_version(documents) if documents.any? { |document| document.provider_status != 'ready' }
 
     if @version.provider_agent_creation_started_at.present? && @version.provider_agent_id.blank?
       raise ProviderIngestionError, 'DocsGPT agent creation has an indeterminate prior result; manual reconciliation is required'
@@ -142,24 +134,27 @@ class ChatRing::Knowledge::SyncService
     :complete
   end
 
-  def start_document_upload(document)
-    result = @docs_gpt.upload_document(document)
-    document.update!(
+  def start_version_upload(documents)
+    result = @docs_gpt.upload_version(@version)
+    @version.documents.where(id: documents.map(&:id)).update_all(
       provider_task_id: result.fetch(:task_id),
       provider_source_id: result.fetch(:source_id),
-      provider_status: 'processing'
+      provider_status: 'processing',
+      updated_at: Time.current
     )
   end
 
-  def finalize_document(document)
-    chunks = @docs_gpt.chunks(document.provider_source_id)
-    raise ProviderIngestionError, "DocsGPT produced no chunks for document #{document.id}" if chunks.empty?
+  def finalize_version(documents)
+    chunks = @docs_gpt.chunks(documents.first.provider_source_id)
+    raise ProviderIngestionError, "DocsGPT produced no chunks for knowledge version #{@version.id}" if chunks.empty?
 
     references = chunks.filter_map { |chunk| chunk.dig('metadata', 'source').to_s.presence }.uniq
-    raise ProviderIngestionError, "DocsGPT chunks have no source reference for document #{document.id}" if references.empty?
-    raise ProviderIngestionError, "DocsGPT produced multiple source references for document #{document.id}" if references.length > 1
+    documents.each do |document|
+      matches = references.select { |reference| File.basename(reference) == document.provider_file_name }
+      raise ProviderIngestionError, "DocsGPT chunks do not identify document #{document.id}" unless matches.one?
 
-    document.update!(provider_status: 'ready', provider_source_reference: references.first)
+      document.update!(provider_status: 'ready', provider_source_reference: matches.first)
+    end
   end
 
   def normalized_documents(records)
