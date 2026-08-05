@@ -14,6 +14,7 @@ Own ChatRing installation identity defaults while preserving configuration compa
 - Default customer-facing values must resolve to ChatRing-owned names and domains.
 - Preserve upstream environment-variable names and configuration keys unless an explicit migration is implemented and tested.
 - Phase 1 configuration must not enable Enterprise or Captain features.
+- The ChatRing deterministic Assistant spike may register CE-owned prepend modules, but activation belongs to an explicitly enabled spike AgentBot and must never depend on Enterprise loading.
 
 ## Work Guidance
 

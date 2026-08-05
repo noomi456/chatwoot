@@ -14,6 +14,7 @@ This repository is ChatRing's Community Edition conversation foundation, derived
 
 - Phase 1 owns the conventional omnichannel conversation foundation only: inboxes, conversations, contacts, agents, teams, assignment, handoff, channel delivery, attachments, notes, canned responses, history, and the classic website widget.
 - ChatRing Intelligence remains outside this repository: Brain/RAG, AI Navigator, microsites, Voice AI, Playbooks, Skills, semantic turn authority, attribution, and billing.
+- The only current exception is the disabled-by-default `ChatRing::AssistantSpike` architecture proof. It may schedule a deterministic reply through CE message/job/delivery seams, but it must not contain an LLM, retrieval, tools, Playbooks, artifacts, engagements, Voice, or production Assistant behavior.
 - Preserve supported Chatwoot CE APIs, webhook contracts, database identifiers, migrations, SDK events, and environment variables unless an approved migration contract explicitly changes them.
 - ChatRing branding is a customer-facing presentation layer. Do not perform global internal identifier replacement.
 
@@ -24,6 +25,7 @@ This repository is ChatRing's Community Edition conversation foundation, derived
 - Do not bypass feature gates or licensing checks.
 - Keep the upstream Enterprise source untouched for upstream compatibility; the ChatRing CE image workflow must exclude it from the build context before the image is built.
 - Independently built ChatRing capabilities live outside the Enterprise overlay and must use CE-supported APIs and extension boundaries.
+- The deterministic Assistant spike is ChatRing-owned CE code. It must not import, mirror, translate, or call Enterprise/Captain code, and it must remain inert unless an explicitly configured spike AgentBot is enabled.
 
 ## Build / Test / Lint
 

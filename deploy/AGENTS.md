@@ -20,6 +20,7 @@ Own the reproducible Phase 1 deployment of ChatRing Conversation Core through Do
 - Rails, Sidekiq, and database preparation must share the same image and environment contract.
 - Database preparation must complete successfully before Rails or Sidekiq starts.
 - Keep Phase 2 services out of this Compose project.
+- Keep `CHATRING_ASSISTANT_SPIKE_ENABLED` false by default. It may be true only during the bounded staging proof and must be returned to false after evidence capture.
 - A rollback changes only the immutable application image reference; persistent volumes remain attached.
 
 ## Verification
