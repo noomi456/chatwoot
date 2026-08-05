@@ -137,4 +137,5 @@ This repository is ChatRing's Community Edition conversation foundation, derived
 - `.github/AGENTS.md` — CI validation, CE-only image publication, and immutable image contracts.
 - `app/AGENTS.md` — Rails views, customer-visible application behavior, and the `app/javascript` child boundary.
 - `config/AGENTS.md` — installation identity defaults and compatibility-sensitive configuration.
+- `deploy/AGENTS.md` — Dokploy Compose topology, secret handling, persistence, and runtime verification.
 - `public/AGENTS.md` — public brand assets, manifests, and browser/device metadata.
