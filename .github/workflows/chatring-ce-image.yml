@@ -37,8 +37,69 @@ jobs:
       - name: Run ChatRing branding tests
         run: pnpm exec vitest app/javascript/shared/helpers/specs/InstallationBranding.spec.js --run --no-cache
 
+  validate-knowledge:
+    runs-on: ubuntu-22.04
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ''
+          POSTGRES_DB: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: Checkout pinned ChatRing CE source
+        uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+
+      - name: Strip proprietary Enterprise source
+        run: |
+          rm -rf enterprise
+          rm -rf spec/enterprise
+
+      - name: Prepare isolated test database
+        run: bundle exec rails db:create db:migrate
+        env:
+          RAILS_ENV: test
+          REDIS_URL: redis://localhost:6379/0
+
+      - name: Run Phase 2A contract tests
+        run: >-
+          bundle exec rspec
+          spec/services/chat_ring/knowledge/docs_gpt_provider_spec.rb
+          spec/services/chat_ring/knowledge/firecrawl_client_spec.rb
+          spec/services/chat_ring/knowledge/publication_service_spec.rb
+        env:
+          RAILS_ENV: test
+          REDIS_URL: redis://localhost:6379/0
+
+      - name: Run Phase 2A Ruby lint
+        run: >-
+          bundle exec rubocop
+          app/models/chat_ring
+          app/services/chat_ring/knowledge
+          app/jobs/chat_ring/knowledge
+          lib/tasks/chat_ring_knowledge.rake
+          db/migrate/20260805000000_create_chat_ring_knowledge_foundation.rb
+          spec/services/chat_ring/knowledge
+
   build:
-    needs: validate
+    needs: [validate, validate-knowledge]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout pinned ChatRing CE source
