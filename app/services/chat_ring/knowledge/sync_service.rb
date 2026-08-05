@@ -111,7 +111,7 @@ class ChatRing::Knowledge::SyncService
     return :retry if ACTIVE_TASK_STATUSES.include?(task_status)
 
     if TERMINAL_TASK_FAILURES.include?(task_status)
-      @version.documents.update_all(provider_status: 'failed')
+      @version.documents.find_each { |document| document.update!(provider_status: 'failed') }
       raise ProviderIngestionError, "DocsGPT ingestion failed for knowledge version #{@version.id}"
     end
     raise ProviderIngestionError, "DocsGPT returned unknown task status #{task_status.inspect}" unless task_status == 'SUCCESS'
@@ -136,12 +136,13 @@ class ChatRing::Knowledge::SyncService
 
   def start_version_upload(documents)
     result = @docs_gpt.upload_version(@version)
-    @version.documents.where(id: documents.map(&:id)).update_all(
-      provider_task_id: result.fetch(:task_id),
-      provider_source_id: result.fetch(:source_id),
-      provider_status: 'processing',
-      updated_at: Time.current
-    )
+    documents.each do |document|
+      document.update!(
+        provider_task_id: result.fetch(:task_id),
+        provider_source_id: result.fetch(:source_id),
+        provider_status: 'processing'
+      )
+    end
   end
 
   def finalize_version(documents)
