@@ -73,7 +73,11 @@ jobs:
           rm -rf spec/enterprise
 
       - name: Prepare isolated test database
-        run: bundle exec rails db:create db:migrate
+        # Chatwoot's checked-in schema is the supported fresh-database baseline.
+        # Replaying historical migrations fails because some of them reference
+        # application/gem constants that no longer exist. Load that baseline,
+        # then apply only migrations newer than its recorded version.
+        run: bundle exec rails db:create db:schema:load db:migrate
         env:
           RAILS_ENV: test
           REDIS_URL: redis://localhost:6379/0
