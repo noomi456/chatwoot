@@ -1,3 +1,4 @@
+# rubocop:disable Metrics/BlockLength
 namespace :chatring do
   namespace :knowledge do
     desc 'Start a Firecrawl map/crawl and DocsGPT knowledge build'
@@ -56,3 +57,4 @@ namespace :chatring do
     end
   end
 end
+# rubocop:enable Metrics/BlockLength

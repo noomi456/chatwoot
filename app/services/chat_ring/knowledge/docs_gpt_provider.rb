@@ -28,7 +28,7 @@ class ChatRing::Knowledge::DocsGptProvider
     items = hits.each_with_index.map { |hit, index| build_evidence(hit, index + 1, version_id, manifest) }.freeze
 
     build_evidence_set(version_id, resolved_query, result_limit, items)
-  rescue Net::OpenTimeout, Net::ReadTimeout, Timeout::Error, SocketError => e
+  rescue Timeout::Error, SocketError => e
     raise RequestError, "DocsGPT retrieval request failed: #{e.class.name}"
   end
 
@@ -61,7 +61,7 @@ class ChatRing::Knowledge::DocsGptProvider
     )
   end
 
-  def build_evidence(hit, rank, knowledge_version_id, manifest)
+  def build_evidence(hit, rank, knowledge_version_id, manifest) # rubocop:disable Metrics/MethodLength
     raise ResponseError, "DocsGPT result #{rank} must be an object" unless hit.is_a?(Hash)
 
     excerpt = required_response_string(hit['text'], rank, 'text')
@@ -94,7 +94,7 @@ class ChatRing::Knowledge::DocsGptProvider
   end
 
   def normalize_manifest(value)
-    value.to_h.transform_keys(&:to_s).transform_values do |entry|
+    manifest = value.to_h.transform_keys(&:to_s).transform_values do |entry|
       if entry.is_a?(Hash)
         normalized = entry.deep_stringify_keys
         normalized['content_hash'] = required_string(normalized['content_hash'], 'source content_hash')
@@ -106,11 +106,9 @@ class ChatRing::Knowledge::DocsGptProvider
           'source_reference' => nil
         }
       end
-    end.tap do |manifest|
-      manifest.each do |provider_source_id, entry|
-        entry['source_reference'] ||= provider_source_id
-      end
     end
+    manifest.each { |provider_source_id, entry| entry['source_reference'] ||= provider_source_id }
+    manifest
   end
 
   def evidence_id(knowledge_version_id, provider_source_id, excerpt)

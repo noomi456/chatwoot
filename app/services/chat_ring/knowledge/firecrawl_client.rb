@@ -19,12 +19,13 @@ class ChatRing::Knowledge::FirecrawlClient
 
   def map(url:, limit: MAX_URLS)
     root_url = canonical_url(url)
+    resolved_limit = bounded_limit(limit)
     payload = request_json(
       :post,
       '/v2/map',
       body: {
         url: root_url,
-        limit: bounded_limit(limit),
+        limit: resolved_limit,
         includeSubdomains: false,
         ignoreQueryParameters: true
       }
@@ -32,18 +33,9 @@ class ChatRing::Knowledge::FirecrawlClient
     links = payload.fetch('links') { raise ResponseError, 'Firecrawl map response is missing links' }
     raise ResponseError, 'Firecrawl map links must be an array' unless links.is_a?(Array)
 
-    normalized = links.filter_map do |entry|
-      value = entry.is_a?(Hash) ? entry['url'] : entry
-      next if value.blank?
-
-      {
-        'url' => canonical_url(value),
-        'title' => entry.is_a?(Hash) ? entry['title'].to_s.presence : nil,
-        'description' => entry.is_a?(Hash) ? entry['description'].to_s.presence : nil
-      }.compact
-    end
+    normalized = links.filter_map { |entry| normalize_map_entry(entry) }
     normalized << { 'url' => root_url } unless normalized.any? { |entry| entry['url'] == root_url }
-    normalized.uniq { |entry| entry['url'] }.sort_by { |entry| entry['url'] }.first(bounded_limit(limit))
+    normalized.uniq { |entry| entry['url'] }.sort_by { |entry| entry['url'] }.first(resolved_limit)
   end
 
   def start_crawl(url:, limit: MAX_URLS)
@@ -118,8 +110,19 @@ class ChatRing::Knowledge::FirecrawlClient
     raise ResponseError, 'Firecrawl response must be an object' unless parsed.is_a?(Hash)
 
     parsed
-  rescue Net::OpenTimeout, Net::ReadTimeout, Timeout::Error, SocketError => e
+  rescue Timeout::Error, SocketError => e
     raise RequestError, "Firecrawl request failed: #{e.class.name}"
+  end
+
+  def normalize_map_entry(entry)
+    value = entry.is_a?(Hash) ? entry['url'] : entry
+    return if value.blank?
+
+    {
+      'url' => canonical_url(value),
+      'title' => entry.is_a?(Hash) ? entry['title'].to_s.presence : nil,
+      'description' => entry.is_a?(Hash) ? entry['description'].to_s.presence : nil
+    }.compact
   end
 
   def canonical_url(value)

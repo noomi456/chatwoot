@@ -7,7 +7,6 @@ class ChatRing::KnowledgeVersion < ApplicationRecord
   belongs_to :inbox
   has_many :documents,
            class_name: 'ChatRing::KnowledgeDocument',
-           foreign_key: :knowledge_version_id,
            inverse_of: :knowledge_version,
            dependent: :destroy
 

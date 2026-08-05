@@ -1,5 +1,4 @@
 require 'digest'
-require 'set'
 
 class ChatRing::Knowledge::SyncService
   POLL_INTERVAL = 10.seconds
@@ -73,7 +72,7 @@ class ChatRing::Knowledge::SyncService
     :retry
   end
 
-  def process_crawl
+  def process_crawl # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength
     payload = @firecrawl.crawl_status(@version.firecrawl_crawl_id)
     status = payload['status'].to_s
     return :retry if %w[scraping pending].include?(status)
@@ -81,8 +80,8 @@ class ChatRing::Knowledge::SyncService
 
     error_payload = @firecrawl.crawl_errors(@version.firecrawl_crawl_id)
     documents = normalized_documents(payload.fetch('data', []))
-    mapped_urls = @version.mapped_manifest.map { |entry| entry.fetch('url') }.to_set
-    crawled_urls = documents.map { |entry| entry.fetch(:source_url) }.to_set
+    mapped_urls = @version.mapped_manifest.to_set { |entry| entry.fetch('url') }
+    crawled_urls = documents.to_set { |entry| entry.fetch(:source_url) }
     missing_urls = mapped_urls - crawled_urls
     if missing_urls.any?
       @version.update!(crawl_errors: sanitized_crawl_errors(error_payload, missing_urls))
@@ -99,7 +98,7 @@ class ChatRing::Knowledge::SyncService
     :retry
   end
 
-  def process_ingestion
+  def process_ingestion # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
     documents = @version.documents.order(:id).to_a
     raise ProviderIngestionError, 'Knowledge version contains no documents' if documents.empty?
 
@@ -139,9 +138,7 @@ class ChatRing::Knowledge::SyncService
       provider_agent_api_key: agent.fetch(:key),
       ready_at: Time.current
     )
-    if @version.config_snapshot['publish_on_ready']
-      ChatRing::Knowledge::PublicationService.publish!(@version)
-    end
+    ChatRing::Knowledge::PublicationService.publish!(@version) if @version.config_snapshot['publish_on_ready']
     :complete
   end
 
@@ -168,25 +165,27 @@ class ChatRing::Knowledge::SyncService
   def normalized_documents(records)
     raise IncompleteCrawlError, 'Firecrawl crawl data must be an array' unless records.is_a?(Array)
 
-    records.filter_map do |record|
-      next unless record.is_a?(Hash)
+    documents = records.filter_map { |record| normalized_document(record) }
+    documents.uniq { |entry| entry.fetch(:source_url) }
+  end
 
-      markdown = record['markdown'].to_s.strip
-      metadata = record['metadata'].is_a?(Hash) ? record['metadata'] : {}
-      source = metadata['sourceURL'] || metadata['url'] || record['url']
-      next if markdown.blank? || source.blank?
+  def normalized_document(record)
+    return unless record.is_a?(Hash)
 
-      canonical_url = ChatRing::Knowledge::FirecrawlClient.canonical_url(source)
-      content_hash = Digest::SHA256.hexdigest(markdown)
-      {
-        source_url: canonical_url,
-        title: metadata['title'].to_s.presence,
-        markdown: markdown,
-        content_hash: content_hash,
-        provider_file_name: "#{Digest::SHA256.hexdigest(canonical_url).first(24)}.md",
-        metadata: metadata.slice('title', 'description', 'language', 'statusCode', 'sourceURL')
-      }
-    end.uniq { |entry| entry.fetch(:source_url) }
+    markdown = record['markdown'].to_s.strip
+    metadata = record['metadata'].is_a?(Hash) ? record['metadata'] : {}
+    source = metadata['sourceURL'] || metadata['url'] || record['url']
+    return if markdown.blank? || source.blank?
+
+    canonical_url = ChatRing::Knowledge::FirecrawlClient.canonical_url(source)
+    {
+      source_url: canonical_url,
+      title: metadata['title'].to_s.presence,
+      markdown: markdown,
+      content_hash: Digest::SHA256.hexdigest(markdown),
+      provider_file_name: "#{Digest::SHA256.hexdigest(canonical_url).first(24)}.md",
+      metadata: metadata.slice('title', 'description', 'language', 'statusCode', 'sourceURL')
+    }
   end
 
   def sanitized_crawl_errors(payload, missing_urls)

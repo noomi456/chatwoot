@@ -1,13 +1,11 @@
 class ChatRing::Knowledge::PublicationService
   class Error < StandardError; end
 
-  def self.publish!(version)
+  def self.publish!(version) # rubocop:disable Metrics/MethodLength
     ChatRing::KnowledgePublication.transaction do
       Inbox.lock.find(version.inbox_id)
       version.lock!
-      unless %w[ready retired published].include?(version.status)
-        raise Error, "Knowledge version #{version.id} is not eligible for publication"
-      end
+      raise Error, "Knowledge version #{version.id} is not eligible for publication" unless %w[ready retired published].include?(version.status)
 
       publication = ChatRing::KnowledgePublication.find_or_initialize_by(
         account_id: version.account_id,

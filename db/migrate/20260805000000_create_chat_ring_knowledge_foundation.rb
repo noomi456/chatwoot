@@ -1,4 +1,7 @@
 class CreateChatRingKnowledgeFoundation < ActiveRecord::Migration[7.1]
+  # This migration intentionally defines the complete versioned knowledge
+  # boundary in one reversible DDL transaction.
+  # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
   def change
     create_table :chat_ring_knowledge_versions do |t|
       t.references :account, null: false, foreign_key: true
@@ -26,16 +29,17 @@ class CreateChatRingKnowledgeFoundation < ActiveRecord::Migration[7.1]
 
     add_index :chat_ring_knowledge_versions, [:account_id, :inbox_id, :created_at],
               name: 'index_chatring_knowledge_versions_on_scope_and_created_at'
-    add_index :chat_ring_knowledge_versions, :firecrawl_crawl_id, unique: true,
-              where: 'firecrawl_crawl_id IS NOT NULL'
+    add_index :chat_ring_knowledge_versions, :firecrawl_crawl_id,
+              unique: true, where: 'firecrawl_crawl_id IS NOT NULL'
     add_check_constraint :chat_ring_knowledge_versions,
                          "status IN ('pending', 'crawling', 'ingesting', 'ready', 'published', 'retired', 'failed')",
                          name: 'chatring_knowledge_versions_status_check'
 
     create_table :chat_ring_knowledge_documents do |t|
-      t.references :knowledge_version, null: false,
-                    foreign_key: { to_table: :chat_ring_knowledge_versions },
-                    index: { name: 'index_chatring_knowledge_documents_on_version_id' }
+      t.references :knowledge_version,
+                   null: false,
+                   foreign_key: { to_table: :chat_ring_knowledge_versions },
+                   index: { name: 'index_chatring_knowledge_documents_on_version_id' }
       t.string :source_url, null: false
       t.string :title
       t.text :markdown, null: false
@@ -61,12 +65,13 @@ class CreateChatRingKnowledgeFoundation < ActiveRecord::Migration[7.1]
     create_table :chat_ring_knowledge_publications do |t|
       t.references :account, null: false, foreign_key: true
       t.references :inbox, null: false, foreign_key: true
-      t.references :knowledge_version, null: false,
-                    foreign_key: { to_table: :chat_ring_knowledge_versions },
-                    index: { name: 'index_chatring_publications_on_version_id' }
+      t.references :knowledge_version,
+                   null: false,
+                   foreign_key: { to_table: :chat_ring_knowledge_versions },
+                   index: { name: 'index_chatring_publications_on_version_id' }
       t.references :previous_knowledge_version,
-                    foreign_key: { to_table: :chat_ring_knowledge_versions },
-                    index: { name: 'index_chatring_publications_on_previous_version_id' }
+                   foreign_key: { to_table: :chat_ring_knowledge_versions },
+                   index: { name: 'index_chatring_publications_on_previous_version_id' }
       t.datetime :published_at, null: false
 
       t.timestamps
@@ -75,4 +80,5 @@ class CreateChatRingKnowledgeFoundation < ActiveRecord::Migration[7.1]
     add_index :chat_ring_knowledge_publications, [:account_id, :inbox_id],
               unique: true, name: 'index_chatring_knowledge_publications_on_scope'
   end
+  # rubocop:enable Metrics/AbcSize, Metrics/MethodLength
 end

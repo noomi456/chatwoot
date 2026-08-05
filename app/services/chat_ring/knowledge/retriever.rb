@@ -9,7 +9,16 @@ class ChatRing::Knowledge::Retriever
     version = publication.knowledge_version
     raise Error, 'Published knowledge pointer does not reference a published version' unless version.status == 'published'
 
-    manifest = version.documents.index_by(&:provider_source_reference).transform_values do |document|
+    provider(version).retrieve(
+      query: query,
+      knowledge_version_id: version.id.to_s,
+      source_manifest: source_manifest(version),
+      limit: limit
+    )
+  end
+
+  def self.source_manifest(version)
+    version.documents.index_by(&:provider_source_reference).transform_values do |document|
       {
         'content_hash' => document.content_hash,
         'source_reference' => document.source_url,
@@ -17,16 +26,15 @@ class ChatRing::Knowledge::Retriever
         'locator' => document.source_url
       }
     end
-    provider = ChatRing::Knowledge::DocsGptProvider.new(
+  end
+
+  def self.provider(version)
+    ChatRing::Knowledge::DocsGptProvider.new(
       base_url: ENV.fetch('DOCSGPT_BASE_URL'),
       agent_api_key: version.provider_agent_api_key,
       provider_release: version.provider_release
     )
-    provider.retrieve(
-      query: query,
-      knowledge_version_id: version.id.to_s,
-      source_manifest: manifest,
-      limit: limit
-    )
   end
+
+  private_class_method :provider, :source_manifest
 end

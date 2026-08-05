@@ -32,7 +32,7 @@ class ChatRing::Knowledge::DocsGptClient
     @timeout_seconds = Integer(timeout_seconds)
   end
 
-  def upload_document(document)
+  def upload_document(document) # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
     Tempfile.create(['chatring-knowledge-', '.md']) do |file|
       file.binmode
       file.write(document.markdown)
@@ -81,7 +81,7 @@ class ChatRing::Knowledge::DocsGptClient
     raise RequestError, "DocsGPT request failed: #{e.class.name}"
   end
 
-  def create_agent(version)
+  def create_agent(version) # rubocop:disable Metrics/MethodLength
     source_ids = version.documents.order(:id).pluck(:provider_source_id)
     raise ResponseError, 'DocsGPT agent requires at least one ingested source' if source_ids.empty? || source_ids.any?(&:blank?)
 
