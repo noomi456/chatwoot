@@ -85,6 +85,7 @@ jobs:
       - name: Run Phase 2A contract tests
         run: >-
           bundle exec rspec
+          spec/models/chat_ring/knowledge_document_spec.rb
           spec/services/chat_ring/knowledge/docs_gpt_client_spec.rb
           spec/services/chat_ring/knowledge/docs_gpt_provider_spec.rb
           spec/services/chat_ring/knowledge/firecrawl_client_spec.rb
@@ -101,6 +102,7 @@ jobs:
           app/jobs/chat_ring/knowledge
           lib/tasks/chat_ring_knowledge.rake
           db/migrate/20260805000000_create_chat_ring_knowledge_foundation.rb
+          spec/models/chat_ring
           spec/services/chat_ring/knowledge
 
   build:
