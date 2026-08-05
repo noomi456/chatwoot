@@ -1,4 +1,29 @@
-# Chatwoot Development Guidelines
+# ChatRing Conversation Core — DOX Rail
+
+This repository is ChatRing's Community Edition conversation foundation, derived from Chatwoot CE. These instructions and every child `AGENTS.md` are binding work contracts for their subtrees.
+
+## DOX Core Contract
+
+- Before editing, read this file and every `AGENTS.md` from the repository root to each target path.
+- The nearest `AGENTS.md` controls local implementation details; no child may weaken this root contract.
+- After every meaningful change, re-check the affected DOX chain and update the nearest owning docs when purpose, ownership, structure, contracts, workflows, permissions, constraints, verification, or durable behavior changed.
+- Keep DOX concise and operational. Remove stale or contradictory rules instead of preserving historical commentary.
+- Do not rely on remembered repository rules; re-read the applicable chain in the current session.
+
+## Product Boundary
+
+- Phase 1 owns the conventional omnichannel conversation foundation only: inboxes, conversations, contacts, agents, teams, assignment, handoff, channel delivery, attachments, notes, canned responses, history, and the classic website widget.
+- ChatRing Intelligence remains outside this repository: Brain/RAG, AI Navigator, microsites, Voice AI, Playbooks, Skills, semantic turn authority, attribution, and billing.
+- Preserve supported Chatwoot CE APIs, webhook contracts, database identifiers, migrations, SDK events, and environment variables unless an approved migration contract explicitly changes them.
+- ChatRing branding is a customer-facing presentation layer. Do not perform global internal identifier replacement.
+
+## Community Edition Boundary
+
+- Production images must be built as Community Edition with `CW_EDITION=ce` and `DISABLE_ENTERPRISE=true`.
+- Do not modify, unlock, copy, port, or derive implementation from `enterprise/` or `spec/enterprise/`.
+- Do not bypass feature gates or licensing checks.
+- Keep the upstream Enterprise source untouched for upstream compatibility; the ChatRing CE image workflow must exclude it from the build context before the image is built.
+- Independently built ChatRing capabilities live outside the Enterprise overlay and must use CE-supported APIs and extension boundaries.
 
 ## Build / Test / Lint
 
@@ -95,24 +120,21 @@
 
 - Use compact `module/class` definitions; avoid nested styles
 
-## Enterprise Edition Notes
-
-- Chatwoot has an Enterprise overlay under `enterprise/` that extends/overrides OSS code.
-- When you add or modify core functionality, always check for corresponding files in `enterprise/` and keep behavior compatible.
-- Follow the Enterprise development practices documented here:
-  - https://chatwoot.help/hc/handbook/articles/developing-enterprise-edition-features-38
-
-Practical checklist for any change impacting core logic or public APIs
-- Search for related files in both trees before editing (e.g., `rg -n "FooService|ControllerName|ModelName" app enterprise`).
-- If adding new endpoints, services, or models, consider whether Enterprise needs:
-  - An override (e.g., `enterprise/app/...`), or
-  - An extension point (e.g., `prepend_mod_with`, hooks, configuration) to avoid hard forks.
-- Avoid hardcoding instance- or plan-specific behavior in OSS; prefer configuration, feature flags, or extension points consumed by Enterprise.
-- Keep request/response contracts stable across OSS and Enterprise; update both sets of routes/controllers when introducing new APIs.
-- When renaming/moving shared code, mirror the change in `enterprise/` to prevent drift.
-- Tests: Add Enterprise-specific specs under `spec/enterprise`, mirroring OSS spec layout where applicable.
-- When modifying existing OSS features for Enterprise-only behavior, add an Enterprise module (via `prepend_mod_with`/`include_mod_with`) instead of editing OSS files directly—especially for policies, controllers, and services. For Enterprise-exclusive features, place code directly under `enterprise/`.
-
 ## Branding / White-labeling note
 
 - For user-facing strings that currently contain "Chatwoot" but should adapt to branded/self-hosted installs, prefer applying `replaceInstallationName` from `shared/composables/useBranding` in the UI layer (for example tooltip and suggestion labels) instead of adding hardcoded brand-specific copy.
+
+## DOX Closeout
+
+1. Re-check changed paths against this file and the applicable child DOX files.
+2. Update the closest owning DOX when a durable contract changed.
+3. Refresh affected Child DOX Index entries.
+4. Run the relevant existing verification.
+5. Report any applicable DOX file intentionally left unchanged and why.
+
+## Child DOX Index
+
+- `.github/AGENTS.md` — CI validation, CE-only image publication, and immutable image contracts.
+- `app/AGENTS.md` — Rails views, customer-visible application behavior, and the `app/javascript` child boundary.
+- `config/AGENTS.md` — installation identity defaults and compatibility-sensitive configuration.
+- `public/AGENTS.md` — public brand assets, manifests, and browser/device metadata.
