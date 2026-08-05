@@ -72,7 +72,7 @@ class ChatRing::Knowledge::SyncService
     :retry
   end
 
-  def process_crawl # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength
+  def process_crawl # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
     payload = @firecrawl.crawl_status(@version.firecrawl_crawl_id)
     status = payload['status'].to_s
     return :retry if %w[scraping pending].include?(status)

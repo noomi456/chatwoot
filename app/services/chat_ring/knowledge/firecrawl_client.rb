@@ -17,7 +17,7 @@ class ChatRing::Knowledge::FirecrawlClient
     @timeout_seconds = Integer(timeout_seconds)
   end
 
-  def map(url:, limit: MAX_URLS)
+  def map(url:, limit: MAX_URLS) # rubocop:disable Metrics/CyclomaticComplexity
     root_url = canonical_url(url)
     resolved_limit = bounded_limit(limit)
     payload = request_json(

@@ -32,13 +32,12 @@ RSpec.describe ChatRing::Knowledge::FirecrawlClient do
     )
 
     expect(client.start_crawl(url: 'https://example.com', limit: 2)).to eq('crawl-123')
-    expect(WebMock).to(
-      have_requested(:post, 'https://api.firecrawl.dev/v2/crawl').with { |request|
-        body = JSON.parse(request.body)
-        body['url'] == 'https://example.com/' && body['limit'] == 2 &&
-          body.dig('scrapeOptions', 'formats') == ['markdown'] && body['allowExternalLinks'] == false
-      }
-    )
+    request_matcher = have_requested(:post, 'https://api.firecrawl.dev/v2/crawl').with do |request|
+      body = JSON.parse(request.body)
+      body['url'] == 'https://example.com/' && body['limit'] == 2 &&
+        body.dig('scrapeOptions', 'formats') == ['markdown'] && body['allowExternalLinks'] == false
+    end
+    expect(WebMock).to request_matcher
   end
 
   it 'collects every completed crawl page from the configured Firecrawl origin' do
