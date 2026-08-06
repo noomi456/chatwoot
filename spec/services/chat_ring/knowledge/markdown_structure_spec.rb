@@ -45,6 +45,12 @@ RSpec.describe ChatRing::Knowledge::MarkdownStructure do
         'url' => 'https://sales.example.net/contact',
         'heading_path' => 'Pricing > Plus > Guided demo',
         'external' => true
+      },
+      {
+        'label' => 'Start 14-day Trial',
+        'url' => 'https://example.com/signup',
+        'heading_path' => 'Pricing > Plus > Guided demo',
+        'external' => false
       }
     )
   end

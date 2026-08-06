@@ -107,6 +107,7 @@ class ChatRing::Knowledge::MarkdownStructure
 
   def same_candidate?(left, right)
     left.fetch('label').casecmp?(right.fetch('label')) &&
-      left.fetch('url') == right.fetch('url')
+      left.fetch('url') == right.fetch('url') &&
+      left['heading_path'] == right['heading_path']
   end
 end
