@@ -85,6 +85,10 @@ RSpec.describe ChatRing::Knowledge::SyncService do
 
       expect(rebuilt).to have_attributes(status: 'ingesting', account: account, inbox: inbox)
       expect(rebuilt.config_snapshot['source_policy_version']).to eq(ChatRing::Knowledge::SourcePolicy::VERSION)
+      expect(rebuilt.config_snapshot).to include(
+        'build_mode' => 'stored_snapshot_rebuild',
+        'source_knowledge_version_id' => version.id
+      )
       expect(rebuilt.documents.first).to have_attributes(provider_status: 'pending', provider_source_id: nil)
       expect(rebuilt.documents.first.metadata.fetch('headings')).to include(
         'level' => 1,

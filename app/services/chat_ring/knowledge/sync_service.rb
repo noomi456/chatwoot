@@ -43,7 +43,10 @@ class ChatRing::Knowledge::SyncService
         root_url: source_version.root_url,
         provider: 'docs_gpt',
         provider_release: ENV.fetch('DOCSGPT_RELEASE', source_version.provider_release),
-        config_snapshot: configuration_snapshot,
+        config_snapshot: configuration_snapshot.merge(
+          'build_mode' => 'stored_snapshot_rebuild',
+          'source_knowledge_version_id' => source_version.id
+        ),
         mapped_manifest: source_version.mapped_manifest,
         manifest_digest: Digest::SHA256.hexdigest(source_version.mapped_manifest.to_json),
         crawl_errors: source_version.crawl_errors
