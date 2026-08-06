@@ -17,7 +17,9 @@ services:
     image: ${DOCSGPT_IMAGE:?DOCSGPT_IMAGE is required}
     restart: unless-stopped
     environment: &docs-gpt-environment
-      AUTH_TYPE: ""
+      AUTH_TYPE: simple_jwt
+      JWT_SECRET_KEY: ${DOCSGPT_JWT_SECRET:?DOCSGPT_JWT_SECRET is required}
+      CHATRING_SERVICE_SECRET: ${DOCSGPT_SERVICE_SECRET:?DOCSGPT_SERVICE_SECRET is required}
       LOCAL_MODE_ADMIN: "false"
       VECTOR_STORE: pgvector
       EMBEDDINGS_NAME: huggingface_sentence-transformers/all-mpnet-base-v2
@@ -54,7 +56,7 @@ services:
   docs-gpt-worker:
     image: ${DOCSGPT_IMAGE:?DOCSGPT_IMAGE is required}
     restart: unless-stopped
-    command: celery -A application.app.celery worker -l INFO -B -Q docsgpt,parsing
+    command: celery -A application.app.celery worker -l INFO -Q docsgpt,parsing --concurrency=1 --max-tasks-per-child=20
     environment:
       <<: *docs-gpt-environment
       AUTO_MIGRATE: "false"

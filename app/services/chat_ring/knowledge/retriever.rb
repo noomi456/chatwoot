@@ -23,16 +23,24 @@ class ChatRing::Knowledge::Retriever
         'content_hash' => document.content_hash,
         'source_reference' => document.source_url,
         'source_title' => document.title,
-        'locator' => document.source_url
+        'locator' => document.source_url,
+        'authority_class' => document.metadata['authority_class'].presence || 'unclassified_legacy'
       }
     end
   end
 
   def self.provider(version)
+    source_ids = version.documents.pluck(:provider_source_id).compact_blank.uniq
+    raise Error, 'Published knowledge version must reference exactly one DocsGPT source' unless source_ids.one?
+
     ChatRing::Knowledge::DocsGptProvider.new(
       base_url: ENV.fetch('DOCSGPT_BASE_URL'),
-      agent_api_key: version.provider_agent_api_key,
-      provider_release: version.provider_release
+      provider_release: version.provider_release,
+      provider_source_id: source_ids.first,
+      account_id: version.account_id,
+      internal_key: ENV.fetch('DOCSGPT_INTERNAL_KEY'),
+      service_secret: ENV.fetch('DOCSGPT_SERVICE_SECRET'),
+      score_threshold: version.config_snapshot.dig('retrieval', 'score_threshold') || ENV.fetch('DOCSGPT_SCORE_THRESHOLD')
     )
   end
 

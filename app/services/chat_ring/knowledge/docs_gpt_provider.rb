@@ -1,122 +1,211 @@
 require 'digest'
+require 'httparty'
 require 'uri'
 
+# rubocop:disable Metrics/ClassLength
 class ChatRing::Knowledge::DocsGptProvider
   PROVIDER = 'docs_gpt'.freeze
-  RETRIEVAL_STRATEGY = 'docs_gpt_api_search'.freeze
-  SEARCH_PATH = 'api/search'.freeze
+  RETRIEVAL_STRATEGY = 'docs_gpt_dispatcher_classic_cosine'.freeze
+  RETRIEVAL_PATH = '/api/internal/chatring/retrieve'.freeze
   MAX_RESULTS = 20
+  MAX_QUERY_LENGTH = 2000
+  HIGH_RISK_PATTERN = /\b(hipaa|soc\s*2|iso\s*27001|data\s+residen(?:cy|t)|end[- ]to[- ]end encrypt|gdpr (?:compliant|compliance))\b/i
+  HIGH_RISK_AUTHORITIES = %w[approved_compliance].freeze
 
   class Error < StandardError; end
   class ConfigurationError < Error; end
   class RequestError < Error; end
   class ResponseError < Error; end
 
-  def initialize(base_url:, agent_api_key:, provider_release:, timeout_seconds: 10)
+  def initialize(base_url:, provider_release:, provider_source_id:, account_id:, internal_key:, service_secret:,
+                 score_threshold:, timeout_seconds: 10)
     @base_url = normalize_base_url(base_url)
-    @agent_api_key = required_string(agent_api_key, 'agent_api_key')
     @provider_release = required_string(provider_release, 'provider_release')
+    @provider_source_id = required_string(provider_source_id, 'provider_source_id')
+    @account_id = required_string(account_id, 'account_id')
+    @score_threshold = unit_float(score_threshold, 'score_threshold')
     @timeout_seconds = positive_integer(timeout_seconds, 'timeout_seconds')
+    @auth = ChatRing::Knowledge::DocsGptAuth.new(
+      internal_key: internal_key,
+      service_secret: service_secret
+    )
   end
 
-  def retrieve(query:, knowledge_version_id:, source_manifest: nil, source_content_hashes: nil, limit: 5)
+  def retrieve(query:, knowledge_version_id:, source_manifest:, limit: 5)
     resolved_query = required_string(query, 'query')
+    raise ConfigurationError, "query must not exceed #{MAX_QUERY_LENGTH} characters" if resolved_query.length > MAX_QUERY_LENGTH
     version_id = required_string(knowledge_version_id, 'knowledge_version_id')
     result_limit = result_limit(limit)
-    manifest = normalize_manifest(source_manifest || source_content_hashes)
-    hits = fetch_hits(resolved_query, result_limit)
-    items = hits.each_with_index.map { |hit, index| build_evidence(hit, index + 1, version_id, manifest) }.freeze
-
-    build_evidence_set(version_id, resolved_query, result_limit, items)
-  rescue Timeout::Error, SocketError => e
-    raise RequestError, "DocsGPT retrieval request failed: #{e.class.name}"
+    manifest = normalize_manifest(source_manifest)
+    body = {
+      query: resolved_query,
+      source_id: @provider_source_id,
+      limit: result_limit,
+      score_threshold: @score_threshold
+    }.to_json
+    payload = fetch_payload(body, version_id)
+    status = required_status(payload)
+    items = status == 'accepted' ? build_items(payload, version_id, manifest, resolved_query) : []
+    status = 'insufficient_evidence' if status == 'accepted' && items.empty?
+    build_evidence_set(version_id, resolved_query, result_limit, payload, status, items)
+  rescue Timeout::Error
+    failure_set(version_id, resolved_query, result_limit, 'timeout', 'provider_timeout')
+  rescue SocketError, Errno::ECONNREFUSED, Errno::EHOSTUNREACH => e
+    failure_set(version_id, resolved_query, result_limit, 'provider_error', e.class.name)
   end
 
   private
 
-  def fetch_hits(query, limit)
-    response = HTTParty.post(
-      search_url,
-      headers: { 'Content-Type' => 'application/json', 'Accept' => 'application/json' },
-      body: { question: query, api_key: @agent_api_key, chunks: limit }.to_json,
-      timeout: @timeout_seconds
+  def fetch_payload(body, version_id)
+    headers = {
+      'Content-Type' => 'application/json',
+      'Accept' => 'application/json'
+    }.merge(
+      @auth.internal_headers(
+        body: body,
+        account_id: @account_id,
+        knowledge_version_id: version_id,
+        operation: 'retrieve',
+        source_id: @provider_source_id
+      )
     )
-    raise RequestError, "DocsGPT retrieval failed with HTTP #{response.code}" unless response.success?
+    response = HTTParty.post(retrieval_url, headers: headers, body: body, timeout: @timeout_seconds)
+    parsed = response.parsed_response
+    unless parsed.is_a?(Hash)
+      raise ResponseError, "DocsGPT retrieval response is invalid (HTTP #{response.code})"
+    end
+    return parsed if response.success? || response.code == 503
 
-    hits = response.parsed_response
-    raise ResponseError, 'DocsGPT retrieval response must be an array' unless hits.is_a?(Array)
-
-    hits
+    raise RequestError, "DocsGPT retrieval failed with HTTP #{response.code}"
   end
 
-  def build_evidence_set(version_id, query, limit, items)
+  def required_status(payload)
+    status = payload['status'].to_s
+    return status if %w[accepted insufficient_evidence provider_error].include?(status)
+
+    raise ResponseError, "DocsGPT retrieval returned invalid status #{status.inspect}"
+  end
+
+  def build_items(payload, knowledge_version_id, manifest, query)
+    chunks = payload['chunks']
+    raise ResponseError, 'DocsGPT accepted response must contain chunks' unless chunks.is_a?(Array)
+
+    chunks.each_with_index.filter_map do |chunk, index|
+      build_evidence(chunk, index + 1, knowledge_version_id, manifest, query)
+    end.uniq(&:id).freeze
+  end
+
+  def build_evidence(hit, rank, knowledge_version_id, manifest, query) # rubocop:disable Metrics/MethodLength
+    raise ResponseError, "DocsGPT result #{rank} must be an object" unless hit.is_a?(Hash)
+
+    excerpt = required_response_string(hit['text'], rank, 'text')
+    provider_reference = required_response_string(hit['source'], rank, 'source')
+    source = manifest_entry(manifest, provider_reference, rank)
+    authority = source.fetch('authority_class')
+    return if high_risk_query?(query) && !HIGH_RISK_AUTHORITIES.include?(authority)
+
+    provider_chunk_id = required_response_string(hit['chunk_id'], rank, 'chunk_id')
+    score = numeric_score(hit['score'], rank)
+    raise ResponseError, "DocsGPT result #{rank} is below the provider threshold" if score < @score_threshold
+
+    metadata = hit['metadata'].is_a?(Hash) ? hit['metadata'] : {}
+    heading_path = metadata['chatring_heading_path'].to_s.presence
+    title = source['source_title'].presence || hit['title'].to_s.strip.presence
+    ChatRing::Knowledge::Evidence.new(
+      id: evidence_id(knowledge_version_id, provider_chunk_id),
+      knowledge_version_id: knowledge_version_id,
+      provider: PROVIDER,
+      provider_release: @provider_release,
+      provider_source_id: @provider_source_id,
+      provider_chunk_id: provider_chunk_id,
+      source_reference: source.fetch('source_reference'),
+      source_title: title,
+      locator: heading_path || source['locator'].presence || source.fetch('source_reference'),
+      authority_class: authority,
+      excerpt: excerpt,
+      source_content_hash: source.fetch('content_hash'),
+      rank: Integer(hit['rank'] || rank),
+      score: score,
+      score_kind: required_response_string(hit['score_kind'], rank, 'score_kind'),
+      retrieval_strategy: RETRIEVAL_STRATEGY
+    )
+  end
+
+  def build_evidence_set(version_id, query, limit, payload, status, items)
     ChatRing::Knowledge::EvidenceSet.new(
       knowledge_version_id: version_id,
       provider: PROVIDER,
       provider_release: @provider_release,
       query: query,
+      status: status,
+      error_code: status == 'provider_error' ? 'provider_error' : nil,
+      latency_ms: payload['latency_ms']&.to_i,
       retrieval_strategy: RETRIEVAL_STRATEGY,
-      retrieval_configuration: { 'endpoint' => "/#{SEARCH_PATH}", 'limit' => limit }.freeze,
-      items: items
+      retrieval_configuration: retrieval_configuration(limit, payload).freeze,
+      items: items.freeze
     )
   end
 
-  def build_evidence(hit, rank, knowledge_version_id, manifest) # rubocop:disable Metrics/MethodLength
-    raise ResponseError, "DocsGPT result #{rank} must be an object" unless hit.is_a?(Hash)
-
-    excerpt = required_response_string(hit['text'], rank, 'text')
-    provider_source_id = required_response_string(hit['source'], rank, 'source')
-    source = manifest_entry(manifest, provider_source_id, rank)
-    title = source['source_title'].presence || hit['title'].to_s.strip
-
-    ChatRing::Knowledge::Evidence.new(
-      id: evidence_id(knowledge_version_id, provider_source_id, excerpt),
-      knowledge_version_id: knowledge_version_id,
+  def failure_set(version_id, query, limit, status, error_code)
+    ChatRing::Knowledge::EvidenceSet.new(
+      knowledge_version_id: version_id,
       provider: PROVIDER,
       provider_release: @provider_release,
-      provider_source_id: provider_source_id,
-      source_reference: source.fetch('source_reference'),
-      source_title: title.presence,
-      locator: source['locator'].presence || title.presence || source.fetch('source_reference'),
-      excerpt: excerpt,
-      source_content_hash: source.fetch('content_hash'),
-      rank: rank,
-      score: nil,
-      retrieval_strategy: RETRIEVAL_STRATEGY
+      query: query,
+      status: status,
+      error_code: error_code,
+      latency_ms: nil,
+      retrieval_strategy: RETRIEVAL_STRATEGY,
+      retrieval_configuration: retrieval_configuration(limit, {}).freeze,
+      items: [].freeze
     )
   end
 
-  def manifest_entry(manifest, provider_source_id, rank)
-    source = manifest[provider_source_id]
+  def retrieval_configuration(limit, payload)
+    {
+      'endpoint' => RETRIEVAL_PATH,
+      'limit' => limit,
+      'score_threshold' => @score_threshold,
+      'provider' => payload['retrieval']
+    }.compact
+  end
+
+  def manifest_entry(manifest, provider_reference, rank)
+    source = manifest[provider_reference]
     return source if source.present?
 
     raise ResponseError, "DocsGPT result #{rank} references a source outside the knowledge-version manifest"
   end
 
   def normalize_manifest(value)
-    manifest = value.to_h.transform_keys(&:to_s).transform_values do |entry|
-      if entry.is_a?(Hash)
-        normalized = entry.deep_stringify_keys
-        normalized['content_hash'] = required_string(normalized['content_hash'], 'source content_hash')
-        normalized['source_reference'] = required_string(normalized['source_reference'], 'source source_reference')
-        normalized
-      else
-        {
-          'content_hash' => required_string(entry, 'source content_hash'),
-          'source_reference' => nil
-        }
-      end
+    value.to_h.transform_keys(&:to_s).transform_values do |entry|
+      normalized = entry.to_h.deep_stringify_keys
+      {
+        'content_hash' => required_string(normalized['content_hash'], 'source content_hash'),
+        'source_reference' => required_string(normalized['source_reference'], 'source source_reference'),
+        'source_title' => normalized['source_title'].to_s.presence,
+        'locator' => normalized['locator'].to_s.presence,
+        'authority_class' => required_string(normalized['authority_class'], 'source authority_class')
+      }
     end
-    manifest.each { |provider_source_id, entry| entry['source_reference'] ||= provider_source_id }
-    manifest
   end
 
-  def evidence_id(knowledge_version_id, provider_source_id, excerpt)
-    Digest::SHA256.hexdigest([knowledge_version_id, @provider_release, provider_source_id, excerpt].join("\0"))
+  def evidence_id(knowledge_version_id, provider_chunk_id)
+    Digest::SHA256.hexdigest([knowledge_version_id, @provider_release, @provider_source_id, provider_chunk_id].join("\0"))
   end
 
-  def search_url
-    URI.join("#{@base_url}/", SEARCH_PATH).to_s
+  def high_risk_query?(query)
+    HIGH_RISK_PATTERN.match?(query)
+  end
+
+  def numeric_score(value, rank)
+    Float(value)
+  rescue ArgumentError, TypeError
+    raise ResponseError, "DocsGPT result #{rank} is missing numeric score"
+  end
+
+  def retrieval_url
+    URI.join("#{@base_url}/", RETRIEVAL_PATH.delete_prefix('/')).to_s
   end
 
   def normalize_base_url(base_url)
@@ -158,4 +247,14 @@ class ChatRing::Knowledge::DocsGptProvider
 
     limit
   end
+
+  def unit_float(value, name)
+    result = Float(value)
+    raise ConfigurationError, "#{name} must be between 0 and 1" unless result.between?(0.0, 1.0)
+
+    result
+  rescue ArgumentError, TypeError
+    raise ConfigurationError, "#{name} must be numeric"
+  end
 end
+# rubocop:enable Metrics/ClassLength

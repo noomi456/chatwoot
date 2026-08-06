@@ -21,9 +21,11 @@ namespace :chatring do
           root_url: version.root_url,
           firecrawl_crawl_id: version.firecrawl_crawl_id,
           manifest_count: version.mapped_manifest.length,
+          accepted_manifest_count: version.mapped_manifest.count { |entry| entry['included'] },
+          excluded_manifest_count: version.mapped_manifest.count { |entry| !entry['included'] },
           document_count: version.documents.count,
           ready_document_count: version.documents.where(provider_status: 'ready').count,
-          provider_agent_id: version.provider_agent_id,
+          provider_source_ids: version.documents.distinct.pluck(:provider_source_id).compact,
           failure_code: version.failure_code,
           failure_message: version.failure_message
         }.to_json

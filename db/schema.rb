@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_08_05_000000) do
+ActiveRecord::Schema[7.1].define(version: 2026_08_05_001000) do
   # These extensions should be enabled to support this database
   enable_extension "pg_stat_statements"
   enable_extension "pg_trgm"
@@ -710,6 +710,21 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_05_000000) do
     t.check_constraint "provider_status::text = ANY (ARRAY['pending'::character varying, 'processing'::character varying, 'ready'::character varying, 'failed'::character varying]::text[])", name: "chatring_knowledge_documents_provider_status_check"
   end
 
+  create_table "chat_ring_knowledge_publication_events", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "inbox_id", null: false
+    t.bigint "from_knowledge_version_id"
+    t.bigint "to_knowledge_version_id", null: false
+    t.string "action", null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.index ["account_id"], name: "index_chat_ring_knowledge_publication_events_on_account_id"
+    t.index ["from_knowledge_version_id"], name: "index_chatring_publication_events_on_from_version"
+    t.index ["inbox_id"], name: "index_chat_ring_knowledge_publication_events_on_inbox_id"
+    t.index ["to_knowledge_version_id"], name: "index_chatring_publication_events_on_to_version"
+    t.check_constraint "action::text = ANY (ARRAY['publish'::character varying, 'rollback'::character varying]::text[])", name: "chatring_knowledge_publication_events_action_check"
+  end
+
   create_table "chat_ring_knowledge_publications", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "inbox_id", null: false
@@ -747,10 +762,13 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_05_000000) do
     t.datetime "published_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "processing_lease_token"
+    t.datetime "processing_lease_expires_at"
     t.index ["account_id", "inbox_id", "created_at"], name: "index_chatring_knowledge_versions_on_scope_and_created_at"
     t.index ["account_id"], name: "index_chat_ring_knowledge_versions_on_account_id"
     t.index ["firecrawl_crawl_id"], name: "index_chat_ring_knowledge_versions_on_firecrawl_crawl_id", unique: true, where: "(firecrawl_crawl_id IS NOT NULL)"
     t.index ["inbox_id"], name: "index_chat_ring_knowledge_versions_on_inbox_id"
+    t.index ["processing_lease_token"], name: "index_chat_ring_knowledge_versions_on_processing_lease_token", unique: true, where: "(processing_lease_token IS NOT NULL)"
     t.check_constraint "status::text = ANY (ARRAY['pending'::character varying, 'crawling'::character varying, 'ingesting'::character varying, 'ready'::character varying, 'published'::character varying, 'retired'::character varying, 'failed'::character varying]::text[])", name: "chatring_knowledge_versions_status_check"
   end
 
@@ -1565,6 +1583,10 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_05_000000) do
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
   add_foreign_key "chat_ring_knowledge_documents", "chat_ring_knowledge_versions", column: "knowledge_version_id"
+  add_foreign_key "chat_ring_knowledge_publication_events", "accounts"
+  add_foreign_key "chat_ring_knowledge_publication_events", "chat_ring_knowledge_versions", column: "from_knowledge_version_id"
+  add_foreign_key "chat_ring_knowledge_publication_events", "inboxes"
+  add_foreign_key "chat_ring_knowledge_publication_events", "chat_ring_knowledge_versions", column: "to_knowledge_version_id"
   add_foreign_key "chat_ring_knowledge_publications", "accounts"
   add_foreign_key "chat_ring_knowledge_publications", "chat_ring_knowledge_versions", column: "knowledge_version_id"
   add_foreign_key "chat_ring_knowledge_publications", "chat_ring_knowledge_versions", column: "previous_knowledge_version_id"

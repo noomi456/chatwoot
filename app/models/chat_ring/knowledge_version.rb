@@ -9,6 +9,11 @@ class ChatRing::KnowledgeVersion < ApplicationRecord
            class_name: 'ChatRing::KnowledgeDocument',
            inverse_of: :knowledge_version,
            dependent: :destroy
+  has_many :publication_events,
+           class_name: 'ChatRing::KnowledgePublicationEvent',
+           foreign_key: :to_knowledge_version_id,
+           inverse_of: :to_knowledge_version,
+           dependent: :restrict_with_exception
 
   encrypts :provider_agent_api_key
 

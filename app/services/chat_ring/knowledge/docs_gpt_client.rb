@@ -1,10 +1,13 @@
 require 'faraday'
+require 'digest'
 require 'securerandom'
+require 'set'
 require 'uri'
 
 class ChatRing::Knowledge::DocsGptClient
   USER_ID = 'local'.freeze
   DEFAULT_CHUNKS = 5
+  MAX_CHUNK_PAGES = 1000
   SOURCE_CONFIG = {
     kind: 'classic',
     chunking: {
@@ -26,9 +29,14 @@ class ChatRing::Knowledge::DocsGptClient
   class RequestError < Error; end
   class ResponseError < Error; end
 
-  def initialize(base_url:, timeout_seconds: 60)
+  def initialize(base_url:, jwt_secret:, internal_key:, service_secret:, timeout_seconds: 60)
     @base_url = normalize_base_url(base_url)
     @timeout_seconds = Integer(timeout_seconds)
+    @auth = ChatRing::Knowledge::DocsGptAuth.new(
+      jwt_secret: jwt_secret,
+      internal_key: internal_key,
+      service_secret: service_secret
+    )
   end
 
   def upload_version(version)
@@ -37,6 +45,7 @@ class ChatRing::Knowledge::DocsGptClient
 
     boundary = "----ChatRingKnowledge#{SecureRandom.hex(16)}"
     response = json_connection.post('/api/upload') do |request|
+      request.headers.update(@auth.user_headers)
       request.headers['Content-Type'] = "multipart/form-data; boundary=#{boundary}"
       request.headers['Idempotency-Key'] = "chatring-knowledge-version-#{version.id}-#{version.manifest_digest}"
       request.body = multipart_body(boundary, version, documents)
@@ -51,7 +60,9 @@ class ChatRing::Knowledge::DocsGptClient
   end
 
   def task_status(task_id)
-    response = json_connection.get('/api/task_status', task_id: task_id)
+    response = json_connection.get('/api/task_status', task_id: task_id) do |request|
+      request.headers.update(@auth.user_headers)
+    end
     parse_response(response, expected_statuses: [200])
   rescue Faraday::Error => e
     raise RequestError, "DocsGPT request failed: #{e.class.name}"
@@ -60,10 +71,19 @@ class ChatRing::Knowledge::DocsGptClient
   def chunks(source_id)
     page = 1
     all_chunks = []
+    page_fingerprints = Set.new
     loop do
-      response = json_connection.get('/api/get_chunks', id: source_id, page: page, per_page: 100)
+      raise ResponseError, "DocsGPT chunk pagination exceeded #{MAX_CHUNK_PAGES} pages" if page > MAX_CHUNK_PAGES
+
+      response = json_connection.get('/api/get_chunks', id: source_id, page: page, per_page: 100) do |request|
+        request.headers.update(@auth.user_headers)
+      end
       parsed = parse_response(response, expected_statuses: [200])
       chunks = Array(parsed['chunks'])
+      fingerprint = Digest::SHA256.hexdigest(chunks.to_json)
+      raise ResponseError, 'DocsGPT chunk pagination repeated a page' if chunks.any? && page_fingerprints.include?(fingerprint)
+
+      page_fingerprints << fingerprint
       all_chunks.concat(chunks)
       break if all_chunks.length >= parsed.fetch('total', all_chunks.length).to_i || chunks.empty?
 
@@ -74,34 +94,10 @@ class ChatRing::Knowledge::DocsGptClient
     raise RequestError, "DocsGPT request failed: #{e.class.name}"
   end
 
-  def create_agent(version) # rubocop:disable Metrics/MethodLength
-    source_ids = version.documents.order(:id).pluck(:provider_source_id).compact_blank.uniq
-    raise ResponseError, 'DocsGPT agent requires at least one ingested source' if source_ids.empty? || source_ids.any?(&:blank?)
-
-    response = json_connection.post('/api/create_agent') do |request|
-      request.headers['Content-Type'] = 'application/json'
-      request.body = {
-        name: "ChatRing Knowledge Version #{version.id}",
-        description: "ChatRing published evidence corpus #{version.id}",
-        sources: source_ids,
-        chunks: DEFAULT_CHUNKS,
-        retriever: 'classic',
-        prompt_id: 'default',
-        agent_type: 'classic',
-        status: 'published'
-      }.to_json
-    end
-    parsed = parse_response(response, expected_statuses: [201])
-    {
-      id: required_value(parsed['id'], 'DocsGPT create-agent response is missing id'),
-      key: required_value(parsed['key'], 'DocsGPT create-agent response is missing key')
-    }
-  rescue Faraday::Error => e
-    raise RequestError, "DocsGPT request failed: #{e.class.name}"
-  end
-
   def healthy?
-    response = json_connection.get('/api/health')
+    response = json_connection.get('/api/health') do |request|
+      request.headers.update(@auth.user_headers)
+    end
     response.status == 200 && JSON.parse(response.body)['status'] == 'ok'
   rescue JSON::ParserError, Faraday::Error
     false

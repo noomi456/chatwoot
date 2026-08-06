@@ -11,29 +11,32 @@ RSpec.describe ChatRing::Knowledge::PublicationService do
       root_url: 'https://example.com/'
     }
   end
+  let(:validator) { class_double(ChatRing::Knowledge::ProviderValidator, validate!: true) }
 
   it 'atomically switches the inbox pointer and preserves the previous version for rollback' do
     first = ChatRing::KnowledgeVersion.create!(**attributes, status: 'ready')
     second = ChatRing::KnowledgeVersion.create!(**attributes, status: 'ready')
 
-    described_class.publish!(first)
-    publication = described_class.publish!(second)
+    described_class.publish!(first, validator: validator)
+    publication = described_class.publish!(second, validator: validator)
 
     expect(publication.reload.knowledge_version).to eq(second)
     expect(publication.previous_knowledge_version).to eq(first)
     expect(first.reload.status).to eq('retired')
     expect(second.reload.status).to eq('published')
 
-    rolled_back = described_class.rollback!(account: account, inbox: inbox)
+    rolled_back = described_class.rollback!(account: account, inbox: inbox, validator: validator)
     expect(rolled_back.knowledge_version).to eq(first)
     expect(first.reload.status).to eq('published')
     expect(second.reload.status).to eq('retired')
+    expect(rolled_back.previous_knowledge_version).to be_nil
+    expect(ChatRing::KnowledgePublicationEvent.order(:id).pluck(:action)).to eq(%w[publish publish rollback])
   end
 
   it 'refuses to publish a partial or failed version' do
     version = ChatRing::KnowledgeVersion.create!(**attributes, status: 'ingesting')
 
-    expect { described_class.publish!(version) }.to raise_error(
+    expect { described_class.publish!(version, validator: validator) }.to raise_error(
       described_class::Error,
       /not eligible/
     )

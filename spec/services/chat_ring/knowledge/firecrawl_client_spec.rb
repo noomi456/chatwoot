@@ -41,6 +41,19 @@ RSpec.describe ChatRing::Knowledge::FirecrawlClient do
     expect(WebMock).to request_matcher
   end
 
+  it 'fails rather than publishing a potentially truncated map' do
+    stub_request(:post, 'https://api.firecrawl.dev/v2/map').to_return(
+      status: 200,
+      headers: { 'Content-Type' => 'application/json' },
+      body: { success: true, links: [{ url: 'https://example.com/' }, { url: 'https://example.com/docs' }] }.to_json
+    )
+
+    expect { client.map(url: 'https://example.com/', limit: 2) }.to raise_error(
+      described_class::ResponseError,
+      /completeness is unknown/
+    )
+  end
+
   it 'collects every completed batch page from the configured Firecrawl origin' do
     stub_request(:get, 'https://api.firecrawl.dev/v2/batch/scrape/batch-123').to_return(
       status: 200,

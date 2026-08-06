@@ -4,12 +4,16 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
   subject(:provider) do
     described_class.new(
       base_url: 'http://docsgpt.internal:7091',
-      agent_api_key: 'agent-secret',
-      provider_release: '616e6fe9c435bbc6bb472636db6b3ee2b9bcaf66'
+      provider_release: '616e6fe9c435bbc6bb472636db6b3ee2b9bcaf66',
+      provider_source_id: 'source-uuid',
+      account_id: '42',
+      internal_key: 'internal-secret',
+      service_secret: 'service-secret',
+      score_threshold: 0.62
     )
   end
 
-  let(:search_url) { 'http://docsgpt.internal:7091/api/search' }
+  let(:retrieval_url) { 'http://docsgpt.internal:7091/api/internal/chatring/retrieve' }
   let(:provider_source_reference) { '/app/inputs/001-pricing.md' }
   let(:source_reference) { 'https://example.com/pricing' }
   let(:source_hash) { 'sha256:pricing-v1' }
@@ -19,22 +23,38 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
         content_hash: source_hash,
         source_reference: source_reference,
         source_title: 'Canonical pricing page',
-        locator: 'Pricing > Pro'
+        locator: 'Pricing > Pro',
+        authority_class: 'structured_commercial'
       }
     }
   end
 
-  it 'maps documented DocsGPT search results into version-bound evidence' do
-    stub_request(:post, search_url).to_return(
+  def accepted_payload(authority_text: 'The Pro plan costs $49 per month.', score: 0.81)
+    {
+      status: 'accepted',
+      source_id: 'source-uuid',
+      latency_ms: 17,
+      retrieval: { retriever: 'classic', score_threshold: 0.62 },
+      chunks: [
+        {
+          rank: 1,
+          chunk_id: '918',
+          text: authority_text,
+          title: 'Pricing',
+          source: provider_source_reference,
+          score: score,
+          score_kind: 'cosine_similarity',
+          metadata: { chatring_heading_path: 'Pricing > Pro' }
+        }
+      ]
+    }
+  end
+
+  it 'returns scored, version-bound source evidence through the private Dispatcher endpoint' do
+    stub_request(:post, retrieval_url).to_return(
       status: 200,
       headers: { 'Content-Type' => 'application/json' },
-      body: [
-        {
-          text: 'The Pro plan costs $49 per month.',
-          title: 'Pricing',
-          source: provider_source_reference
-        }
-      ].to_json
+      body: accepted_payload.to_json
     )
 
     evidence_set = provider.retrieve(
@@ -46,51 +66,87 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
 
     expect(evidence_set.to_h).to include(
       knowledge_version_id: 'knowledge-v1',
-      provider: 'docs_gpt',
-      provider_release: '616e6fe9c435bbc6bb472636db6b3ee2b9bcaf66',
-      query: 'How much is Pro?',
-      retrieval_strategy: 'docs_gpt_api_search',
-      retrieval_configuration: { 'endpoint' => '/api/search', 'limit' => 4 }
+      status: 'accepted',
+      error_code: nil,
+      latency_ms: 17,
+      retrieval_strategy: 'docs_gpt_dispatcher_classic_cosine'
     )
-    expect(evidence_set.items.size).to eq(1)
     expect(evidence_set.items.first.to_h).to include(
-      knowledge_version_id: 'knowledge-v1',
-      provider_source_id: provider_source_reference,
+      provider_source_id: 'source-uuid',
+      provider_chunk_id: '918',
       source_reference: source_reference,
-      source_title: 'Canonical pricing page',
       locator: 'Pricing > Pro',
-      excerpt: 'The Pro plan costs $49 per month.',
+      authority_class: 'structured_commercial',
       source_content_hash: source_hash,
-      rank: 1,
-      score: nil
+      score: 0.81,
+      score_kind: 'cosine_similarity'
     )
     expect(evidence_set.items.first.id).to match(/\A[0-9a-f]{64}\z/)
-    expect(evidence_set.items).to be_frozen
-    expect(evidence_set.retrieval_configuration).to be_frozen
-
-    expect(WebMock).to have_requested(:post, search_url).with(
-      headers: { 'Accept' => 'application/json', 'Content-Type' => 'application/json' },
-      body: { question: 'How much is Pro?', api_key: 'agent-secret', chunks: 4 }.to_json
-    ).once
+    expect(WebMock).to have_requested(:post, retrieval_url).with do |request|
+      body = JSON.parse(request.body)
+      request.headers['X-Internal-Key'] == 'internal-secret' &&
+        request.headers['X-ChatRing-Account'] == '42' &&
+        request.headers['X-ChatRing-Knowledge-Version'] == 'knowledge-v1' &&
+        request.headers['X-ChatRing-Signature'].match?(/\A[0-9a-f]{64}\z/) &&
+        body == { 'query' => 'How much is Pro?', 'source_id' => 'source-uuid', 'limit' => 4, 'score_threshold' => 0.62 }
+    end
   end
 
-  it 'returns an empty evidence set when DocsGPT finds no supporting chunks' do
-    stub_request(:post, search_url).to_return(status: 200, headers: { 'Content-Type' => 'application/json' }, body: '[]')
+  it 'returns a real insufficient-evidence result rather than forced top-k passages' do
+    stub_request(:post, retrieval_url).to_return(
+      status: 200,
+      headers: { 'Content-Type' => 'application/json' },
+      body: { status: 'insufficient_evidence', source_id: 'source-uuid', chunks: [] }.to_json
+    )
 
-    evidence_set = provider.retrieve(
-      query: 'Unsupported question',
+    result = provider.retrieve(
+      query: 'What is the capital of France?',
       knowledge_version_id: 'knowledge-v1',
       source_manifest: source_manifest
     )
 
-    expect(evidence_set.items).to be_empty
+    expect(result.status).to eq('insufficient_evidence')
+    expect(result.items).to be_empty
   end
 
-  it 'rejects evidence that is not bound to the selected knowledge-version manifest' do
-    stub_request(:post, search_url).to_return(
+  it 'does not accept compliance claims from marketing pages' do
+    marketing_manifest = source_manifest.deep_dup
+    marketing_manifest[provider_source_reference][:authority_class] = 'marketing'
+    stub_request(:post, retrieval_url).to_return(
       status: 200,
       headers: { 'Content-Type' => 'application/json' },
-      body: [{ text: 'Unknown content', title: 'Unknown', source: 'unpublished-source' }].to_json
+      body: accepted_payload(authority_text: 'We are SOC 2 compliant.').to_json
+    )
+
+    result = provider.retrieve(
+      query: 'Is ChatRing SOC2 compliant?',
+      knowledge_version_id: 'knowledge-v1',
+      source_manifest: marketing_manifest
+    )
+
+    expect(result.status).to eq('insufficient_evidence')
+    expect(result.items).to be_empty
+  end
+
+  it 'rejects unscored provider results' do
+    stub_request(:post, retrieval_url).to_return(
+      status: 200,
+      headers: { 'Content-Type' => 'application/json' },
+      body: accepted_payload(score: nil).to_json
+    )
+
+    expect do
+      provider.retrieve(query: 'Question', knowledge_version_id: 'knowledge-v1', source_manifest: source_manifest)
+    end.to raise_error(described_class::ResponseError, /missing numeric score/)
+  end
+
+  it 'rejects evidence outside the selected version manifest' do
+    payload = accepted_payload
+    payload[:chunks][0][:source] = 'unpublished-source'
+    stub_request(:post, retrieval_url).to_return(
+      status: 200,
+      headers: { 'Content-Type' => 'application/json' },
+      body: payload.to_json
     )
 
     expect do
@@ -98,23 +154,15 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
     end.to raise_error(described_class::ResponseError, /outside the knowledge-version manifest/)
   end
 
-  it 'fails closed when the provider response does not match the documented result shape' do
-    stub_request(:post, search_url).to_return(
-      status: 200,
+  it 'keeps provider failure distinct from insufficient evidence' do
+    stub_request(:post, retrieval_url).to_return(
+      status: 503,
       headers: { 'Content-Type' => 'application/json' },
-      body: { results: [] }.to_json
+      body: { status: 'provider_error' }.to_json
     )
 
-    expect do
-      provider.retrieve(query: 'Question', knowledge_version_id: 'knowledge-v1', source_manifest: source_manifest)
-    end.to raise_error(described_class::ResponseError, /must be an array/)
-  end
-
-  it 'reports the provider status without including its response body or API key' do
-    stub_request(:post, search_url).to_return(status: 401, body: { error: 'Invalid API key agent-secret' }.to_json)
-
-    expect do
-      provider.retrieve(query: 'Question', knowledge_version_id: 'knowledge-v1', source_manifest: source_manifest)
-    end.to raise_error(described_class::RequestError, 'DocsGPT retrieval failed with HTTP 401')
+    result = provider.retrieve(query: 'Question', knowledge_version_id: 'knowledge-v1', source_manifest: source_manifest)
+    expect(result.status).to eq('provider_error')
+    expect(result.error_code).to eq('provider_error')
   end
 end

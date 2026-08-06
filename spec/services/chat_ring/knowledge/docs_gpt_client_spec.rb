@@ -1,7 +1,14 @@
 require 'rails_helper'
 
 RSpec.describe ChatRing::Knowledge::DocsGptClient do
-  subject(:client) { described_class.new(base_url: 'http://docsgpt.internal:7091') }
+  subject(:client) do
+    described_class.new(
+      base_url: 'http://docsgpt.internal:7091',
+      jwt_secret: 'jwt-secret',
+      internal_key: 'internal-key',
+      service_secret: 'service-secret'
+    )
+  end
 
   it 'uploads a complete website snapshot as one idempotent multi-file source' do
     documents = [
@@ -26,6 +33,7 @@ RSpec.describe ChatRing::Knowledge::DocsGptClient do
     expect(client.upload_version(version)).to eq(task_id: 'task-1', source_id: 'source-1')
     request_matcher = have_requested(:post, 'http://docsgpt.internal:7091/api/upload').with do |request|
       expect(request.headers['Idempotency-Key']).to eq('chatring-knowledge-version-17-manifest-sha256')
+      expect(request.headers['Authorization']).to match(/\ABearer /)
       expect(request.body.scan('name="file"').length).to eq(2)
       expect(request.body).to include('filename="home.md"', 'filename="pricing.md"', '# Home', '# Pricing')
     end

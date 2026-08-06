@@ -4,7 +4,8 @@ require 'uri'
 
 class ChatRing::Knowledge::FirecrawlClient
   DEFAULT_BASE_URL = 'https://api.firecrawl.dev'.freeze
-  MAX_URLS = 100
+  DEFAULT_MAP_LIMIT = 5000
+  MAX_URLS = 100_000
 
   class Error < StandardError; end
   class ConfigurationError < Error; end
@@ -17,7 +18,7 @@ class ChatRing::Knowledge::FirecrawlClient
     @timeout_seconds = Integer(timeout_seconds)
   end
 
-  def map(url:, limit: MAX_URLS) # rubocop:disable Metrics/CyclomaticComplexity
+  def map(url:, limit: DEFAULT_MAP_LIMIT) # rubocop:disable Metrics/CyclomaticComplexity
     root_url = canonical_url(url)
     resolved_limit = bounded_limit(limit)
     payload = request_json(
@@ -32,14 +33,18 @@ class ChatRing::Knowledge::FirecrawlClient
     )
     links = payload.fetch('links') { raise ResponseError, 'Firecrawl map response is missing links' }
     raise ResponseError, 'Firecrawl map links must be an array' unless links.is_a?(Array)
+    if links.length >= resolved_limit
+      raise ResponseError, "Firecrawl map reached the configured ceiling of #{resolved_limit} URLs; completeness is unknown"
+    end
 
     normalized = links.filter_map { |entry| normalize_map_entry(entry) }
     normalized << { 'url' => root_url } unless normalized.any? { |entry| entry['url'] == root_url }
-    normalized.uniq { |entry| entry['url'] }.sort_by { |entry| entry['url'] }.first(resolved_limit)
+    normalized.uniq { |entry| entry['url'] }.sort_by { |entry| entry['url'] }
   end
 
   def start_batch_scrape(urls:)
     normalized_urls = Array(urls).map { |url| canonical_url(url) }.uniq
+    raise ConfigurationError, 'urls must contain at least one URL' if normalized_urls.empty?
     bounded_limit(normalized_urls.length)
     payload = request_json(
       :post,
