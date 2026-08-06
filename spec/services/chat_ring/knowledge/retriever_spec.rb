@@ -22,7 +22,13 @@ RSpec.describe ChatRing::Knowledge::Retriever do
       provider_source_id: "source-#{version.id}",
       provider_source_reference: "/inputs/#{version.id}-example.md",
       provider_status: 'ready',
-      metadata: { 'authority_class' => 'approved_product' }
+      metadata: {
+        'authority_class' => 'approved_product',
+        'headings' => [{ 'level' => 1, 'text' => 'Example', 'path' => 'Example' }],
+        'cta_candidates' => [
+          { 'label' => 'Book a Demo', 'url' => 'https://example.com/#book-demo', 'heading_path' => 'Example', 'external' => false }
+        ]
+      }
     )
     version
   end
@@ -54,6 +60,14 @@ RSpec.describe ChatRing::Knowledge::Retriever do
       knowledge_version_id: first.id.to_s,
       source_manifest: described_class.source_manifest(first),
       limit: 5
+    )
+    manifest_entry = described_class.source_manifest(first).fetch(first.documents.first.provider_source_reference)
+    expect(manifest_entry).to include(
+      'source_reference' => 'https://example.com/',
+      'headings' => [{ 'level' => 1, 'text' => 'Example', 'path' => 'Example' }],
+      'cta_candidates' => [
+        { 'label' => 'Book a Demo', 'url' => 'https://example.com/#book-demo', 'heading_path' => 'Example', 'external' => false }
+      ]
     )
   end
 

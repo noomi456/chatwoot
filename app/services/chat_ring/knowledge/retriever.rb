@@ -55,7 +55,9 @@ class ChatRing::Knowledge::Retriever
         'source_reference' => document.source_url,
         'source_title' => document.title,
         'locator' => document.source_url,
-        'authority_class' => document.metadata['authority_class'].presence || 'unclassified_legacy'
+        'authority_class' => document.metadata['authority_class'].presence || 'unclassified_legacy',
+        'headings' => document.metadata['headings'] || [],
+        'cta_candidates' => document.metadata['cta_candidates'] || []
       }
     end
   end

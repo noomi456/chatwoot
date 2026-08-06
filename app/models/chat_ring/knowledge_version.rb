@@ -17,6 +17,10 @@ class ChatRing::KnowledgeVersion < ApplicationRecord
            foreign_key: :to_knowledge_version_id,
            inverse_of: :to_knowledge_version,
            dependent: :restrict_with_exception
+  has_one :provider_cleanup,
+          class_name: 'ChatRing::KnowledgeProviderCleanup',
+          inverse_of: :knowledge_version,
+          dependent: :restrict_with_exception
 
   encrypts :provider_agent_api_key
 

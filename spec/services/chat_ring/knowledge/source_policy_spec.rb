@@ -53,6 +53,7 @@ RSpec.describe ChatRing::Knowledge::SourcePolicy do
       'The bot promises a fictional capability.',
       '## Verified capability',
       'This product capability is supported by the page.',
+      '[Book a Demo](/contact#book-demo)',
       'We use cookies to run the site, improve performance, and remember your choices. You can change settings any time.'
     ].join("\n")
     expect(manifest.find { |entry| entry['url'].end_with?('/help/start') }).to include(
@@ -72,6 +73,19 @@ RSpec.describe ChatRing::Knowledge::SourcePolicy do
     expect(result.first[:markdown]).not_to include('We use cookies')
     expect(result.first[:markdown]).not_to include('fictional capability')
     expect(result.first[:markdown]).to include('## Verified capability')
+    expect(result.first.dig(:metadata, 'headings')).to include(
+      'level' => 2,
+      'text' => 'Verified capability',
+      'path' => 'Start > Verified capability'
+    )
+    expect(result.first.dig(:metadata, 'cta_candidates')).to contain_exactly(
+      {
+        'label' => 'Book a Demo',
+        'url' => 'https://example.com/contact#book-demo',
+        'heading_path' => 'Start > Verified capability',
+        'external' => false
+      }
+    )
   end
 
   it 'removes standalone fictional customer names from accepted source text' do

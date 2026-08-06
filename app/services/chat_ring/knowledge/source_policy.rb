@@ -2,7 +2,7 @@ require 'digest'
 require 'uri'
 
 class ChatRing::Knowledge::SourcePolicy
-  VERSION = 2
+  VERSION = 3
   MAX_CORPUS_BYTES = 50.megabytes
   MIN_MEANINGFUL_CHARACTERS = 80
   EXCLUDED_PATHS = %r{\A/(?:
@@ -95,6 +95,7 @@ class ChatRing::Knowledge::SourcePolicy
     raise PageQualityError, "Firecrawl page #{source_url} has unsupported language #{language}" if language.present? && language != 'en'
 
     markdown = clean_markdown(record['markdown'])
+    structure = ChatRing::Knowledge::MarkdownStructure.new(markdown: markdown, source_url: source_url).call
     title = metadata['title'].to_s.strip
     if markdown.length < MIN_MEANINGFUL_CHARACTERS || SOFT_404.match?(title) || SOFT_404.match?(markdown.first(500))
       raise PageQualityError, "Firecrawl page #{source_url} failed the meaningful-content gate"
@@ -108,7 +109,9 @@ class ChatRing::Knowledge::SourcePolicy
       content_hash: Digest::SHA256.hexdigest(markdown),
       provider_file_name: "#{Digest::SHA256.hexdigest(source_url).first(24)}.md",
       metadata: metadata.slice('title', 'description', 'language', 'statusCode', 'sourceURL', 'contentType').merge(
-        'authority_class' => manifest_entry.fetch('authority_class')
+        'authority_class' => manifest_entry.fetch('authority_class'),
+        'headings' => structure.fetch('headings'),
+        'cta_candidates' => structure.fetch('cta_candidates')
       )
     }
   end

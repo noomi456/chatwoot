@@ -24,8 +24,9 @@ from application.parser.chunking_strategies import MarkdownChunker
 from application.parser.schema.base import Document
 from application.retriever.dispatcher import Dispatcher
 from application.storage.db.repositories.sources import SourcesRepository
-from application.storage.db.session import db_readonly
+from application.storage.db.session import db_readonly, db_session
 from application.storage.db.source_config import RetrievalConfig
+from application.storage.storage_creator import StorageCreator
 from application.vectorstore.pgvector import PGVectorStore
 from application.vectorstore.vector_creator import VectorCreator
 
@@ -127,6 +128,27 @@ def _verify_source_binding(
         raise PermissionError("source is outside the signed ChatRing scope")
 
 
+def _delete_source(source: dict[str, Any]) -> None:
+    source_id = str(source["id"])
+    store = VectorCreator.create_vectorstore(settings.VECTOR_STORE, source_id)
+    store.delete_index()
+
+    file_path = source.get("file_path")
+    if file_path:
+        storage = StorageCreator.get_storage()
+        try:
+            if storage.is_directory(file_path):
+                for path in storage.list_files(file_path):
+                    storage.delete_file(path)
+            else:
+                storage.delete_file(file_path)
+        except FileNotFoundError:
+            pass
+
+    with db_session() as connection:
+        SourcesRepository(connection).delete(source_id, "local")
+
+
 def _strict_pgvector_search(self, question, k=2, *args, score_threshold=None, **kwargs):
     """PGVector scored search that propagates failures on the ChatRing image."""
     query_vector = self._embedding.embed_query(question)
@@ -196,7 +218,7 @@ def _chatring_markdown_chunk(self: MarkdownChunker, documents: list[Document]):
     """Preserve heading path and stable chunk provenance during ingestion."""
     processed = []
     for document in documents:
-        headings: list[str] = []
+        headings: list[tuple[int, str]] = []
         sections: list[tuple[list[str], str]] = []
         current: list[str] = []
         current_path: list[str] = []
@@ -206,9 +228,9 @@ def _chatring_markdown_chunk(self: MarkdownChunker, documents: list[Document]):
                 if "".join(current).strip():
                     sections.append((current_path, "".join(current)))
                 level = len(match.group(1))
-                headings = headings[: level - 1]
-                headings.append(match.group(2).strip())
-                current_path = list(headings)
+                headings = [entry for entry in headings if entry[0] < level]
+                headings.append((level, match.group(2).strip()))
+                current_path = [entry[1] for entry in headings]
                 current = [line]
             else:
                 current.append(line)
@@ -366,6 +388,35 @@ def register_chat_ring_routes(blueprint):
             ),
             200,
         )
+
+    @blueprint.route("/api/internal/chatring/delete-source", methods=["POST"])
+    def chatring_delete_source():
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return jsonify({"status": "invalid_request"}), 400
+        source_id = str(body.get("source_id") or "").strip()
+        try:
+            account_id, version_id, binding_digest = _verify_scope(
+                "delete_source", source_id
+            )
+        except PermissionError:
+            return jsonify({"status": "forbidden"}), 403
+        except ChatRingProviderError:
+            return jsonify({"status": "provider_error"}), 503
+        if not source_id:
+            return jsonify({"status": "invalid_request"}), 400
+        source = _source(source_id)
+        if source is None:
+            return jsonify({"status": "already_absent", "source_id": source_id}), 200
+        try:
+            _verify_source_binding(source, account_id, version_id, binding_digest)
+            _delete_source(source)
+        except PermissionError:
+            return jsonify({"status": "forbidden"}), 403
+        except Exception:
+            logger.exception("ChatRing DocsGPT source cleanup failed")
+            return jsonify({"status": "provider_error"}), 503
+        return jsonify({"status": "deleted", "source_id": source_id}), 200
 
 
 PGVectorStore.search_with_scores = _strict_pgvector_search

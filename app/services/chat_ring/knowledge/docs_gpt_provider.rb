@@ -131,6 +131,9 @@ class ChatRing::Knowledge::DocsGptProvider
       provider_chunk_id: provider_chunk_id,
       source_reference: source.fetch('source_reference'),
       source_title: title,
+      heading_path: heading_path,
+      page_headings: source.fetch('headings'),
+      cta_candidates: contextual_cta_candidates(source.fetch('cta_candidates'), heading_path),
       locator: heading_path || source['locator'].presence || source.fetch('source_reference'),
       authority_class: authority,
       excerpt: excerpt,
@@ -198,9 +201,43 @@ class ChatRing::Knowledge::DocsGptProvider
         'source_reference' => required_string(normalized['source_reference'], 'source source_reference'),
         'source_title' => normalized['source_title'].to_s.presence,
         'locator' => normalized['locator'].to_s.presence,
-        'authority_class' => required_string(normalized['authority_class'], 'source authority_class')
+        'authority_class' => required_string(normalized['authority_class'], 'source authority_class'),
+        'headings' => normalize_headings(normalized['headings']),
+        'cta_candidates' => normalize_cta_candidates(normalized['cta_candidates'])
       }
     end
+  end
+
+  def normalize_headings(value)
+    Array(value).map do |entry|
+      normalized = entry.to_h.deep_stringify_keys
+      level = Integer(normalized.fetch('level'))
+      raise ConfigurationError, 'source heading level must be between 1 and 6' unless level.between?(1, 6)
+
+      ChatRing::Knowledge::SourceHeading.new(
+        level: level,
+        text: required_string(normalized['text'], 'heading text'),
+        path: required_string(normalized['path'], 'heading path')
+      )
+    end.freeze
+  rescue KeyError, ArgumentError, TypeError
+    raise ConfigurationError, 'source headings are invalid'
+  end
+
+  def normalize_cta_candidates(value)
+    Array(value).map do |entry|
+      normalized = entry.to_h.deep_stringify_keys
+      ChatRing::Knowledge::CtaCandidate.new(
+        label: required_string(normalized['label'], 'CTA label'),
+        url: required_http_url(normalized['url'], 'CTA url'),
+        heading_path: normalized['heading_path'].to_s.presence,
+        external: ActiveModel::Type::Boolean.new.cast(normalized['external'])
+      )
+    end.freeze
+  end
+
+  def contextual_cta_candidates(candidates, heading_path)
+    candidates.sort_by { |candidate| candidate.heading_path == heading_path ? 0 : 1 }.freeze
   end
 
   def evidence_id(knowledge_version_id, provider_chunk_id)
@@ -236,6 +273,16 @@ class ChatRing::Knowledge::DocsGptProvider
     value.delete_suffix('/')
   rescue URI::InvalidURIError
     raise ConfigurationError, 'base_url is invalid'
+  end
+
+  def required_http_url(value, name)
+    url = required_string(value, name)
+    uri = URI.parse(url)
+    raise ConfigurationError, "#{name} must use http or https" unless uri.is_a?(URI::HTTP) && uri.host.present? && uri.userinfo.blank?
+
+    url
+  rescue URI::InvalidURIError
+    raise ConfigurationError, "#{name} is invalid"
   end
 
   def required_string(value, name)

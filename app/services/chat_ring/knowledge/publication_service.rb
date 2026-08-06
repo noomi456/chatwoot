@@ -4,7 +4,7 @@ class ChatRing::Knowledge::PublicationService
   def self.publish!(version, validator: ChatRing::Knowledge::ProviderValidator) # rubocop:disable Metrics/MethodLength
     ensure_publishable!(version)
     validator.validate!(version)
-    ChatRing::KnowledgePublication.transaction do
+    publication = ChatRing::KnowledgePublication.transaction do
       Inbox.lock.find(version.inbox_id)
       version.lock!
       ensure_publishable!(version)
@@ -26,6 +26,8 @@ class ChatRing::Knowledge::PublicationService
       end
       publication
     end
+    schedule_cleanup(publication)
+    publication
   end
 
   def self.rollback!(account:, inbox:, validator: ChatRing::Knowledge::ProviderValidator) # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
@@ -35,7 +37,7 @@ class ChatRing::Knowledge::PublicationService
 
     ensure_evaluated!(target, message: 'Rollback target has not passed the current retrieval evaluation')
     validator.validate!(target)
-    ChatRing::KnowledgePublication.transaction do
+    publication = ChatRing::KnowledgePublication.transaction do
       Inbox.lock.find(inbox.id)
       publication = ChatRing::KnowledgePublication.lock.find_by!(account: account, inbox: inbox)
       previous = publication.previous_knowledge_version
@@ -55,6 +57,8 @@ class ChatRing::Knowledge::PublicationService
       record_event!(publication, from: current, to: previous, action: 'rollback')
       publication
     end
+    schedule_cleanup(publication)
+    publication
   end
 
   def self.record_event!(publication, from:, to:, action:)
@@ -68,6 +72,14 @@ class ChatRing::Knowledge::PublicationService
     )
   end
   private_class_method :record_event!
+
+  def self.schedule_cleanup(publication)
+    ChatRing::Knowledge::ProviderCleanupScheduler.schedule_eligible!(
+      account: publication.account,
+      inbox: publication.inbox
+    )
+  end
+  private_class_method :schedule_cleanup
 
   def self.ensure_publishable!(version)
     raise Error, "Knowledge version #{version.id} is not eligible for publication" unless %w[ready retired published].include?(version.status)

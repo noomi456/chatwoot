@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_08_05_001000) do
+ActiveRecord::Schema[7.1].define(version: 2026_08_06_000000) do
   # These extensions should be enabled to support this database
   enable_extension "pg_stat_statements"
   enable_extension "pg_trgm"
@@ -708,6 +708,21 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_05_001000) do
     t.index ["knowledge_version_id", "source_url"], name: "index_chatring_knowledge_documents_on_version_and_url", unique: true
     t.index ["knowledge_version_id"], name: "index_chatring_knowledge_documents_on_version_id"
     t.check_constraint "provider_status::text = ANY (ARRAY['pending'::character varying, 'processing'::character varying, 'ready'::character varying, 'failed'::character varying]::text[])", name: "chatring_knowledge_documents_provider_status_check"
+  end
+
+  create_table "chat_ring_knowledge_provider_cleanups", force: :cascade do |t|
+    t.bigint "knowledge_version_id", null: false
+    t.string "provider_source_id", null: false
+    t.string "binding_digest", null: false
+    t.string "status", default: "pending", null: false
+    t.integer "attempts", default: 0, null: false
+    t.datetime "eligible_at", null: false
+    t.datetime "cleaned_at"
+    t.string "last_error", limit: 1000
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["knowledge_version_id"], name: "index_chatring_provider_cleanup_on_version", unique: true
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying, 'retrying'::character varying, 'succeeded'::character varying, 'cancelled'::character varying, 'failed'::character varying]::text[])", name: "chatring_knowledge_provider_cleanups_status_check"
   end
 
   create_table "chat_ring_knowledge_publication_events", force: :cascade do |t|
@@ -1587,6 +1602,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_05_001000) do
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
   add_foreign_key "chat_ring_knowledge_documents", "chat_ring_knowledge_versions", column: "knowledge_version_id"
+  add_foreign_key "chat_ring_knowledge_provider_cleanups", "chat_ring_knowledge_versions", column: "knowledge_version_id"
   add_foreign_key "chat_ring_knowledge_publication_events", "accounts"
   add_foreign_key "chat_ring_knowledge_publication_events", "chat_ring_knowledge_versions", column: "from_knowledge_version_id"
   add_foreign_key "chat_ring_knowledge_publication_events", "inboxes"

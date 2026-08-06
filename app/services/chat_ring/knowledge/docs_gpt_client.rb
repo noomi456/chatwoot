@@ -102,6 +102,29 @@ class ChatRing::Knowledge::DocsGptClient
     false
   end
 
+  def delete_source(account_id:, knowledge_version_id:, binding_digest:, source_id:)
+    body = { source_id: source_id.to_s }.to_json
+    response = json_connection.post('/api/internal/chatring/delete-source') do |request|
+      request.headers.update(
+        @auth.internal_headers(
+          body: body,
+          operation: 'delete_source',
+          source_id: source_id,
+          scope: {
+            account_id: account_id,
+            knowledge_version_id: knowledge_version_id,
+            binding_digest: binding_digest
+          }
+        )
+      )
+      request.headers['Content-Type'] = 'application/json'
+      request.body = body
+    end
+    parse_response(response, expected_statuses: [200])
+  rescue Faraday::Error => e
+    raise RequestError, "DocsGPT request failed: #{e.class.name}"
+  end
+
   private
 
   def json_connection

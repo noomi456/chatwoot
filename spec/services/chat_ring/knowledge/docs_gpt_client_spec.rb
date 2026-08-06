@@ -41,4 +41,30 @@ RSpec.describe ChatRing::Knowledge::DocsGptClient do
     end
     expect(WebMock).to request_matcher
   end
+
+  it 'deletes a provider source only through the scoped private endpoint' do
+    endpoint = 'http://docsgpt.internal:7091/api/internal/chatring/delete-source'
+    stub_request(:post, endpoint).to_return(
+      status: 200,
+      headers: { 'Content-Type' => 'application/json' },
+      body: { status: 'deleted', source_id: 'source-1' }.to_json
+    )
+
+    response = client.delete_source(
+      account_id: 42,
+      knowledge_version_id: 17,
+      binding_digest: 'a' * 64,
+      source_id: 'source-1'
+    )
+
+    expect(response).to eq('status' => 'deleted', 'source_id' => 'source-1')
+    expect(WebMock).to have_requested(:post, endpoint).with do |request|
+      headers = request.headers.transform_keys(&:downcase)
+      JSON.parse(request.body) == { 'source_id' => 'source-1' } &&
+        headers['x-chatring-account'] == '42' &&
+        headers['x-chatring-knowledge-version'] == '17' &&
+        headers['x-chatring-binding-digest'] == 'a' * 64 &&
+        headers['x-chatring-signature'].match?(/\A[0-9a-f]{64}\z/)
+    end
+  end
 end

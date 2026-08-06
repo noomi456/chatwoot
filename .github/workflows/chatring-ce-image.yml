@@ -87,13 +87,16 @@ jobs:
         run: >-
           bundle exec rspec
           spec/models/chat_ring/knowledge_document_spec.rb
+          spec/jobs/chat_ring/knowledge/provider_cleanup_job_spec.rb
           spec/services/chat_ring/knowledge/docs_gpt_client_spec.rb
           spec/services/chat_ring/knowledge/docs_gpt_provider_spec.rb
           spec/services/chat_ring/knowledge/evaluation_service_spec.rb
           spec/services/chat_ring/knowledge/firecrawl_client_spec.rb
+          spec/services/chat_ring/knowledge/markdown_structure_spec.rb
           spec/services/chat_ring/knowledge/source_policy_spec.rb
           spec/services/chat_ring/knowledge/sync_service_spec.rb
           spec/services/chat_ring/knowledge/publication_service_spec.rb
+          spec/services/chat_ring/knowledge/provider_cleanup_scheduler_spec.rb
           spec/services/chat_ring/knowledge/retriever_spec.rb
         env:
           RAILS_ENV: test
@@ -108,7 +111,9 @@ jobs:
           lib/tasks/chat_ring_knowledge.rake
           db/migrate/20260805000000_create_chat_ring_knowledge_foundation.rb
           db/migrate/20260805001000_harden_chat_ring_knowledge_lifecycle.rb
+          db/migrate/20260806000000_add_chat_ring_provider_cleanup_records.rb
           spec/models/chat_ring
+          spec/jobs/chat_ring/knowledge
           spec/services/chat_ring/knowledge
 
       - name: Validate private DocsGPT deployment contract

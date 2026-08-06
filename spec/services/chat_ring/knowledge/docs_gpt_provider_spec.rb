@@ -25,7 +25,15 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
         source_reference: source_reference,
         source_title: 'Canonical pricing page',
         locator: 'Pricing > Pro',
-        authority_class: 'structured_commercial'
+        authority_class: 'structured_commercial',
+        headings: [
+          { level: 1, text: 'Pricing', path: 'Pricing' },
+          { level: 2, text: 'Pro', path: 'Pricing > Pro' }
+        ],
+        cta_candidates: [
+          { label: 'Contact Sales', url: 'https://sales.example.net/contact', heading_path: 'Pricing', external: true },
+          { label: 'Start Trial', url: 'https://example.com/signup', heading_path: 'Pricing > Pro', external: false }
+        ]
       }
     }
   end
@@ -76,11 +84,24 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
       provider_source_id: 'source-uuid',
       provider_chunk_id: '918',
       source_reference: source_reference,
+      heading_path: 'Pricing > Pro',
       locator: 'Pricing > Pro',
       authority_class: 'structured_commercial',
       source_content_hash: source_hash,
       score: 0.81,
       score_kind: 'cosine_similarity'
+    )
+    expect(evidence_set.items.first.page_headings.map(&:to_h)).to eq(
+      [
+        { level: 1, text: 'Pricing', path: 'Pricing' },
+        { level: 2, text: 'Pro', path: 'Pricing > Pro' }
+      ]
+    )
+    expect(evidence_set.items.first.cta_candidates.map(&:to_h)).to eq(
+      [
+        { label: 'Start Trial', url: 'https://example.com/signup', heading_path: 'Pricing > Pro', external: false },
+        { label: 'Contact Sales', url: 'https://sales.example.net/contact', heading_path: 'Pricing', external: true }
+      ]
     )
     expect(evidence_set.items.first.id).to match(/\A[0-9a-f]{64}\z/)
     request_matcher = have_requested(:post, retrieval_url).with do |request|
@@ -200,5 +221,18 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
         score_threshold: 0.62
       )
     end.to raise_error(described_class::ConfigurationError, /binding_digest must be a SHA-256 digest/)
+  end
+
+  it 'rejects an unsafe CTA URL from the version manifest' do
+    unsafe_manifest = source_manifest.deep_dup
+    unsafe_manifest[provider_source_reference][:cta_candidates][0][:url] = 'javascript:alert(1)'
+
+    expect do
+      provider.retrieve(
+        query: 'Question',
+        knowledge_version_id: 'knowledge-v1',
+        source_manifest: unsafe_manifest
+      )
+    end.to raise_error(described_class::ConfigurationError, /CTA url must use http or https/)
   end
 end

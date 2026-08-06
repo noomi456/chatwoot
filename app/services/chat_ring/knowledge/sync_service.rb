@@ -61,7 +61,10 @@ class ChatRing::Knowledge::SyncService
   rescue ChatRing::Knowledge::FirecrawlClient::RequestError, ChatRing::Knowledge::DocsGptClient::RequestError
     raise
   rescue StandardError => e
-    @version.reload.fail!(code: e.class.name, message: e.message) unless @version.reload.status == 'failed'
+    unless @version.reload.status == 'failed'
+      @version.reload.fail!(code: e.class.name, message: e.message)
+      ChatRing::Knowledge::ProviderCleanupScheduler.schedule_eligible!(account: @version.account, inbox: @version.inbox)
+    end
     raise
   end
 
