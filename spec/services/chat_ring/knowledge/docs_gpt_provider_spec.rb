@@ -186,10 +186,11 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
   end
 
   it 'rejects a non-finite provider score' do
+    body = accepted_payload.to_json.sub(/"score":0\.81/, '"score":1e400')
     stub_request(:post, retrieval_url).to_return(
       status: 200,
       headers: { 'Content-Type' => 'application/json' },
-      body: accepted_payload(score: 'NaN').to_json
+      body: body
     )
 
     expect do

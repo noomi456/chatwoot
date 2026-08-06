@@ -1,6 +1,15 @@
 require 'rails_helper'
 
 RSpec.describe ChatRing::Knowledge::ProviderValidator do
+  around do |example|
+    with_modified_env(
+      DOCSGPT_BASE_URL: 'http://docsgpt.internal:7091',
+      DOCSGPT_JWT_SECRET: 'jwt-secret',
+      DOCSGPT_INTERNAL_KEY: 'internal-key',
+      DOCSGPT_SERVICE_SECRET: 'service-secret'
+    ) { example.run }
+  end
+
   let(:account) { create(:account) }
   let(:inbox) { create(:inbox, account: account) }
   let(:version) do
