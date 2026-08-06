@@ -16,9 +16,12 @@ Own the private DocsGPT API and ingestion worker used by ChatRing's versioned kn
 - Do not deploy the DocsGPT frontend or its final-answer generation path.
 - Do not expose a host port or attach the API to Dokploy/Traefik.
 - Use a dedicated PostgreSQL database and role; never use the Chatwoot application database or role.
+- Provision `CREATE EXTENSION vector` in the dedicated DocsGPT database before ingestion; the pgvector image alone does not install it per database.
 - Use dedicated Redis logical databases for Celery and cache state.
 - Store all secret values only in the deployment platform environment; the Compose file contains required-variable guards only.
+- Configure the same high-entropy `DOCSGPT_INTERNAL_KEY` for the API and worker; pinned DocsGPT denies worker index registration when it is absent.
 - Pin `DOCSGPT_IMAGE` to the verified upstream release image; do not use `latest`.
+- Preserve the one-shot root volume initializer; the pinned DocsGPT image runs as non-root UID/GID 994 and cannot write fresh root-owned named volumes otherwise.
 - Keep `VECTOR_STORE=pgvector`, local `all-mpnet-base-v2` embeddings, classic retrieval, and GraphRAG disabled.
 
 ## Verification

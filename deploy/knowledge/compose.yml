@@ -1,6 +1,18 @@
 name: chatring-knowledge
 
 services:
+  docs-gpt-volume-init:
+    image: ${DOCSGPT_IMAGE:?DOCSGPT_IMAGE is required}
+    user: "0:0"
+    network_mode: none
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - chown -R appuser:appuser /app/inputs /app/indexes /app/vectors
+    volumes: &docs-gpt-volumes
+      - docs_gpt_inputs:/app/inputs
+      - docs_gpt_indexes:/app/indexes
+      - docs_gpt_vectors:/app/vectors
+
   docs-gpt-backend:
     image: ${DOCSGPT_IMAGE:?DOCSGPT_IMAGE is required}
     restart: unless-stopped
@@ -16,15 +28,13 @@ services:
       CELERY_BROKER_URL: ${DOCSGPT_CELERY_BROKER_URL:?DOCSGPT_CELERY_BROKER_URL is required}
       CELERY_RESULT_BACKEND: ${DOCSGPT_CELERY_RESULT_BACKEND:?DOCSGPT_CELERY_RESULT_BACKEND is required}
       CACHE_REDIS_URL: ${DOCSGPT_CACHE_REDIS_URL:?DOCSGPT_CACHE_REDIS_URL is required}
+      INTERNAL_KEY: ${DOCSGPT_INTERNAL_KEY:?DOCSGPT_INTERNAL_KEY is required}
       API_URL: http://docs-gpt-backend:7091
       STORAGE_TYPE: local
       GRAPHRAG_ENABLED: "false"
       VERSION_CHECK: "false"
       FLASK_DEBUG_MODE: "false"
-    volumes: &docs-gpt-volumes
-      - docs_gpt_inputs:/app/inputs
-      - docs_gpt_indexes:/app/indexes
-      - docs_gpt_vectors:/app/vectors
+    volumes: *docs-gpt-volumes
     networks:
       - conversation-core
     healthcheck:
@@ -37,6 +47,9 @@ services:
       timeout: 6s
       retries: 12
       start_period: 90s
+    depends_on:
+      docs-gpt-volume-init:
+        condition: service_completed_successfully
 
   docs-gpt-worker:
     image: ${DOCSGPT_IMAGE:?DOCSGPT_IMAGE is required}

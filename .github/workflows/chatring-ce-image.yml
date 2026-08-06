@@ -105,6 +105,25 @@ jobs:
           spec/models/chat_ring
           spec/services/chat_ring/knowledge
 
+      - name: Validate private DocsGPT deployment contract
+        env:
+          DOCSGPT_IMAGE: example/docsgpt@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          CHATRING_CORE_NETWORK: chatring-core
+          DOCSGPT_POSTGRES_URI: postgresql://docsgpt:password@postgres:5432/docsgpt
+          DOCSGPT_PGVECTOR_CONNECTION_STRING: postgresql://docsgpt:password@postgres:5432/docsgpt
+          DOCSGPT_CELERY_BROKER_URL: redis://:password@redis:6379/3
+          DOCSGPT_CELERY_RESULT_BACKEND: redis://:password@redis:6379/4
+          DOCSGPT_CACHE_REDIS_URL: redis://:password@redis:6379/5
+          DOCSGPT_INTERNAL_KEY: ci-only-internal-key
+        run: |
+          docker compose -f deploy/knowledge/compose.yml config --quiet
+          docker compose -f deploy/knowledge/compose.yml config --format json > /tmp/chatring-knowledge-compose.json
+          jq -e '.services | all(.ports == null)' /tmp/chatring-knowledge-compose.json
+          jq -e '.services["docs-gpt-volume-init"].network_mode == "none"' /tmp/chatring-knowledge-compose.json
+          jq -e '.services["docs-gpt-volume-init"].user == "0:0"' /tmp/chatring-knowledge-compose.json
+          jq -e '.services["docs-gpt-backend"].environment.INTERNAL_KEY == "ci-only-internal-key"' /tmp/chatring-knowledge-compose.json
+          jq -e '.services["docs-gpt-worker"].environment.INTERNAL_KEY == "ci-only-internal-key"' /tmp/chatring-knowledge-compose.json
+
   build:
     needs: [validate, validate-knowledge]
     runs-on: ubuntu-latest

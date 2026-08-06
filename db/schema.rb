@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_07_18_000000) do
+ActiveRecord::Schema[7.1].define(version: 2026_08_05_000000) do
   # These extensions should be enabled to support this database
   enable_extension "pg_stat_statements"
   enable_extension "pg_trgm"
@@ -446,8 +446,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_18_000000) do
     t.integer "status", default: 0, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.index ["account_id"], name: "index_captain_faq_suggestions_on_account_id"
     t.index ["account_id", "assistant_id", "status", "language"], name: "idx_cap_faq_suggestions_on_account_assistant_status_language"
+    t.index ["account_id"], name: "index_captain_faq_suggestions_on_account_id"
     t.index ["assistant_id"], name: "index_captain_faq_suggestions_on_assistant_id"
     t.index ["embedding"], name: "vector_idx_captain_faq_suggestions_embedding", opclass: :vector_cosine_ops, using: :ivfflat
   end
@@ -686,8 +686,72 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_18_000000) do
     t.jsonb "phone_number_health", default: {}, null: false
     t.datetime "phone_number_health_checked_at"
     t.string "phone_number_health_error", limit: 500
-    t.index ["phone_number_health_checked_at"], name: "index_channel_whatsapp_on_phone_number_health_checked_at"
     t.index ["phone_number"], name: "index_channel_whatsapp_on_phone_number", unique: true
+    t.index ["phone_number_health_checked_at"], name: "index_channel_whatsapp_on_phone_number_health_checked_at"
+  end
+
+  create_table "chat_ring_knowledge_documents", force: :cascade do |t|
+    t.bigint "knowledge_version_id", null: false
+    t.string "source_url", null: false
+    t.string "title"
+    t.text "markdown", null: false
+    t.string "content_hash", null: false
+    t.string "provider_file_name", null: false
+    t.string "provider_task_id"
+    t.string "provider_source_id"
+    t.string "provider_source_reference"
+    t.string "provider_status", default: "pending", null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["knowledge_version_id", "provider_file_name"], name: "index_chatring_knowledge_documents_on_version_and_file", unique: true
+    t.index ["knowledge_version_id", "source_url"], name: "index_chatring_knowledge_documents_on_version_and_url", unique: true
+    t.index ["knowledge_version_id"], name: "index_chatring_knowledge_documents_on_version_id"
+    t.check_constraint "provider_status::text = ANY (ARRAY['pending'::character varying, 'processing'::character varying, 'ready'::character varying, 'failed'::character varying]::text[])", name: "chatring_knowledge_documents_provider_status_check"
+  end
+
+  create_table "chat_ring_knowledge_publications", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "inbox_id", null: false
+    t.bigint "knowledge_version_id", null: false
+    t.bigint "previous_knowledge_version_id"
+    t.datetime "published_at", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "inbox_id"], name: "index_chatring_knowledge_publications_on_scope", unique: true
+    t.index ["account_id"], name: "index_chat_ring_knowledge_publications_on_account_id"
+    t.index ["inbox_id"], name: "index_chat_ring_knowledge_publications_on_inbox_id"
+    t.index ["knowledge_version_id"], name: "index_chatring_publications_on_version_id"
+    t.index ["previous_knowledge_version_id"], name: "index_chatring_publications_on_previous_version_id"
+  end
+
+  create_table "chat_ring_knowledge_versions", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "inbox_id", null: false
+    t.string "status", default: "pending", null: false
+    t.string "provider", default: "docs_gpt", null: false
+    t.string "provider_release", null: false
+    t.string "root_url", null: false
+    t.datetime "firecrawl_start_started_at"
+    t.string "firecrawl_crawl_id"
+    t.jsonb "mapped_manifest", default: [], null: false
+    t.string "manifest_digest"
+    t.jsonb "crawl_errors", default: [], null: false
+    t.jsonb "config_snapshot", default: {}, null: false
+    t.string "provider_agent_id"
+    t.text "provider_agent_api_key"
+    t.datetime "provider_agent_creation_started_at"
+    t.string "failure_code"
+    t.text "failure_message"
+    t.datetime "ready_at"
+    t.datetime "published_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "inbox_id", "created_at"], name: "index_chatring_knowledge_versions_on_scope_and_created_at"
+    t.index ["account_id"], name: "index_chat_ring_knowledge_versions_on_account_id"
+    t.index ["firecrawl_crawl_id"], name: "index_chat_ring_knowledge_versions_on_firecrawl_crawl_id", unique: true, where: "(firecrawl_crawl_id IS NOT NULL)"
+    t.index ["inbox_id"], name: "index_chat_ring_knowledge_versions_on_inbox_id"
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying, 'crawling'::character varying, 'ingesting'::character varying, 'ready'::character varying, 'published'::character varying, 'retired'::character varying, 'failed'::character varying]::text[])", name: "chatring_knowledge_versions_status_check"
   end
 
   create_table "companies", force: :cascade do |t|
@@ -992,10 +1056,10 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_18_000000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.integer "inbox_id"
-    t.index ["account_id", "name", "template_type", "locale"], name: "index_email_templates_on_account_scope", unique: true, where: "(account_id IS NOT NULL) AND (inbox_id IS NULL)"
+    t.index ["account_id", "name", "template_type", "locale"], name: "index_email_templates_on_account_scope", unique: true, where: "((account_id IS NOT NULL) AND (inbox_id IS NULL))"
     t.index ["inbox_id", "name", "template_type", "locale"], name: "index_email_templates_on_inbox_scope", unique: true, where: "(inbox_id IS NOT NULL)"
     t.index ["inbox_id"], name: "index_email_templates_on_inbox_id"
-    t.index ["name", "template_type", "locale"], name: "index_email_templates_on_installation_scope", unique: true, where: "(account_id IS NULL) AND (inbox_id IS NULL)"
+    t.index ["name", "template_type", "locale"], name: "index_email_templates_on_installation_scope", unique: true, where: "((account_id IS NULL) AND (inbox_id IS NULL))"
   end
 
   create_table "folders", force: :cascade do |t|
@@ -1500,6 +1564,13 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_18_000000) do
 
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
+  add_foreign_key "chat_ring_knowledge_documents", "chat_ring_knowledge_versions", column: "knowledge_version_id"
+  add_foreign_key "chat_ring_knowledge_publications", "accounts"
+  add_foreign_key "chat_ring_knowledge_publications", "chat_ring_knowledge_versions", column: "knowledge_version_id"
+  add_foreign_key "chat_ring_knowledge_publications", "chat_ring_knowledge_versions", column: "previous_knowledge_version_id"
+  add_foreign_key "chat_ring_knowledge_publications", "inboxes"
+  add_foreign_key "chat_ring_knowledge_versions", "accounts"
+  add_foreign_key "chat_ring_knowledge_versions", "inboxes"
   add_foreign_key "inboxes", "portals"
   add_foreign_key "user_sessions", "users"
   create_trigger("accounts_after_insert_row_tr", :generated => true, :compatibility => 1).
