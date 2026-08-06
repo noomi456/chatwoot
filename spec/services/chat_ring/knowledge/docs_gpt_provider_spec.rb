@@ -82,7 +82,7 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
       score_kind: 'cosine_similarity'
     )
     expect(evidence_set.items.first.id).to match(/\A[0-9a-f]{64}\z/)
-    request_matcher = have_requested(:post, retrieval_url).with { |request|
+    request_matcher = have_requested(:post, retrieval_url).with do |request|
       body = JSON.parse(request.body)
       headers = request.headers.transform_keys(&:downcase)
       headers['x-internal-key'] == 'internal-secret' &&
@@ -90,7 +90,7 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
         headers['x-chatring-knowledge-version'] == 'knowledge-v1' &&
         headers['x-chatring-signature'].match?(/\A[0-9a-f]{64}\z/) &&
         body == { 'query' => 'How much is Pro?', 'source_id' => 'source-uuid', 'limit' => 4, 'score_threshold' => 0.62 }
-    }
+    end
     expect(WebMock).to request_matcher
   end
 
