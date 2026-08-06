@@ -58,7 +58,7 @@ RSpec.describe ChatRing::Knowledge::DocsGptClient do
     )
 
     expect(response).to eq('status' => 'deleted', 'source_id' => 'source-1')
-    expect(WebMock).to have_requested(:post, endpoint).with do |request|
+    request_matcher = have_requested(:post, endpoint).with do |request|
       headers = request.headers.transform_keys(&:downcase)
       JSON.parse(request.body) == { 'source_id' => 'source-1' } &&
         headers['x-chatring-account'] == '42' &&
@@ -66,5 +66,6 @@ RSpec.describe ChatRing::Knowledge::DocsGptClient do
         headers['x-chatring-binding-digest'] == 'a' * 64 &&
         headers['x-chatring-signature'].match?(/\A[0-9a-f]{64}\z/)
     end
+    expect(WebMock).to request_matcher
   end
 end
