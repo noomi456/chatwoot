@@ -27,7 +27,7 @@ RSpec.describe ChatRing::Knowledge::SyncService do
         { 'url' => 'https://example.com/company/privacy-statement', 'title' => 'Privacy Policy | Example' },
         { 'url' => 'https://example.com/blog/update' },
         { 'url' => 'https://example.com/careers' },
-        { 'url' => 'https://example.com/sitemap' },
+        { 'url' => 'https://example.com/sitemap.xml' },
         { 'url' => 'https://example.com/login' }
       ]
     )

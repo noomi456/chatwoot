@@ -5,7 +5,7 @@ class ChatRing::Knowledge::SourcePolicy
   MAX_CORPUS_BYTES = 50.megabytes
   MIN_MEANINGFUL_CHARACTERS = 80
   EXCLUDED_PATHS = %r{\A/(?:
-    auth|login|sign[-_]?in|sign[-_]?up|register|sitemap|
+    auth|login|sign[-_]?in|sign[-_]?up|register|sitemaps?(?:\.xml)?|robots\.txt|404|search|unsubscribe|
     privacy(?:-policy)?|cookie(?:-policy|s)?|terms(?:-of-(?:service|use))?|legal|
     blog|news|changelog|careers?|jobs?|press
   )(?:/|\z)}ix

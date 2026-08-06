@@ -16,6 +16,7 @@ RSpec.describe ChatRing::Knowledge::SourcePolicy do
         { url: 'https://example.com/login' },
         { url: 'https://example.com/docs/start' },
         { url: 'https://example.com/privacy' },
+        { url: 'https://example.com/sitemap.xml' },
         { url: 'https://example.com/legal/policies/privacy-policy' },
         { url: 'https://example.com/company/privacy-statement', title: 'Privacy Policy | Example' },
         { url: 'https://example.com/blog/update' }
@@ -31,6 +32,7 @@ RSpec.describe ChatRing::Knowledge::SourcePolicy do
       'included' => false,
       'exclusion_reason' => 'non_knowledge_route'
     )
+    expect(manifest.find { |entry| entry['url'].end_with?('/sitemap.xml') }['included']).to be(false)
     expect(manifest.find { |entry| entry['url'].end_with?('/legal/policies/privacy-policy') }['included']).to be(false)
     expect(manifest.find { |entry| entry['url'].end_with?('/company/privacy-statement') }['included']).to be(false)
     expect(manifest.find { |entry| entry['url'].end_with?('/blog/update') }['included']).to be(false)
