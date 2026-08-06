@@ -2,6 +2,7 @@ require 'digest'
 require 'uri'
 
 class ChatRing::Knowledge::SourcePolicy
+  VERSION = 2
   MAX_CORPUS_BYTES = 50.megabytes
   MIN_MEANINGFUL_CHARACTERS = 80
   EXCLUDED_PATHS = %r{\A/(?:
@@ -14,7 +15,7 @@ class ChatRing::Knowledge::SourcePolicy
   SOFT_404 = /\b(?:page not found|404 not found|this page (?:does not|doesn't) exist)\b/i
   COOKIE_BANNER = /We use cookies to run the site, improve performance, and remember your choices\. You can change settings any time\./i
   DEMO_LINE = /\b(?:
-    Sarah Connor|David Chen|Acme(?: Corp)?|Welcome back,? Alex|
+    Sarah\s+Connor|David\s+Chen|Acme(?:\s+Corp)?|Welcome\s+back,?\s+Alex|
     Unique Visitors|Engagement Rate|Leads Generated|Top Countries|Conversation Sentiment|
     High-intent buyer detected|Pricing intent|Calendar ready|CRM owner|AE assigned
   )\b/ix

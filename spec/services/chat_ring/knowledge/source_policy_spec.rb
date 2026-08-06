@@ -74,6 +74,26 @@ RSpec.describe ChatRing::Knowledge::SourcePolicy do
     expect(result.first[:markdown]).to include('## Verified capability')
   end
 
+  it 'removes standalone fictional customer names from accepted source text' do
+    manifest = policy.prepare_manifest([{ url: 'https://example.com/features' }])
+    content = [
+      '# Features',
+      'Verified product capability for real customers. ' * 4,
+      'Sarah Connor',
+      'David Chen',
+      'Acme Corp',
+      'This verified sentence must remain.'
+    ].join("\n")
+    record = {
+      markdown: content,
+      metadata: { sourceURL: 'https://example.com/features', title: 'Features', statusCode: 200, language: 'en' }
+    }.deep_stringify_keys
+
+    markdown = policy.normalize_pages(records: [record], manifest: manifest).first.fetch(:markdown)
+    expect(markdown).not_to match(/Sarah Connor|David Chen|Acme Corp/i)
+    expect(markdown).to include('This verified sentence must remain.')
+  end
+
   it 'rejects soft-404 and non-success pages' do
     manifest = policy.prepare_manifest([{ url: 'https://example.com/missing' }])
     record = {

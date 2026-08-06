@@ -25,7 +25,7 @@ class ChatRing::Knowledge::SyncService
       config_snapshot: {
         'firecrawl_flow' => 'map_then_batch_scrape',
         'firecrawl_map_limit' => Integer(ENV.fetch('FIRECRAWL_MAP_LIMIT', 5000)),
-        'source_policy_version' => 1,
+        'source_policy_version' => ChatRing::Knowledge::SourcePolicy::VERSION,
         'docs_gpt_source_config' => ChatRing::Knowledge::DocsGptClient::SOURCE_CONFIG.deep_stringify_keys,
         'embedding_model' => 'huggingface_sentence-transformers/all-mpnet-base-v2',
         'retrieval' => {
