@@ -1,7 +1,7 @@
 class ChatRing::Knowledge::ProviderValidator
   class Error < StandardError; end
 
-  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity, Style/IfUnlessModifier
+  # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
   def self.validate!(version)
     documents = version.documents.order(:id).to_a
     raise Error, 'Knowledge version has no documents' if documents.empty?
@@ -16,26 +16,11 @@ class ChatRing::Knowledge::ProviderValidator
       internal_key: ENV.fetch('DOCSGPT_INTERNAL_KEY'),
       service_secret: ENV.fetch('DOCSGPT_SERVICE_SECRET')
     )
-    chunks = client.chunks(source_ids.first)
-    raise Error, 'DocsGPT source has no chunks' if chunks.empty?
-
-    chunk_references = chunks.map { |chunk| chunk.dig('metadata', 'source').to_s.presence }
-    raise Error, 'DocsGPT contains chunks without a source reference' if chunk_references.any?(&:blank?)
-
-    references = chunk_references.uniq
-    expected_references = documents.map(&:provider_source_reference).compact_blank.uniq
-    unless expected_references.length == documents.length
-      raise Error, 'Knowledge version has incomplete provider source references'
-    end
-
-    missing_references = expected_references - references
-    unexpected_references = references - expected_references
-    if missing_references.any?
-      raise Error, "DocsGPT is missing #{missing_references.length} published source reference(s)"
-    end
-    if unexpected_references.any?
-      raise Error, "DocsGPT contains #{unexpected_references.length} source reference(s) outside the published manifest"
-    end
+    ChatRing::Knowledge::ProviderChunkValidator.validate!(
+      documents: documents,
+      chunks: client.chunks(source_ids.first),
+      error_class: Error
+    )
 
     evidence_set = provider(version, source_ids.first).retrieve(
       query: probe_query(documents.first),
@@ -47,7 +32,7 @@ class ChatRing::Knowledge::ProviderValidator
 
     true
   end
-  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity, Style/IfUnlessModifier
+  # rubocop:enable Metrics/AbcSize, Metrics/MethodLength
 
   def self.provider(version, source_id)
     ChatRing::Knowledge::DocsGptProvider.new(

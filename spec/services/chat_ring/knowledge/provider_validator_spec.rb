@@ -49,7 +49,7 @@ RSpec.describe ChatRing::Knowledge::ProviderValidator do
 
     expect { described_class.validate!(version) }.to raise_error(
       described_class::Error,
-      /outside the published manifest/
+      /outside the knowledge-version manifest/
     )
   end
 

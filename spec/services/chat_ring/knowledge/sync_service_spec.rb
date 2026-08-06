@@ -143,7 +143,7 @@ RSpec.describe ChatRing::Knowledge::SyncService do
     service = described_class.new(version, firecrawl: firecrawl, docs_gpt: docs_gpt)
     expect { service.send(:finalize_version, [document]) }.to raise_error(
       described_class::ProviderIngestionError,
-      /outside knowledge version/
+      /outside the knowledge-version manifest/
     )
     expect(document.reload).to have_attributes(provider_status: 'pending', provider_source_reference: nil)
   end

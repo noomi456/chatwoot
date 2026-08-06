@@ -259,36 +259,18 @@ class ChatRing::Knowledge::SyncService
     end
   end
 
-  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
   def finalize_version(documents)
     chunks = @docs_gpt.chunks(documents.first.provider_source_id)
-    raise ProviderIngestionError, "DocsGPT produced no chunks for knowledge version #{@version.id}" if chunks.empty?
-
-    chunk_references = chunks.map { |chunk| chunk.dig('metadata', 'source').to_s.presence }
-    if chunk_references.any?(&:blank?)
-      raise ProviderIngestionError,
-            "DocsGPT produced chunks without a source reference for knowledge version #{@version.id}"
-    end
-
-    references = chunk_references.uniq
-    matches_by_document = documents.to_h do |document|
-      matches = references.select { |reference| File.basename(reference) == document.provider_file_name }
-      raise ProviderIngestionError, "DocsGPT chunks do not identify document #{document.id}" unless matches.one?
-
-      [document, matches.first]
-    end
-    unexpected_references = references - matches_by_document.values
-    if unexpected_references.any?
-      raise ProviderIngestionError,
-            "DocsGPT produced #{unexpected_references.length} source reference(s) " \
-            "outside knowledge version #{@version.id}"
-    end
+    matches_by_document = ChatRing::Knowledge::ProviderChunkValidator.validate!(
+      documents: documents,
+      chunks: chunks,
+      error_class: ProviderIngestionError
+    )
 
     matches_by_document.each do |document, reference|
       document.update!(provider_status: 'ready', provider_source_reference: reference)
     end
   end
-  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
 
   def sanitized_crawl_errors(payload, missing_urls)
     {

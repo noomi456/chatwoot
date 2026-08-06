@@ -15,6 +15,7 @@ import re
 import time
 import logging
 from collections import defaultdict, deque
+from pathlib import Path
 from typing import Any
 
 from flask import jsonify, request
@@ -22,6 +23,7 @@ from flask import jsonify, request
 from application.core.model_utils import get_default_model_id
 from application.core.settings import settings
 from application.parser.chunking_strategies import MarkdownChunker
+from application.parser.file.markdown_parser import MarkdownParser
 from application.parser.schema.base import Document
 from application.retriever.dispatcher import Dispatcher
 from application.storage.db.repositories.sources import SourcesRepository
@@ -274,6 +276,20 @@ def _chatring_markdown_chunk(self: MarkdownChunker, documents: list[Document]):
     return processed
 
 
+def _chatring_markdown_parse_file(
+    self: MarkdownParser, filepath: Path, errors: str = "ignore"
+) -> str:
+    """Keep accepted ChatRing Markdown intact for structure-aware chunking.
+
+    DocsGPT's default MarkdownParser removes ``#`` markers and emits one flat
+    document per heading before the configured MarkdownChunker runs. That
+    makes heading hierarchy unrecoverable. ChatRing has already normalized
+    and approved these Markdown snapshots, so the dedicated knowledge worker
+    must pass the original document to the structure-aware chunker.
+    """
+    return Path(filepath).read_text(encoding="utf-8", errors=errors)
+
+
 def _row_lookup(source_id: str) -> dict[tuple[str, str], deque[dict[str, Any]]]:
     store = VectorCreator.create_vectorstore(
         settings.VECTOR_STORE, source_id, settings.EMBEDDINGS_KEY
@@ -440,4 +456,5 @@ def register_chat_ring_routes(blueprint):
 
 
 PGVectorStore.search_with_scores = _strict_pgvector_search
+MarkdownParser.parse_file = _chatring_markdown_parse_file
 MarkdownChunker.chunk = _chatring_markdown_chunk

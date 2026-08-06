@@ -98,6 +98,7 @@ jobs:
           spec/services/chat_ring/knowledge/source_policy_spec.rb
           spec/services/chat_ring/knowledge/sync_service_spec.rb
           spec/services/chat_ring/knowledge/publication_service_spec.rb
+          spec/services/chat_ring/knowledge/provider_chunk_validator_spec.rb
           spec/services/chat_ring/knowledge/provider_validator_spec.rb
           spec/services/chat_ring/knowledge/provider_cleanup_scheduler_spec.rb
           spec/services/chat_ring/knowledge/retriever_spec.rb
@@ -146,6 +147,7 @@ jobs:
           grep -q 'Simple JWT authentication initialized' deploy/knowledge/Dockerfile
           grep -q 'request.headers.get("X-Internal-Key"' deploy/knowledge/docsgpt/chatring_extension.py
           grep -q '_internal_key(), provided_internal_key' deploy/knowledge/docsgpt/chatring_extension.py
+          grep -q 'MarkdownParser.parse_file = _chatring_markdown_parse_file' deploy/knowledge/docsgpt/chatring_extension.py
           python -m py_compile deploy/knowledge/docsgpt/chatring_extension.py
 
   build:
