@@ -36,6 +36,9 @@ services:
       GRAPHRAG_ENABLED: "false"
       VERSION_CHECK: "false"
       FLASK_DEBUG_MODE: "false"
+      # Rails/Sidekiq has 10 callers; leave two slots for health and ingestion
+      # without allowing DocsGPT's upstream 96-thread default to inflate memory.
+      WSGI_THREADPOOL_WORKERS: "12"
     volumes: *docs-gpt-volumes
     networks:
       - conversation-core

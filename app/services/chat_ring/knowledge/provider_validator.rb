@@ -40,6 +40,7 @@ class ChatRing::Knowledge::ProviderValidator
       provider_release: version.provider_release,
       provider_source_id: source_id,
       account_id: version.account_id,
+      binding_digest: version.evaluation_binding_digest,
       internal_key: ENV.fetch('DOCSGPT_INTERNAL_KEY'),
       service_secret: ENV.fetch('DOCSGPT_SERVICE_SECRET'),
       score_threshold: version.config_snapshot.dig('retrieval', 'score_threshold') || ENV.fetch('DOCSGPT_SCORE_THRESHOLD')

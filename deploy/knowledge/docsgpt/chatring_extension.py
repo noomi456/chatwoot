@@ -35,6 +35,9 @@ MAX_RESULTS = 20
 MAX_CLOCK_SKEW_SECONDS = 90
 DOC_TOKEN_LIMIT = 50000
 _HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
+_SOURCE_BINDING = re.compile(
+    r"^chatring-a(?P<account>\d+)-v(?P<version>\d+)-(?P<digest>[0-9a-f]{64})$"
+)
 logger = logging.getLogger(__name__)
 
 
@@ -53,23 +56,35 @@ def _signature_payload(
     timestamp: str,
     account_id: str,
     knowledge_version_id: str,
+    binding_digest: str,
     operation: str,
     source_id: str,
     body: bytes,
 ) -> bytes:
     body_hash = hashlib.sha256(body).hexdigest()
     return "\n".join(
-        [timestamp, account_id, knowledge_version_id, operation, source_id, body_hash]
+        [
+            timestamp,
+            account_id,
+            knowledge_version_id,
+            binding_digest,
+            operation,
+            source_id,
+            body_hash,
+        ]
     ).encode("utf-8")
 
 
-def _verify_scope(operation: str, source_id: str) -> tuple[str, str]:
+def _verify_scope(operation: str, source_id: str) -> tuple[str, str, str]:
     timestamp = request.headers.get("X-ChatRing-Timestamp", "")
     account_id = request.headers.get("X-ChatRing-Account", "")
     version_id = request.headers.get("X-ChatRing-Knowledge-Version", "")
+    binding_digest = request.headers.get("X-ChatRing-Binding-Digest", "")
     provided = request.headers.get("X-ChatRing-Signature", "")
-    if not all((timestamp, account_id, version_id, provided)):
+    if not all((timestamp, account_id, version_id, binding_digest, provided)):
         raise PermissionError("missing scoped credential")
+    if not binding_digest.isascii() or not re.fullmatch(r"[0-9a-f]{64}", binding_digest):
+        raise PermissionError("invalid scoped credential")
     try:
         issued_at = int(timestamp)
     except ValueError as exc:
@@ -83,6 +98,7 @@ def _verify_scope(operation: str, source_id: str) -> tuple[str, str]:
             timestamp,
             account_id,
             version_id,
+            binding_digest,
             operation,
             source_id,
             request.get_data(cache=True),
@@ -91,12 +107,24 @@ def _verify_scope(operation: str, source_id: str) -> tuple[str, str]:
     ).hexdigest()
     if not hmac.compare_digest(expected, provided):
         raise PermissionError("invalid scoped credential")
-    return account_id, version_id
+    return account_id, version_id, binding_digest
 
 
 def _source(source_id: str) -> dict[str, Any] | None:
     with db_readonly() as connection:
         return SourcesRepository(connection).get(source_id, "local")
+
+
+def _verify_source_binding(
+    source: dict[str, Any], account_id: str, version_id: str, binding_digest: str
+) -> None:
+    match = _SOURCE_BINDING.fullmatch(str(source.get("name") or ""))
+    if match is None or match.groupdict() != {
+        "account": account_id,
+        "version": version_id,
+        "digest": binding_digest,
+    }:
+        raise PermissionError("source is outside the signed ChatRing scope")
 
 
 def _strict_pgvector_search(self, question, k=2, *args, score_threshold=None, **kwargs):
@@ -297,7 +325,9 @@ def register_chat_ring_routes(blueprint):
         source_id = str(body.get("source_id") or "").strip()
         query = str(body.get("query") or "").strip()
         try:
-            _verify_scope("retrieve", source_id)
+            account_id, version_id, binding_digest = _verify_scope(
+                "retrieve", source_id
+            )
         except PermissionError:
             return jsonify({"status": "forbidden"}), 403
         except ChatRingProviderError:
@@ -311,8 +341,13 @@ def register_chat_ring_routes(blueprint):
             return jsonify({"status": "invalid_request"}), 400
         if not 1 <= limit <= MAX_RESULTS or not 0.0 <= threshold <= 1.0:
             return jsonify({"status": "invalid_request"}), 400
-        if _source(source_id) is None:
+        source = _source(source_id)
+        if source is None:
             return jsonify({"status": "not_found"}), 404
+        try:
+            _verify_source_binding(source, account_id, version_id, binding_digest)
+        except PermissionError:
+            return jsonify({"status": "forbidden"}), 403
         try:
             started = time.monotonic()
             chunks, retrieval = _retrieve(source_id, query, limit, threshold)

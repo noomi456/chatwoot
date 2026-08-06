@@ -115,10 +115,14 @@ class ChatRing::Knowledge::DocsGptClient
   def multipart_body(boundary, version, documents)
     body = String.new(encoding: Encoding::BINARY)
     append_form_part(body, boundary, 'user', USER_ID)
-    append_form_part(body, boundary, 'name', "chatring-version-#{version.id}")
+    append_form_part(body, boundary, 'name', source_binding_name(version))
     append_form_part(body, boundary, 'config', SOURCE_CONFIG.to_json)
     documents.each { |document| append_file_part(body, boundary, document) }
     body << "--#{boundary}--\r\n"
+  end
+
+  def source_binding_name(version)
+    "chatring-a#{version.account_id}-v#{version.id}-#{version.evaluation_binding_digest}"
   end
 
   def append_form_part(body, boundary, name, value)

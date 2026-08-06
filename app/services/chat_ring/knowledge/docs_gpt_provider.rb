@@ -20,12 +20,13 @@ class ChatRing::Knowledge::DocsGptProvider
   class ResponseError < Error; end
 
   # rubocop:disable Metrics/ParameterLists
-  def initialize(base_url:, provider_release:, provider_source_id:, account_id:, internal_key:, service_secret:,
-                 score_threshold:, timeout_seconds: 10)
+  def initialize(base_url:, provider_release:, provider_source_id:, account_id:, binding_digest:, internal_key:,
+                 service_secret:, score_threshold:, timeout_seconds: 10)
     @base_url = normalize_base_url(base_url)
     @provider_release = required_string(provider_release, 'provider_release')
     @provider_source_id = required_string(provider_source_id, 'provider_source_id')
     @account_id = required_string(account_id, 'account_id')
+    @binding_digest = sha256_digest(binding_digest, 'binding_digest')
     @score_threshold = unit_float(score_threshold, 'score_threshold')
     @timeout_seconds = positive_integer(timeout_seconds, 'timeout_seconds')
     @auth = ChatRing::Knowledge::DocsGptAuth.new(
@@ -65,15 +66,7 @@ class ChatRing::Knowledge::DocsGptProvider
     headers = {
       'Content-Type' => 'application/json',
       'Accept' => 'application/json'
-    }.merge(
-      @auth.internal_headers(
-        body: body,
-        account_id: @account_id,
-        knowledge_version_id: version_id,
-        operation: 'retrieve',
-        source_id: @provider_source_id
-      )
-    )
+    }.merge(auth_headers(body, version_id))
     response = HTTParty.post(retrieval_url, headers: headers, body: body, timeout: @timeout_seconds)
     parsed = response.parsed_response
     raise ResponseError, "DocsGPT retrieval response is invalid (HTTP #{response.code})" unless parsed.is_a?(Hash)
@@ -81,6 +74,19 @@ class ChatRing::Knowledge::DocsGptProvider
     return parsed if response.success? || response.code == 503
 
     raise RequestError, "DocsGPT retrieval failed with HTTP #{response.code}"
+  end
+
+  def auth_headers(body, version_id)
+    @auth.internal_headers(
+      body: body,
+      operation: 'retrieve',
+      source_id: @provider_source_id,
+      scope: {
+        account_id: @account_id,
+        knowledge_version_id: version_id,
+        binding_digest: @binding_digest
+      }
+    )
   end
 
   def required_status(payload)
@@ -172,6 +178,7 @@ class ChatRing::Knowledge::DocsGptProvider
       'endpoint' => RETRIEVAL_PATH,
       'limit' => limit,
       'score_threshold' => @score_threshold,
+      'binding_digest' => @binding_digest,
       'provider' => payload['retrieval']
     }.compact
   end
@@ -268,6 +275,13 @@ class ChatRing::Knowledge::DocsGptProvider
     result
   rescue ArgumentError, TypeError
     raise ConfigurationError, "#{name} must be numeric"
+  end
+
+  def sha256_digest(value, name)
+    result = required_string(value, name)
+    raise ConfigurationError, "#{name} must be a SHA-256 digest" unless result.match?(/\A[0-9a-f]{64}\z/)
+
+    result
   end
 end
 # rubocop:enable Metrics/ClassLength

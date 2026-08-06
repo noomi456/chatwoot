@@ -21,7 +21,8 @@ RSpec.describe ChatRing::Knowledge::DocsGptClient do
     version = instance_double(
       ChatRing::KnowledgeVersion,
       id: 17,
-      evaluation_binding_digest: 'content-bound-sha256',
+      account_id: 42,
+      evaluation_binding_digest: 'a' * 64,
       documents: document_scope
     )
     stub_request(:post, 'http://docsgpt.internal:7091/api/upload').to_return(
@@ -32,9 +33,10 @@ RSpec.describe ChatRing::Knowledge::DocsGptClient do
 
     expect(client.upload_version(version)).to eq(task_id: 'task-1', source_id: 'source-1')
     request_matcher = have_requested(:post, 'http://docsgpt.internal:7091/api/upload').with do |request|
-      expect(request.headers['Idempotency-Key']).to eq('chatring-knowledge-version-17-content-bound-sha256')
+      expect(request.headers['Idempotency-Key']).to eq("chatring-knowledge-version-17-#{'a' * 64}")
       expect(request.headers['Authorization']).to match(/\ABearer /)
       expect(request.body.scan('name="file"').length).to eq(2)
+      expect(request.body).to include("chatring-a42-v17-#{'a' * 64}")
       expect(request.body).to include('filename="home.md"', 'filename="pricing.md"', '# Home', '# Pricing')
     end
     expect(WebMock).to request_matcher

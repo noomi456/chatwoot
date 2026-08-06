@@ -19,30 +19,37 @@ class ChatRing::Knowledge::DocsGptAuth
     { 'Authorization' => "Bearer #{token}" }
   end
 
-  def internal_headers(body:, account_id:, knowledge_version_id:, operation:, source_id:)
+  def internal_headers(body:, operation:, source_id:, scope:)
     required_secret(@internal_key, 'internal_key')
     required_secret(@service_secret, 'service_secret')
+    values = scope.symbolize_keys
     timestamp = Time.current.to_i.to_s
-    values = [
-      timestamp,
-      account_id.to_s,
-      knowledge_version_id.to_s,
-      operation.to_s,
-      source_id.to_s,
-      Digest::SHA256.hexdigest(body)
-    ]
-    signature = OpenSSL::HMAC.hexdigest('SHA256', @service_secret, values.join("\n"))
+    signature = scoped_signature(body: body, operation: operation, source_id: source_id, scope: values, timestamp: timestamp)
 
     {
       'X-Internal-Key' => @internal_key,
       'X-ChatRing-Timestamp' => timestamp,
-      'X-ChatRing-Account' => account_id.to_s,
-      'X-ChatRing-Knowledge-Version' => knowledge_version_id.to_s,
+      'X-ChatRing-Account' => values.fetch(:account_id).to_s,
+      'X-ChatRing-Knowledge-Version' => values.fetch(:knowledge_version_id).to_s,
+      'X-ChatRing-Binding-Digest' => values.fetch(:binding_digest).to_s,
       'X-ChatRing-Signature' => signature
     }
   end
 
   private
+
+  def scoped_signature(body:, operation:, source_id:, scope:, timestamp:)
+    values = [
+      timestamp,
+      scope.fetch(:account_id),
+      scope.fetch(:knowledge_version_id),
+      scope.fetch(:binding_digest),
+      operation,
+      source_id,
+      Digest::SHA256.hexdigest(body)
+    ]
+    OpenSSL::HMAC.hexdigest('SHA256', @service_secret, values.join("\n"))
+  end
 
   def required_secret(value, name)
     raise ConfigurationError, "#{name} is required" if value.to_s.blank?

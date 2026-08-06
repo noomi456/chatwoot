@@ -7,6 +7,7 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
       provider_release: '616e6fe9c435bbc6bb472636db6b3ee2b9bcaf66',
       provider_source_id: 'source-uuid',
       account_id: '42',
+      binding_digest: 'a' * 64,
       internal_key: 'internal-secret',
       service_secret: 'service-secret',
       score_threshold: 0.62
@@ -88,6 +89,7 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
       headers['x-internal-key'] == 'internal-secret' &&
         headers['x-chatring-account'] == '42' &&
         headers['x-chatring-knowledge-version'] == 'knowledge-v1' &&
+        headers['x-chatring-binding-digest'] == 'a' * 64 &&
         headers['x-chatring-signature'].match?(/\A[0-9a-f]{64}\z/) &&
         body == { 'query' => 'How much is Pro?', 'source_id' => 'source-uuid', 'limit' => 4, 'score_threshold' => 0.62 }
     end
@@ -183,5 +185,20 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
     result = provider.retrieve(query: 'Question', knowledge_version_id: 'knowledge-v1', source_manifest: source_manifest)
     expect(result.status).to eq('provider_error')
     expect(result.error_code).to eq('provider_error')
+  end
+
+  it 'requires an exact SHA-256 content binding' do
+    expect do
+      described_class.new(
+        base_url: 'http://docsgpt.internal:7091',
+        provider_release: 'release',
+        provider_source_id: 'source-uuid',
+        account_id: '42',
+        binding_digest: 'not-a-digest',
+        internal_key: 'internal-secret',
+        service_secret: 'service-secret',
+        score_threshold: 0.62
+      )
+    end.to raise_error(described_class::ConfigurationError, /binding_digest must be a SHA-256 digest/)
   end
 end
