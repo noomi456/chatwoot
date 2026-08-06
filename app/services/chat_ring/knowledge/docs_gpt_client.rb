@@ -46,7 +46,7 @@ class ChatRing::Knowledge::DocsGptClient
     response = json_connection.post('/api/upload') do |request|
       request.headers.update(@auth.user_headers)
       request.headers['Content-Type'] = "multipart/form-data; boundary=#{boundary}"
-      request.headers['Idempotency-Key'] = "chatring-knowledge-version-#{version.id}-#{version.manifest_digest}"
+      request.headers['Idempotency-Key'] = "chatring-knowledge-version-#{version.id}-#{version.evaluation_binding_digest}"
       request.body = multipart_body(boundary, version, documents)
     end
     parsed = parse_response(response, expected_statuses: [200])
