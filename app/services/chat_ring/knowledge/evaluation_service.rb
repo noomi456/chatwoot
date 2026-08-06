@@ -1,6 +1,5 @@
 require 'digest'
 
-# rubocop:disable Metrics/ClassLength
 class ChatRing::Knowledge::EvaluationService
   MIN_ACCEPTED_CASES = 5
   MIN_NEGATIVE_CASES = 5
@@ -19,7 +18,6 @@ class ChatRing::Knowledge::EvaluationService
     @provider = provider
   end
 
-  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
   def evaluate!
     raise Error, "Knowledge version #{@version.id} is not ready for evaluation" unless %w[ready published retired].include?(@version.status)
 
@@ -42,11 +40,10 @@ class ChatRing::Knowledge::EvaluationService
 
     report
   end
-  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
 
   private
 
-  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
+  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength
   def normalize_cases(cases)
     raise Error, 'Evaluation cases must be an array' unless cases.is_a?(Array)
 
@@ -72,7 +69,7 @@ class ChatRing::Knowledge::EvaluationService
       }
     end
   end
-  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
+  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength
 
   def validate_suite! # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
     accepted = @cases.count { |test_case| test_case['expectation'] == 'accepted' }
@@ -85,12 +82,11 @@ class ChatRing::Knowledge::EvaluationService
     if @cases.any? { |test_case| test_case['expectation'] == 'accepted' && test_case['expected_urls'].empty? }
       raise Error, 'Every accepted evaluation case must identify at least one expected source URL'
     end
-    if @cases.any? { |test_case| test_case['expectation'] == 'accepted' && test_case['expected_text'].blank? }
-      raise Error, 'Every accepted evaluation case must identify expected passage text'
-    end
+    raise Error, 'Every accepted evaluation case must identify expected passage text' if
+      @cases.any? { |test_case| test_case['expectation'] == 'accepted' && test_case['expected_text'].blank? }
   end
 
-  def evaluate_case(test_case) # rubocop:disable Metrics/AbcSize
+  def evaluate_case(test_case) # rubocop:disable Metrics/MethodLength
     evidence_set = provider.retrieve(
       query: test_case.fetch('query'),
       knowledge_version_id: @version.id.to_s,
@@ -123,7 +119,7 @@ class ChatRing::Knowledge::EvaluationService
   def expected_source?(test_case, actual_urls)
     return true if test_case['expectation'] == 'insufficient_evidence'
 
-    (test_case.fetch('expected_urls') & actual_urls).any?
+    test_case.fetch('expected_urls').intersect?(actual_urls)
   end
 
   def expected_text?(test_case, evidence_set)
@@ -152,4 +148,3 @@ class ChatRing::Knowledge::EvaluationService
     source_ids.first
   end
 end
-# rubocop:enable Metrics/ClassLength

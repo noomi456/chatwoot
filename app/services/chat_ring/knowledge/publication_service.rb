@@ -1,7 +1,7 @@
 class ChatRing::Knowledge::PublicationService
   class Error < StandardError; end
 
-  def self.publish!(version, validator: ChatRing::Knowledge::ProviderValidator) # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
+  def self.publish!(version, validator: ChatRing::Knowledge::ProviderValidator) # rubocop:disable Metrics/MethodLength
     ensure_publishable!(version)
     validator.validate!(version)
     ChatRing::KnowledgePublication.transaction do
@@ -28,7 +28,7 @@ class ChatRing::Knowledge::PublicationService
     end
   end
 
-  def self.rollback!(account:, inbox:, validator: ChatRing::Knowledge::ProviderValidator) # rubocop:disable Metrics/MethodLength
+  def self.rollback!(account:, inbox:, validator: ChatRing::Knowledge::ProviderValidator) # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
     publication = ChatRing::KnowledgePublication.find_by!(account: account, inbox: inbox)
     target = publication.previous_knowledge_version
     raise Error, 'No previous knowledge version is available for rollback' if target.blank?
@@ -41,6 +41,7 @@ class ChatRing::Knowledge::PublicationService
       previous = publication.previous_knowledge_version
       raise Error, 'No previous knowledge version is available for rollback' if previous.blank?
       raise Error, 'Rollback target changed during validation; retry the operation' unless previous.id == target.id
+
       ensure_evaluated!(previous, message: 'Rollback target has not passed the current retrieval evaluation')
 
       current = publication.knowledge_version
@@ -69,9 +70,7 @@ class ChatRing::Knowledge::PublicationService
   private_class_method :record_event!
 
   def self.ensure_publishable!(version)
-    unless %w[ready retired published].include?(version.status)
-      raise Error, "Knowledge version #{version.id} is not eligible for publication"
-    end
+    raise Error, "Knowledge version #{version.id} is not eligible for publication" unless %w[ready retired published].include?(version.status)
 
     ensure_evaluated!(version, message: "Knowledge version #{version.id} has not passed the current retrieval evaluation")
   end
