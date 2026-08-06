@@ -43,7 +43,9 @@ class ChatRing::Knowledge::SourcePolicy
         'exclusion_reason' => EXCLUDED_PATHS.match?(path) ? 'non_knowledge_route' : nil,
         'authority_class' => authority_class(path)
       ).compact
-    end.uniq { |entry| entry.fetch('url') }.sort_by { |entry| entry.fetch('url') }
+    end
+    normalized_entries = normalized_entries.uniq { |entry| entry.fetch('url') }
+                                           .sort_by { |entry| entry.fetch('url') }
 
     exclude_redundant_help(normalized_entries)
   end
@@ -63,7 +65,8 @@ class ChatRing::Knowledge::SourcePolicy
 
   private
 
-  def normalize_page(record, allowed) # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
+  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
+  def normalize_page(record, allowed)
     raise PageQualityError, 'Firecrawl page must be an object' unless record.is_a?(Hash)
 
     metadata = record['metadata'].is_a?(Hash) ? record['metadata'] : {}
@@ -82,6 +85,7 @@ class ChatRing::Knowledge::SourcePolicy
     if content_type.present? && !content_type.match?(%r{(?:text/html|text/markdown|application/xhtml\+xml)}i)
       raise PageQualityError, "Firecrawl page #{source_url} has unsupported content type #{content_type}"
     end
+
     language = metadata['language'].to_s.downcase
     raise PageQualityError, "Firecrawl page #{source_url} has unsupported language #{language}" if language.present? && language != 'en'
 
@@ -103,6 +107,7 @@ class ChatRing::Knowledge::SourcePolicy
       )
     }
   end
+  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
 
   def clean_markdown(value)
     value.to_s.lines.reject do |line|
@@ -111,7 +116,7 @@ class ChatRing::Knowledge::SourcePolicy
   end
 
   def ensure_complete!(pages, allowed)
-    duplicates = pages.group_by { |page| page.fetch(:source_url) }.select { |_url, rows| rows.length != 1 }
+    duplicates = pages.group_by { |page| page.fetch(:source_url) }.reject { |_url, rows| rows.one? }
     raise PageQualityError, "Firecrawl returned duplicate accepted URLs: #{duplicates.keys.join(', ')}" if duplicates.any?
 
     missing = allowed.keys - pages.pluck(:source_url)
@@ -119,9 +124,10 @@ class ChatRing::Knowledge::SourcePolicy
   end
 
   def deduplicate(pages)
-    pages.group_by { |page| page.fetch(:content_hash) }.values.map do |duplicates|
+    deduplicated = pages.group_by { |page| page.fetch(:content_hash) }.values.map do |duplicates|
       duplicates.min_by { |page| duplicate_priority(page.fetch(:source_url)) }
-    end.sort_by { |page| page.fetch(:source_url) }
+    end
+    deduplicated.sort_by { |page| page.fetch(:source_url) }
   end
 
   def duplicate_priority(url)

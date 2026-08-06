@@ -18,7 +18,7 @@ class ChatRing::Knowledge::FirecrawlClient
     @timeout_seconds = Integer(timeout_seconds)
   end
 
-  def map(url:, limit: DEFAULT_MAP_LIMIT) # rubocop:disable Metrics/CyclomaticComplexity
+  def map(url:, limit: DEFAULT_MAP_LIMIT) # rubocop:disable Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
     root_url = canonical_url(url)
     resolved_limit = bounded_limit(limit)
     payload = request_json(
@@ -45,6 +45,7 @@ class ChatRing::Knowledge::FirecrawlClient
   def start_batch_scrape(urls:)
     normalized_urls = Array(urls).map { |url| canonical_url(url) }.uniq
     raise ConfigurationError, 'urls must contain at least one URL' if normalized_urls.empty?
+
     bounded_limit(normalized_urls.length)
     payload = request_json(
       :post,

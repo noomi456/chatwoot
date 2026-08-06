@@ -17,6 +17,7 @@ class ChatRing::Knowledge::DocsGptProvider
   class RequestError < Error; end
   class ResponseError < Error; end
 
+  # rubocop:disable Metrics/ParameterLists
   def initialize(base_url:, provider_release:, provider_source_id:, account_id:, internal_key:, service_secret:,
                  score_threshold:, timeout_seconds: 10)
     @base_url = normalize_base_url(base_url)
@@ -30,10 +31,12 @@ class ChatRing::Knowledge::DocsGptProvider
       service_secret: service_secret
     )
   end
+  # rubocop:enable Metrics/ParameterLists
 
-  def retrieve(query:, knowledge_version_id:, source_manifest:, limit: 5)
+  def retrieve(query:, knowledge_version_id:, source_manifest:, limit: 5) # rubocop:disable Metrics/MethodLength
     resolved_query = required_string(query, 'query')
     raise ConfigurationError, "query must not exceed #{MAX_QUERY_LENGTH} characters" if resolved_query.length > MAX_QUERY_LENGTH
+
     version_id = required_string(knowledge_version_id, 'knowledge_version_id')
     result_limit = result_limit(limit)
     manifest = normalize_manifest(source_manifest)
@@ -71,9 +74,8 @@ class ChatRing::Knowledge::DocsGptProvider
     )
     response = HTTParty.post(retrieval_url, headers: headers, body: body, timeout: @timeout_seconds)
     parsed = response.parsed_response
-    unless parsed.is_a?(Hash)
-      raise ResponseError, "DocsGPT retrieval response is invalid (HTTP #{response.code})"
-    end
+    raise ResponseError, "DocsGPT retrieval response is invalid (HTTP #{response.code})" unless parsed.is_a?(Hash)
+
     return parsed if response.success? || response.code == 503
 
     raise RequestError, "DocsGPT retrieval failed with HTTP #{response.code}"
@@ -95,14 +97,15 @@ class ChatRing::Knowledge::DocsGptProvider
     end.uniq(&:id).freeze
   end
 
-  def build_evidence(hit, rank, knowledge_version_id, manifest, query) # rubocop:disable Metrics/MethodLength
+  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
+  def build_evidence(hit, rank, knowledge_version_id, manifest, query)
     raise ResponseError, "DocsGPT result #{rank} must be an object" unless hit.is_a?(Hash)
 
     excerpt = required_response_string(hit['text'], rank, 'text')
     provider_reference = required_response_string(hit['source'], rank, 'source')
     source = manifest_entry(manifest, provider_reference, rank)
     authority = source.fetch('authority_class')
-    return if high_risk_query?(query) && !HIGH_RISK_AUTHORITIES.include?(authority)
+    return if high_risk_query?(query) && HIGH_RISK_AUTHORITIES.exclude?(authority)
 
     provider_chunk_id = required_response_string(hit['chunk_id'], rank, 'chunk_id')
     score = numeric_score(hit['score'], rank)
@@ -130,8 +133,9 @@ class ChatRing::Knowledge::DocsGptProvider
       retrieval_strategy: RETRIEVAL_STRATEGY
     )
   end
+  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
 
-  def build_evidence_set(version_id, query, limit, payload, status, items)
+  def build_evidence_set(version_id, query, limit, payload, status, items) # rubocop:disable Metrics/ParameterLists
     ChatRing::Knowledge::EvidenceSet.new(
       knowledge_version_id: version_id,
       provider: PROVIDER,

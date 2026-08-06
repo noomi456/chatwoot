@@ -1,7 +1,6 @@
 require 'faraday'
 require 'digest'
 require 'securerandom'
-require 'set'
 require 'uri'
 
 class ChatRing::Knowledge::DocsGptClient
@@ -39,7 +38,7 @@ class ChatRing::Knowledge::DocsGptClient
     )
   end
 
-  def upload_version(version)
+  def upload_version(version) # rubocop:disable Metrics/AbcSize
     documents = version.documents.order(:id).to_a
     raise ResponseError, 'DocsGPT upload requires at least one document' if documents.empty?
 
@@ -68,7 +67,7 @@ class ChatRing::Knowledge::DocsGptClient
     raise RequestError, "DocsGPT request failed: #{e.class.name}"
   end
 
-  def chunks(source_id)
+  def chunks(source_id) # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
     page = 1
     all_chunks = []
     page_fingerprints = Set.new

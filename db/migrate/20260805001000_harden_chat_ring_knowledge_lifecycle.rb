@@ -1,5 +1,5 @@
 class HardenChatRingKnowledgeLifecycle < ActiveRecord::Migration[7.1]
-  def change
+  def change # rubocop:disable Metrics/MethodLength
     add_column :chat_ring_knowledge_versions, :processing_lease_token, :string
     add_column :chat_ring_knowledge_versions, :processing_lease_expires_at, :datetime
     add_index :chat_ring_knowledge_versions, :processing_lease_token, unique: true, where: 'processing_lease_token IS NOT NULL'

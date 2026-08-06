@@ -1,7 +1,7 @@
 class ChatRing::Knowledge::ProviderValidator
   class Error < StandardError; end
 
-  def self.validate!(version) # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
+  def self.validate!(version) # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
     documents = version.documents.order(:id).to_a
     raise Error, 'Knowledge version has no documents' if documents.empty?
     raise Error, 'Knowledge version has incomplete documents' unless documents.all? { |document| document.provider_status == 'ready' }

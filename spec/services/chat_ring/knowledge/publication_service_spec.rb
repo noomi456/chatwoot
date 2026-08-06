@@ -13,6 +13,7 @@ RSpec.describe ChatRing::Knowledge::PublicationService do
   end
   let(:validator) { class_double(ChatRing::Knowledge::ProviderValidator, validate!: true) }
 
+  # rubocop:disable RSpec/MultipleExpectations
   it 'atomically switches the inbox pointer and preserves the previous version for rollback' do
     first = ChatRing::KnowledgeVersion.create!(**attributes, status: 'ready')
     second = ChatRing::KnowledgeVersion.create!(**attributes, status: 'ready')
@@ -32,6 +33,7 @@ RSpec.describe ChatRing::Knowledge::PublicationService do
     expect(rolled_back.previous_knowledge_version).to be_nil
     expect(ChatRing::KnowledgePublicationEvent.order(:id).pluck(:action)).to eq(%w[publish publish rollback])
   end
+  # rubocop:enable RSpec/MultipleExpectations
 
   it 'refuses to publish a partial or failed version' do
     version = ChatRing::KnowledgeVersion.create!(**attributes, status: 'ingesting')

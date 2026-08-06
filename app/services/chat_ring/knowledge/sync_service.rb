@@ -1,6 +1,7 @@
 require 'digest'
 require 'securerandom'
 
+# rubocop:disable Metrics/ClassLength
 class ChatRing::Knowledge::SyncService
   POLL_INTERVAL = 10.seconds
   PROCESSING_LEASE_TTL = 10.minutes
@@ -11,7 +12,7 @@ class ChatRing::Knowledge::SyncService
   class IncompleteCrawlError < Error; end
   class ProviderIngestionError < Error; end
 
-  def self.start!(account:, inbox:, root_url:, publish_on_ready: false)
+  def self.start!(account:, inbox:, root_url:, publish_on_ready: false) # rubocop:disable Metrics/MethodLength
     raise ArgumentError, 'inbox must belong to account' unless inbox.account_id == account.id
 
     version = ChatRing::KnowledgeVersion.create!(
@@ -43,7 +44,7 @@ class ChatRing::Knowledge::SyncService
     @docs_gpt = docs_gpt || build_docs_gpt_client
   end
 
-  def tick
+  def tick # rubocop:disable Metrics/CyclomaticComplexity
     return :retry unless claim_processing_lease
 
     begin
@@ -70,19 +71,20 @@ class ChatRing::Knowledge::SyncService
     @processing_lease_token = SecureRandom.uuid
     now = Time.current
     affected = ChatRing::KnowledgeVersion.where(id: @version.id)
-                                            .where('processing_lease_expires_at IS NULL OR processing_lease_expires_at < ?', now)
-                                            .update_all(
-                                              processing_lease_token: @processing_lease_token,
-                                              processing_lease_expires_at: now + PROCESSING_LEASE_TTL,
-                                              updated_at: now
-                                            )
+                                         .where('processing_lease_expires_at IS NULL OR processing_lease_expires_at < ?', now)
+                                         .update_all( # rubocop:disable Rails/SkipsModelValidations
+                                           processing_lease_token: @processing_lease_token,
+                                           processing_lease_expires_at: now + PROCESSING_LEASE_TTL,
+                                           updated_at: now
+                                         )
     affected == 1
   end
 
   def release_processing_lease
     return if @processing_lease_token.blank?
 
-    ChatRing::KnowledgeVersion.where(id: @version.id, processing_lease_token: @processing_lease_token).update_all(
+    leased_version = ChatRing::KnowledgeVersion.where(id: @version.id, processing_lease_token: @processing_lease_token)
+    leased_version.update_all( # rubocop:disable Rails/SkipsModelValidations
       processing_lease_token: nil,
       processing_lease_expires_at: nil,
       updated_at: Time.current
@@ -97,6 +99,7 @@ class ChatRing::Knowledge::SyncService
     mapped = @firecrawl.map(url: @version.root_url, limit: @version.config_snapshot.fetch('firecrawl_map_limit'))
     mapped_manifest = source_policy.prepare_manifest(mapped)
     raise IncompleteCrawlError, 'Firecrawl map returned no URLs' if mapped_manifest.empty?
+
     accepted_urls = mapped_manifest.filter_map { |entry| entry['url'] if entry['included'] }
     raise IncompleteCrawlError, 'Firecrawl map returned no accepted knowledge URLs' if accepted_urls.empty?
 
@@ -123,7 +126,7 @@ class ChatRing::Knowledge::SyncService
     documents = source_policy.normalize_pages(records: payload.fetch('data', []), manifest: @version.mapped_manifest)
     accepted_urls = documents.pluck(:source_url).to_set
     publication_manifest = @version.mapped_manifest.map do |entry|
-      next entry unless entry['included'] && !accepted_urls.include?(entry['url'])
+      next entry unless entry['included'] && accepted_urls.exclude?(entry['url'])
 
       entry.merge('included' => false, 'exclusion_reason' => 'duplicate_content')
     end
@@ -221,3 +224,4 @@ class ChatRing::Knowledge::SyncService
     @source_policy ||= ChatRing::Knowledge::SourcePolicy.new(root_url: @version.root_url)
   end
 end
+# rubocop:enable Metrics/ClassLength

@@ -1,7 +1,7 @@
 class ChatRing::Knowledge::PublicationService
   class Error < StandardError; end
 
-  def self.publish!(version, validator: ChatRing::Knowledge::ProviderValidator) # rubocop:disable Metrics/MethodLength
+  def self.publish!(version, validator: ChatRing::Knowledge::ProviderValidator) # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
     validator.validate!(version)
     ChatRing::KnowledgePublication.transaction do
       Inbox.lock.find(version.inbox_id)
