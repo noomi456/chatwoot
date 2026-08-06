@@ -11,6 +11,8 @@ class ChatRing::Knowledge::DocsGptProvider
   MAX_QUERY_LENGTH = 2000
   HIGH_RISK_PATTERN = /\b(hipaa|soc\s*2|iso\s*27001|data\s+residen(?:cy|t)|end[- ]to[- ]end encrypt|gdpr (?:compliant|compliance))\b/i
   HIGH_RISK_AUTHORITIES = %w[approved_compliance].freeze
+  LEGAL_POLICY_PATTERN = /\b(refunds?|returns?|cancell?ation|money[- ]back|privacy policy|cookie policy|data (?:collection|retention|deletion))\b/i
+  LEGAL_POLICY_AUTHORITIES = %w[approved_legal_policy].freeze
 
   class Error < StandardError; end
   class ConfigurationError < Error; end
@@ -105,7 +107,7 @@ class ChatRing::Knowledge::DocsGptProvider
     provider_reference = required_response_string(hit['source'], rank, 'source')
     source = manifest_entry(manifest, provider_reference, rank)
     authority = source.fetch('authority_class')
-    return if high_risk_query?(query) && HIGH_RISK_AUTHORITIES.exclude?(authority)
+    return unless authority_allowed?(query, authority)
 
     provider_chunk_id = required_response_string(hit['chunk_id'], rank, 'chunk_id')
     score = numeric_score(hit['score'], rank)
@@ -200,6 +202,13 @@ class ChatRing::Knowledge::DocsGptProvider
 
   def high_risk_query?(query)
     HIGH_RISK_PATTERN.match?(query)
+  end
+
+  def authority_allowed?(query, authority)
+    return false if high_risk_query?(query) && HIGH_RISK_AUTHORITIES.exclude?(authority)
+    return false if LEGAL_POLICY_PATTERN.match?(query) && LEGAL_POLICY_AUTHORITIES.exclude?(authority)
+
+    true
   end
 
   def numeric_score(value, rank)

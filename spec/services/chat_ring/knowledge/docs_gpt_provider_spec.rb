@@ -130,6 +130,23 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
     expect(result.items).to be_empty
   end
 
+  it 'does not answer legal-policy questions from pricing or marketing evidence' do
+    stub_request(:post, retrieval_url).to_return(
+      status: 200,
+      headers: { 'Content-Type' => 'application/json' },
+      body: accepted_payload(authority_text: 'The Lite plan costs $29 per month.').to_json
+    )
+
+    result = provider.retrieve(
+      query: 'What is the refund policy?',
+      knowledge_version_id: 'knowledge-v1',
+      source_manifest: source_manifest
+    )
+
+    expect(result.status).to eq('insufficient_evidence')
+    expect(result.items).to be_empty
+  end
+
   it 'rejects unscored provider results' do
     stub_request(:post, retrieval_url).to_return(
       status: 200,
