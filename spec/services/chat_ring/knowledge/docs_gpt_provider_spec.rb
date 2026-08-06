@@ -212,6 +212,23 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
     end.to raise_error(described_class::ResponseError, /chunk content hash does not match/)
   end
 
+  it 'preserves provider whitespace while validating the stable chunk hash' do
+    authority_text = "\n# Pricing\n\nThe Pro plan costs $49 per month.\n"
+    stub_request(:post, retrieval_url).to_return(
+      status: 200,
+      headers: { 'Content-Type' => 'application/json' },
+      body: accepted_payload(authority_text: authority_text).to_json
+    )
+
+    result = provider.retrieve(
+      query: 'How much is Pro?',
+      knowledge_version_id: 'knowledge-v1',
+      source_manifest: source_manifest
+    )
+
+    expect(result.items.first.excerpt).to eq(authority_text)
+  end
+
   it 'rejects evidence outside the selected version manifest' do
     payload = accepted_payload
     payload[:chunks][0][:source] = 'unpublished-source'

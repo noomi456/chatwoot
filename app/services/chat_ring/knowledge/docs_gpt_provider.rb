@@ -109,7 +109,7 @@ class ChatRing::Knowledge::DocsGptProvider
   def build_evidence(hit, rank, knowledge_version_id, manifest, query)
     raise ResponseError, "DocsGPT result #{rank} must be an object" unless hit.is_a?(Hash)
 
-    excerpt = required_response_string(hit['text'], rank, 'text')
+    excerpt = required_response_text(hit['text'], rank)
     provider_reference = required_response_string(hit['source'], rank, 'source')
     source = manifest_entry(manifest, provider_reference, rank)
     authority = source.fetch('authority_class')
@@ -309,6 +309,13 @@ class ChatRing::Knowledge::DocsGptProvider
   def required_response_string(value, rank, field)
     result = value.to_s.strip
     raise ResponseError, "DocsGPT result #{rank} is missing #{field}" if result.blank?
+
+    result
+  end
+
+  def required_response_text(value, rank)
+    result = value.to_s
+    raise ResponseError, "DocsGPT result #{rank} is missing text" if result.strip.blank?
 
     result
   end
