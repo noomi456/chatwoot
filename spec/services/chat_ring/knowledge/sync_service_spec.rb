@@ -58,4 +58,70 @@ RSpec.describe ChatRing::Knowledge::SyncService do
       described_class.start!(account: account, inbox: inbox, root_url: 'https://example.com', publish_on_ready: true)
     end.to raise_error(ArgumentError, /publish_on_ready is disabled/)
   end
+
+  it 'rebuilds an isolated provider version from the stored snapshot without calling Firecrawl' do
+    markdown = "# Pricing\nUseful pricing information for customers.\n[Start Trial](/signup)"
+    manifest = [{ 'url' => 'https://example.com/pricing', 'included' => true }]
+    version.update!(
+      status: 'published',
+      mapped_manifest: manifest,
+      manifest_digest: Digest::SHA256.hexdigest(manifest.to_json)
+    )
+    version.documents.create!(
+      source_url: 'https://example.com/pricing',
+      title: 'Pricing',
+      markdown: markdown,
+      content_hash: Digest::SHA256.hexdigest(markdown),
+      provider_file_name: 'pricing.md',
+      provider_source_id: 'old-source',
+      provider_source_reference: '/inputs/pricing.md',
+      provider_status: 'ready',
+      metadata: { 'authority_class' => 'structured_commercial' }
+    )
+    allow(ChatRing::Knowledge::SyncJob).to receive(:perform_later)
+
+    with_modified_env DOCSGPT_SCORE_THRESHOLD: '0.62' do
+      rebuilt = described_class.rebuild_from!(version)
+
+      expect(rebuilt).to have_attributes(status: 'ingesting', account: account, inbox: inbox)
+      expect(rebuilt.config_snapshot['source_policy_version']).to eq(ChatRing::Knowledge::SourcePolicy::VERSION)
+      expect(rebuilt.documents.first).to have_attributes(provider_status: 'pending', provider_source_id: nil)
+      expect(rebuilt.documents.first.metadata.fetch('headings')).to include(
+        'level' => 1,
+        'text' => 'Pricing',
+        'path' => 'Pricing'
+      )
+      expect(rebuilt.documents.first.metadata.fetch('cta_candidates')).to contain_exactly(
+        {
+          'label' => 'Start Trial',
+          'url' => 'https://example.com/signup',
+          'heading_path' => 'Pricing',
+          'external' => false
+        }
+      )
+      expect(ChatRing::Knowledge::SyncJob).to have_received(:perform_later).with(rebuilt.id)
+    end
+  end
+
+  it 'rejects a stored snapshot whose content no longer matches its hash' do
+    version.update!(
+      status: 'ready',
+      manifest_digest: Digest::SHA256.hexdigest(version.mapped_manifest.to_json)
+    )
+    version.documents.create!(
+      source_url: 'https://example.com/',
+      title: 'Example',
+      markdown: '# Tampered snapshot',
+      content_hash: 'a' * 64,
+      provider_file_name: 'example.md',
+      provider_status: 'ready'
+    )
+
+    with_modified_env DOCSGPT_SCORE_THRESHOLD: '0.62' do
+      expect { described_class.rebuild_from!(version) }.to raise_error(
+        described_class::IncompleteCrawlError,
+        /does not match its content hash/
+      )
+    end
+  end
 end

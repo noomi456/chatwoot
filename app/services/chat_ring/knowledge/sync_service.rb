@@ -22,21 +22,83 @@ class ChatRing::Knowledge::SyncService
       root_url: ChatRing::Knowledge::FirecrawlClient.canonical_url(root_url),
       provider: 'docs_gpt',
       provider_release: ENV.fetch('DOCSGPT_RELEASE', '616e6fe9c435bbc6bb472636db6b3ee2b9bcaf66'),
-      config_snapshot: {
-        'firecrawl_flow' => 'map_then_batch_scrape',
-        'firecrawl_map_limit' => Integer(ENV.fetch('FIRECRAWL_MAP_LIMIT', 5000)),
-        'source_policy_version' => ChatRing::Knowledge::SourcePolicy::VERSION,
-        'docs_gpt_source_config' => ChatRing::Knowledge::DocsGptClient::SOURCE_CONFIG.deep_stringify_keys,
-        'embedding_model' => 'huggingface_sentence-transformers/all-mpnet-base-v2',
-        'retrieval' => {
-          'strategy' => ChatRing::Knowledge::DocsGptProvider::RETRIEVAL_STRATEGY,
-          'score_threshold' => Float(ENV.fetch('DOCSGPT_SCORE_THRESHOLD'))
-        }
-      }
+      config_snapshot: configuration_snapshot
     )
     ChatRing::Knowledge::SyncJob.perform_later(version.id)
     version
   end
+
+  def self.rebuild_from!(source_version) # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
+    version = ChatRing::KnowledgeVersion.transaction do
+      source_version.lock!
+      unless %w[ready published retired].include?(source_version.status) && source_version.documents.exists?
+        raise ArgumentError, 'Rebuild source must be a complete ready, published, or retired knowledge version'
+      end
+      verify_manifest_digest!(source_version)
+
+      rebuilt = ChatRing::KnowledgeVersion.create!(
+        account: source_version.account,
+        inbox: source_version.inbox,
+        status: 'ingesting',
+        root_url: source_version.root_url,
+        provider: 'docs_gpt',
+        provider_release: ENV.fetch('DOCSGPT_RELEASE', source_version.provider_release),
+        config_snapshot: configuration_snapshot,
+        mapped_manifest: source_version.mapped_manifest,
+        manifest_digest: Digest::SHA256.hexdigest(source_version.mapped_manifest.to_json),
+        crawl_errors: source_version.crawl_errors
+      )
+      source_version.documents.order(:id).to_a.each do |document|
+        verify_document_hash!(document)
+        structure = ChatRing::Knowledge::MarkdownStructure.new(
+          markdown: document.markdown,
+          source_url: document.source_url
+        ).call
+        rebuilt.documents.create!(
+          source_url: document.source_url,
+          title: document.title,
+          markdown: document.markdown,
+          content_hash: document.content_hash,
+          provider_file_name: document.provider_file_name,
+          metadata: document.metadata.merge(structure),
+          provider_status: 'pending'
+        )
+      end
+      rebuilt
+    end
+    ChatRing::Knowledge::SyncJob.perform_later(version.id)
+    version
+  end
+
+  def self.configuration_snapshot # rubocop:disable Metrics/MethodLength
+    {
+      'firecrawl_flow' => 'map_then_batch_scrape',
+      'firecrawl_map_limit' => Integer(ENV.fetch('FIRECRAWL_MAP_LIMIT', 5000)),
+      'source_policy_version' => ChatRing::Knowledge::SourcePolicy::VERSION,
+      'docs_gpt_source_config' => ChatRing::Knowledge::DocsGptClient::SOURCE_CONFIG.deep_stringify_keys,
+      'embedding_model' => 'huggingface_sentence-transformers/all-mpnet-base-v2',
+      'retrieval' => {
+        'strategy' => ChatRing::Knowledge::DocsGptProvider::RETRIEVAL_STRATEGY,
+        'score_threshold' => Float(ENV.fetch('DOCSGPT_SCORE_THRESHOLD'))
+      }
+    }
+  end
+  private_class_method :configuration_snapshot
+
+  def self.verify_document_hash!(document)
+    return if Digest::SHA256.hexdigest(document.markdown) == document.content_hash
+
+    raise IncompleteCrawlError, "Stored document #{document.id} does not match its content hash"
+  end
+  private_class_method :verify_document_hash!
+
+  def self.verify_manifest_digest!(version)
+    expected = Digest::SHA256.hexdigest(version.mapped_manifest.to_json)
+    return if expected == version.manifest_digest
+
+    raise IncompleteCrawlError, "Stored knowledge version #{version.id} does not match its manifest digest"
+  end
+  private_class_method :verify_manifest_digest!
 
   def initialize(version, firecrawl: nil, docs_gpt: nil)
     @version = version
