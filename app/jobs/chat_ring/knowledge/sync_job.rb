@@ -7,9 +7,7 @@ class ChatRing::Knowledge::SyncJob < ApplicationJob
            attempts: 8 do |job, error|
     version = ChatRing::KnowledgeVersion.find_by(id: job.arguments.first)
     version&.fail!(code: error.class.name, message: error.message)
-    if version
-      ChatRing::Knowledge::ProviderCleanupScheduler.schedule_eligible!(account: version.account, inbox: version.inbox)
-    end
+    ChatRing::Knowledge::ProviderCleanupScheduler.schedule_eligible!(account: version.account, inbox: version.inbox) if version
   end
 
   def perform(version_id)

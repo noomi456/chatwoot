@@ -1,7 +1,8 @@
 class ChatRing::Knowledge::ProviderValidator
   class Error < StandardError; end
 
-  def self.validate!(version) # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
+  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity, Style/IfUnlessModifier
+  def self.validate!(version)
     documents = version.documents.order(:id).to_a
     raise Error, 'Knowledge version has no documents' if documents.empty?
     raise Error, 'Knowledge version has incomplete documents' unless documents.all? { |document| document.provider_status == 'ready' }
@@ -46,6 +47,7 @@ class ChatRing::Knowledge::ProviderValidator
 
     true
   end
+  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity, Style/IfUnlessModifier
 
   def self.provider(version, source_id)
     ChatRing::Knowledge::DocsGptProvider.new(

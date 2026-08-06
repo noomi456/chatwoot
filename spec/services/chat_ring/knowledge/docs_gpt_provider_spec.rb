@@ -38,7 +38,7 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
     }
   end
 
-  def accepted_payload(authority_text: 'The Pro plan costs $49 per month.', score: 0.81)
+  def accepted_payload(authority_text: 'The Pro plan costs $49 per month.', score: 0.81) # rubocop:disable Metrics/MethodLength
     {
       status: 'accepted',
       source_id: 'source-uuid',
@@ -62,7 +62,7 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
     }
   end
 
-  it 'returns scored, version-bound source evidence through the private Dispatcher endpoint' do
+  it 'returns scored, version-bound source evidence through the private Dispatcher endpoint' do # rubocop:disable RSpec/ExampleLength
     stub_request(:post, retrieval_url).to_return(
       status: 200,
       headers: { 'Content-Type' => 'application/json' },
@@ -186,7 +186,7 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
   end
 
   it 'rejects a non-finite provider score' do
-    body = accepted_payload.to_json.sub(/"score":0\.81/, '"score":1e400')
+    body = accepted_payload.to_json.sub('"score":0.81', '"score":1e400')
     stub_request(:post, retrieval_url).to_return(
       status: 200,
       headers: { 'Content-Type' => 'application/json' },

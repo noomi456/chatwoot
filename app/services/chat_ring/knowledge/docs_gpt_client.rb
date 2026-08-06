@@ -102,7 +102,7 @@ class ChatRing::Knowledge::DocsGptClient
     false
   end
 
-  def delete_source(account_id:, knowledge_version_id:, binding_digest:, source_id:)
+  def delete_source(account_id:, knowledge_version_id:, binding_digest:, source_id:) # rubocop:disable Metrics/MethodLength
     body = { source_id: source_id.to_s }.to_json
     response = json_connection.post('/api/internal/chatring/delete-source') do |request|
       request.headers.update(

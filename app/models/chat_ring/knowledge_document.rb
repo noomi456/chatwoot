@@ -19,6 +19,7 @@ class ChatRing::KnowledgeDocument < ApplicationRecord
   def completed_version_snapshot_is_immutable
     return if knowledge_version.blank?
     return unless ChatRing::KnowledgeVersion::IMMUTABLE_BUILD_STATUSES.include?(knowledge_version.status)
+
     snapshot_changed = IMMUTABLE_SNAPSHOT_ATTRIBUTES.any? { |attribute| will_save_change_to_attribute?(attribute) }
     return unless new_record? || snapshot_changed
 

@@ -12,7 +12,7 @@ class ChatRing::Knowledge::SyncService
   class IncompleteCrawlError < Error; end
   class ProviderIngestionError < Error; end
 
-  def self.start!(account:, inbox:, root_url:, publish_on_ready: false) # rubocop:disable Metrics/MethodLength
+  def self.start!(account:, inbox:, root_url:, publish_on_ready: false)
     raise ArgumentError, 'inbox must belong to account' unless inbox.account_id == account.id
     raise ArgumentError, 'publish_on_ready is disabled; evaluate the ready version before publication' if publish_on_ready
 
@@ -29,11 +29,13 @@ class ChatRing::Knowledge::SyncService
   end
 
   def self.rebuild_from!(source_version) # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
+    # rubocop:disable Metrics/BlockLength
     version = ChatRing::KnowledgeVersion.transaction do
       source_version.lock!
       unless %w[ready published retired].include?(source_version.status) && source_version.documents.exists?
         raise ArgumentError, 'Rebuild source must be a complete ready, published, or retired knowledge version'
       end
+
       verify_manifest_digest!(source_version)
 
       rebuilt = ChatRing::KnowledgeVersion.create!(
@@ -69,11 +71,12 @@ class ChatRing::Knowledge::SyncService
       end
       rebuilt
     end
+    # rubocop:enable Metrics/BlockLength
     ChatRing::Knowledge::SyncJob.perform_later(version.id)
     version
   end
 
-  def self.configuration_snapshot # rubocop:disable Metrics/MethodLength
+  def self.configuration_snapshot
     {
       'firecrawl_flow' => 'map_then_batch_scrape',
       'firecrawl_map_limit' => Integer(ENV.fetch('FIRECRAWL_MAP_LIMIT', 5000)),
@@ -109,7 +112,7 @@ class ChatRing::Knowledge::SyncService
     @docs_gpt = docs_gpt || build_docs_gpt_client
   end
 
-  def tick # rubocop:disable Metrics/CyclomaticComplexity
+  def tick # rubocop:disable Metrics/CyclomaticComplexity, Metrics/MethodLength
     return :retry unless claim_processing_lease
 
     begin
@@ -256,6 +259,7 @@ class ChatRing::Knowledge::SyncService
     end
   end
 
+  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
   def finalize_version(documents)
     chunks = @docs_gpt.chunks(documents.first.provider_source_id)
     raise ProviderIngestionError, "DocsGPT produced no chunks for knowledge version #{@version.id}" if chunks.empty?
@@ -284,6 +288,7 @@ class ChatRing::Knowledge::SyncService
       document.update!(provider_status: 'ready', provider_source_reference: reference)
     end
   end
+  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
 
   def sanitized_crawl_errors(payload, missing_urls)
     {

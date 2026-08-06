@@ -38,7 +38,7 @@ RSpec.describe ChatRing::Knowledge::SourcePolicy do
     expect(manifest.find { |entry| entry['url'].end_with?('/blog/update') }['included']).to be(false)
   end
 
-  it 'excludes redundant help routes before scraping and cleans boilerplate from accepted pages' do
+  it 'excludes redundant help routes before scraping and cleans boilerplate from accepted pages' do # rubocop:disable RSpec/MultipleExpectations
     manifest = policy.prepare_manifest(
       [
         { url: 'https://example.com/docs/start' },

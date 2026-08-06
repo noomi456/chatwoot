@@ -17,7 +17,7 @@ class ChatRing::Knowledge::MarkdownStructure
     @source_uri = parse_source_uri(source_url)
   end
 
-  def call
+  def call # rubocop:disable Metrics/CyclomaticComplexity
     headings = []
     candidates = []
     heading_stack = []

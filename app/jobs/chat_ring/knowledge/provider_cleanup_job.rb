@@ -8,7 +8,7 @@ class ChatRing::Knowledge::ProviderCleanupJob < ApplicationJob
     cleanup&.update!(status: 'failed', last_error: error.message.to_s.truncate(1000))
   end
 
-  def perform(cleanup_id)
+  def perform(cleanup_id) # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
     cleanup = ChatRing::KnowledgeProviderCleanup.find(cleanup_id)
     return if cleanup.status == 'succeeded'
 

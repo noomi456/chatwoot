@@ -6,7 +6,7 @@ RSpec.describe ChatRing::Knowledge::Retriever do
   let(:provider) { instance_double(ChatRing::Knowledge::DocsGptProvider) }
   let(:validator) { class_double(ChatRing::Knowledge::ProviderValidator, validate!: true) }
 
-  def version_with_document(status: 'ready')
+  def version_with_document(status: 'ready') # rubocop:disable Metrics/MethodLength
     version = ChatRing::KnowledgeVersion.create!(
       account: account,
       inbox: inbox,

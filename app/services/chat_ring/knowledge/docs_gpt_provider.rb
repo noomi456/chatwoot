@@ -258,9 +258,7 @@ class ChatRing::Knowledge::DocsGptProvider
 
   def numeric_score(value, rank)
     score = Float(value)
-    unless score.finite? && score.between?(-1.0, 1.0)
-      raise ResponseError, "DocsGPT result #{rank} has invalid numeric score"
-    end
+    raise ResponseError, "DocsGPT result #{rank} has invalid numeric score" unless score.finite? && score.between?(-1.0, 1.0)
 
     score
   rescue ArgumentError, TypeError
@@ -269,9 +267,7 @@ class ChatRing::Knowledge::DocsGptProvider
 
   def verify_chunk_content_hash!(metadata, excerpt, rank)
     expected = metadata['chatring_content_hash'].to_s
-    unless expected.match?(/\A[0-9a-f]{64}\z/)
-      raise ResponseError, "DocsGPT result #{rank} is missing a valid chunk content hash"
-    end
+    raise ResponseError, "DocsGPT result #{rank} is missing a valid chunk content hash" unless expected.match?(/\A[0-9a-f]{64}\z/)
 
     actual = Digest::SHA256.hexdigest(excerpt)
     return if actual == expected
