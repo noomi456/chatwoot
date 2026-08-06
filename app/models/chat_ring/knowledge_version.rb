@@ -5,6 +5,10 @@ class ChatRing::KnowledgeVersion < ApplicationRecord
 
   STATUSES = %w[pending crawling ingesting ready published retired failed].freeze
   EVALUATION_STATUSES = %w[pending passed failed].freeze
+  IMMUTABLE_BUILD_STATUSES = %w[ready published retired].freeze
+  IMMUTABLE_BUILD_ATTRIBUTES = %w[
+    account_id inbox_id provider provider_release root_url mapped_manifest manifest_digest crawl_errors config_snapshot
+  ].freeze
 
   belongs_to :account
   belongs_to :inbox
@@ -28,6 +32,7 @@ class ChatRing::KnowledgeVersion < ApplicationRecord
   validates :evaluation_status, inclusion: { in: EVALUATION_STATUSES }
   validates :provider, :provider_release, :root_url, presence: true
   validate :inbox_belongs_to_account
+  validate :completed_build_snapshot_is_immutable, on: :update
 
   scope :published, -> { where(status: 'published') }
 
@@ -54,5 +59,12 @@ class ChatRing::KnowledgeVersion < ApplicationRecord
     return if inbox.blank? || account.blank? || inbox.account_id == account_id
 
     errors.add(:inbox, 'must belong to the selected account')
+  end
+
+  def completed_build_snapshot_is_immutable
+    return unless IMMUTABLE_BUILD_STATUSES.include?(attribute_in_database('status'))
+    return unless IMMUTABLE_BUILD_ATTRIBUTES.any? { |attribute| will_save_change_to_attribute?(attribute) }
+
+    errors.add(:base, 'completed knowledge-version build snapshot is immutable')
   end
 end

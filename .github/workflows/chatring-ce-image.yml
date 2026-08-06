@@ -87,6 +87,7 @@ jobs:
         run: >-
           bundle exec rspec
           spec/models/chat_ring/knowledge_document_spec.rb
+          spec/models/chat_ring/knowledge_version_spec.rb
           spec/jobs/chat_ring/knowledge/provider_cleanup_job_spec.rb
           spec/services/chat_ring/knowledge/docs_gpt_client_spec.rb
           spec/services/chat_ring/knowledge/docs_gpt_provider_spec.rb
@@ -96,6 +97,7 @@ jobs:
           spec/services/chat_ring/knowledge/source_policy_spec.rb
           spec/services/chat_ring/knowledge/sync_service_spec.rb
           spec/services/chat_ring/knowledge/publication_service_spec.rb
+          spec/services/chat_ring/knowledge/provider_validator_spec.rb
           spec/services/chat_ring/knowledge/provider_cleanup_scheduler_spec.rb
           spec/services/chat_ring/knowledge/retriever_spec.rb
         env:
@@ -141,6 +143,8 @@ jobs:
           jq -e '.services["docs-gpt-worker"].command | contains(["--concurrency=1", "--max-tasks-per-child=20"])' /tmp/chatring-knowledge-compose.json
           grep -q 'DocsGPT JWT startup-log contract changed' deploy/knowledge/Dockerfile
           grep -q 'Simple JWT authentication initialized' deploy/knowledge/Dockerfile
+          grep -q 'request.headers.get("X-Internal-Key"' deploy/knowledge/docsgpt/chatring_extension.py
+          grep -q '_internal_key(), provided_internal_key' deploy/knowledge/docsgpt/chatring_extension.py
           python -m py_compile deploy/knowledge/docsgpt/chatring_extension.py
 
   build:

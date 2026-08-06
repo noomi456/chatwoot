@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import math
 import os
 import re
 import time
@@ -53,6 +54,13 @@ def _service_secret() -> bytes:
     return value.encode("utf-8")
 
 
+def _internal_key() -> str:
+    value = os.environ.get("INTERNAL_KEY", "")
+    if not value:
+        raise ChatRingProviderError("INTERNAL_KEY is not configured")
+    return value
+
+
 def _signature_payload(
     timestamp: str,
     account_id: str,
@@ -77,11 +85,16 @@ def _signature_payload(
 
 
 def _verify_scope(operation: str, source_id: str) -> tuple[str, str, str]:
+    provided_internal_key = request.headers.get("X-Internal-Key", "")
     timestamp = request.headers.get("X-ChatRing-Timestamp", "")
     account_id = request.headers.get("X-ChatRing-Account", "")
     version_id = request.headers.get("X-ChatRing-Knowledge-Version", "")
     binding_digest = request.headers.get("X-ChatRing-Binding-Digest", "")
     provided = request.headers.get("X-ChatRing-Signature", "")
+    if not provided_internal_key or not hmac.compare_digest(
+        _internal_key(), provided_internal_key
+    ):
+        raise PermissionError("invalid internal credential")
     if not all((timestamp, account_id, version_id, binding_digest, provided)):
         raise PermissionError("missing scoped credential")
     if not binding_digest.isascii() or not re.fullmatch(r"[0-9a-f]{64}", binding_digest):
@@ -168,11 +181,18 @@ def _strict_pgvector_search(self, question, k=2, *args, score_threshold=None, **
         max_distance = None if score_threshold is None else 1.0 - float(score_threshold)
         results = []
         for row_id, text, metadata, distance in rows:
-            if max_distance is not None and distance is not None and distance > max_distance:
+            if distance is None:
+                raise ChatRingProviderError("pgvector returned a result without distance")
+            resolved_distance = float(distance)
+            if not math.isfinite(resolved_distance):
+                raise ChatRingProviderError("pgvector returned a non-finite distance")
+            if max_distance is not None and resolved_distance > max_distance:
                 continue
             values = dict(metadata or {})
             values["chatring_provider_chunk_id"] = str(row_id)
-            score = None if distance is None else 1.0 - float(distance)
+            score = 1.0 - resolved_distance
+            if not math.isfinite(score):
+                raise ChatRingProviderError("pgvector returned a non-finite score")
             results.append((Document(text, extra_info=values).to_langchain_format(), score))
         return results
     except Exception:

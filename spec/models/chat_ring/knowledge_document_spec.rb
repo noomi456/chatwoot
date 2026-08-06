@@ -22,4 +22,46 @@ RSpec.describe ChatRing::KnowledgeDocument do
       expect(document.errors[:markdown]).to include('is too long (maximum is 2097152 characters)')
     end
   end
+
+  context 'when its knowledge version is complete' do
+    let(:account) { create(:account) }
+    let(:inbox) { create(:inbox, account: account) }
+    let(:version) do
+      ChatRing::KnowledgeVersion.create!(
+        account: account,
+        inbox: inbox,
+        status: 'ingesting',
+        provider_release: 'provider-release',
+        root_url: 'https://example.com/'
+      )
+    end
+    let!(:stored_document) do
+      version.documents.create!(
+        source_url: 'https://example.com/',
+        markdown: '# Example',
+        content_hash: Digest::SHA256.hexdigest('# Example'),
+        provider_file_name: 'example.md',
+        provider_status: 'ready'
+      )
+    end
+
+    before { version.update!(status: 'ready') }
+
+    it 'rejects later source-content mutation' do
+      expect(stored_document.update(markdown: '# Changed')).to be(false)
+      expect(stored_document.errors[:base]).to include('completed knowledge document snapshot is immutable')
+    end
+
+    it 'rejects adding another document to the completed snapshot' do
+      added = version.documents.build(
+        source_url: 'https://example.com/other',
+        markdown: '# Other',
+        content_hash: Digest::SHA256.hexdigest('# Other'),
+        provider_file_name: 'other.md'
+      )
+
+      expect(added).not_to be_valid
+      expect(added.errors[:base]).to include('completed knowledge document snapshot is immutable')
+    end
+  end
 end

@@ -18,9 +18,22 @@ class ChatRing::Knowledge::ProviderValidator
     chunks = client.chunks(source_ids.first)
     raise Error, 'DocsGPT source has no chunks' if chunks.empty?
 
-    references = chunks.filter_map { |chunk| chunk.dig('metadata', 'source').to_s.presence }.uniq
-    documents.each do |document|
-      raise Error, "DocsGPT no longer contains document #{document.id}" unless references.include?(document.provider_source_reference)
+    chunk_references = chunks.map { |chunk| chunk.dig('metadata', 'source').to_s.presence }
+    raise Error, 'DocsGPT contains chunks without a source reference' if chunk_references.any?(&:blank?)
+
+    references = chunk_references.uniq
+    expected_references = documents.map(&:provider_source_reference).compact_blank.uniq
+    unless expected_references.length == documents.length
+      raise Error, 'Knowledge version has incomplete provider source references'
+    end
+
+    missing_references = expected_references - references
+    unexpected_references = references - expected_references
+    if missing_references.any?
+      raise Error, "DocsGPT is missing #{missing_references.length} published source reference(s)"
+    end
+    if unexpected_references.any?
+      raise Error, "DocsGPT contains #{unexpected_references.length} source reference(s) outside the published manifest"
     end
 
     evidence_set = provider(version, source_ids.first).retrieve(

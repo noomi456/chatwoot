@@ -20,7 +20,7 @@ Own the private DocsGPT API and ingestion worker used by ChatRing's versioned kn
 - Use dedicated Redis logical databases for Celery and cache state.
 - Store all secret values only in the deployment platform environment; the Compose file contains required-variable guards only.
 - Configure the same high-entropy `DOCSGPT_INTERNAL_KEY` for the API and worker; pinned DocsGPT denies worker index registration when it is absent.
-- Require an independently enforced ChatRing-to-DocsGPT service credential for retrieval and mutation operations, scoped to the tenant and knowledge version. Private Docker networking is not authentication.
+- Require both the shared `DOCSGPT_INTERNAL_KEY` and an independently signed ChatRing-to-DocsGPT service credential for retrieval and mutation operations, scoped to the tenant, knowledge version, content binding, operation, and provider source. Private Docker networking is not authentication.
 - Pin `DOCSGPT_IMAGE` to the verified upstream release image; do not use `latest`.
 - Preserve the one-shot root volume initializer; the pinned DocsGPT image runs as non-root UID/GID 994 and cannot write fresh root-owned named volumes otherwise.
 - Keep `VECTOR_STORE=pgvector`, local `all-mpnet-base-v2` embeddings, classic retrieval, and GraphRAG disabled.

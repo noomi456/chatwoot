@@ -120,6 +120,7 @@ class ChatRing::Knowledge::DocsGptProvider
     raise ResponseError, "DocsGPT result #{rank} is below the provider threshold" if score < @score_threshold
 
     metadata = hit['metadata'].is_a?(Hash) ? hit['metadata'] : {}
+    verify_chunk_content_hash!(metadata, excerpt, rank)
     heading_path = metadata['chatring_heading_path'].to_s.presence
     title = source['source_title'].presence || hit['title'].to_s.strip.presence
     ChatRing::Knowledge::Evidence.new(
@@ -256,9 +257,26 @@ class ChatRing::Knowledge::DocsGptProvider
   end
 
   def numeric_score(value, rank)
-    Float(value)
+    score = Float(value)
+    unless score.finite? && score.between?(-1.0, 1.0)
+      raise ResponseError, "DocsGPT result #{rank} has invalid numeric score"
+    end
+
+    score
   rescue ArgumentError, TypeError
     raise ResponseError, "DocsGPT result #{rank} is missing numeric score"
+  end
+
+  def verify_chunk_content_hash!(metadata, excerpt, rank)
+    expected = metadata['chatring_content_hash'].to_s
+    unless expected.match?(/\A[0-9a-f]{64}\z/)
+      raise ResponseError, "DocsGPT result #{rank} is missing a valid chunk content hash"
+    end
+
+    actual = Digest::SHA256.hexdigest(excerpt)
+    return if actual == expected
+
+    raise ResponseError, "DocsGPT result #{rank} chunk content hash does not match its excerpt"
   end
 
   def retrieval_url
@@ -317,7 +335,7 @@ class ChatRing::Knowledge::DocsGptProvider
 
   def unit_float(value, name)
     result = Float(value)
-    raise ConfigurationError, "#{name} must be between 0 and 1" unless result.between?(0.0, 1.0)
+    raise ConfigurationError, "#{name} must be between 0 and 1" unless result.finite? && result.between?(0.0, 1.0)
 
     result
   rescue ArgumentError, TypeError

@@ -10,7 +10,7 @@ RSpec.describe ChatRing::Knowledge::Retriever do
     version = ChatRing::KnowledgeVersion.create!(
       account: account,
       inbox: inbox,
-      status: status,
+      status: 'ingesting',
       provider_release: 'provider-release',
       root_url: 'https://example.com/'
     )
@@ -30,6 +30,7 @@ RSpec.describe ChatRing::Knowledge::Retriever do
         ]
       }
     )
+    version.update!(status: status)
     version
   end
 

@@ -53,7 +53,10 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
           source: provider_source_reference,
           score: score,
           score_kind: 'cosine_similarity',
-          metadata: { chatring_heading_path: 'Pricing > Pro' }
+          metadata: {
+            chatring_heading_path: 'Pricing > Pro',
+            chatring_content_hash: Digest::SHA256.hexdigest(authority_text)
+          }
         }
       ]
     }
@@ -180,6 +183,32 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
     expect do
       provider.retrieve(query: 'Question', knowledge_version_id: 'knowledge-v1', source_manifest: source_manifest)
     end.to raise_error(described_class::ResponseError, /missing numeric score/)
+  end
+
+  it 'rejects a non-finite provider score' do
+    stub_request(:post, retrieval_url).to_return(
+      status: 200,
+      headers: { 'Content-Type' => 'application/json' },
+      body: accepted_payload(score: 'NaN').to_json
+    )
+
+    expect do
+      provider.retrieve(query: 'Question', knowledge_version_id: 'knowledge-v1', source_manifest: source_manifest)
+    end.to raise_error(described_class::ResponseError, /invalid numeric score/)
+  end
+
+  it 'rejects provider text that does not match its stable chunk hash' do
+    payload = accepted_payload
+    payload[:chunks][0][:text] = 'Tampered provider excerpt'
+    stub_request(:post, retrieval_url).to_return(
+      status: 200,
+      headers: { 'Content-Type' => 'application/json' },
+      body: payload.to_json
+    )
+
+    expect do
+      provider.retrieve(query: 'Question', knowledge_version_id: 'knowledge-v1', source_manifest: source_manifest)
+    end.to raise_error(described_class::ResponseError, /chunk content hash does not match/)
   end
 
   it 'rejects evidence outside the selected version manifest' do

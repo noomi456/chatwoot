@@ -10,7 +10,7 @@ RSpec.describe ChatRing::Knowledge::ProviderCleanupScheduler do
     version = ChatRing::KnowledgeVersion.create!(
       account: account,
       inbox: inbox,
-      status: 'retired',
+      status: 'ingesting',
       provider_release: 'provider-release',
       root_url: 'https://example.com/'
     )
@@ -22,6 +22,7 @@ RSpec.describe ChatRing::Knowledge::ProviderCleanupScheduler do
       provider_source_id: 'source-1',
       provider_status: 'ready'
     )
+    version.update!(status: 'retired')
 
     expect do
       described_class.schedule_eligible!(account: account, inbox: inbox)
@@ -41,7 +42,7 @@ RSpec.describe ChatRing::Knowledge::ProviderCleanupScheduler do
     version = ChatRing::KnowledgeVersion.create!(
       account: account,
       inbox: inbox,
-      status: 'retired',
+      status: 'ingesting',
       provider_release: 'provider-release',
       root_url: 'https://example.com/'
     )
@@ -53,6 +54,7 @@ RSpec.describe ChatRing::Knowledge::ProviderCleanupScheduler do
       provider_source_id: 'source-retained',
       provider_status: 'ready'
     )
+    version.update!(status: 'retired')
     current = ChatRing::KnowledgeVersion.create!(
       account: account,
       inbox: inbox,
