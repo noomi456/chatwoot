@@ -6,6 +6,7 @@ on:
       - codex/chatring-ce-foundation
       - codex/internal-assistant-spike
       - codex/rag-production-fix
+      - codex/phase2a-final-audit
   workflow_dispatch:
 
 permissions:
