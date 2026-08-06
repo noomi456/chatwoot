@@ -132,6 +132,8 @@ jobs:
           jq -e '.services["docs-gpt-worker"].environment.INTERNAL_KEY == "ci-only-internal-key"' /tmp/chatring-knowledge-compose.json
           jq -e '.services["docs-gpt-backend"].environment.AUTH_TYPE == "simple_jwt"' /tmp/chatring-knowledge-compose.json
           jq -e '.services["docs-gpt-worker"].command | contains(["--concurrency=1", "--max-tasks-per-child=20"])' /tmp/chatring-knowledge-compose.json
+          grep -q 'DocsGPT JWT startup-log contract changed' deploy/knowledge/Dockerfile
+          grep -q 'Simple JWT authentication initialized' deploy/knowledge/Dockerfile
           python -m py_compile deploy/knowledge/docsgpt/chatring_extension.py
 
   build:
