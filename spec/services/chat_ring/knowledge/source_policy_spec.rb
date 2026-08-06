@@ -48,6 +48,11 @@ RSpec.describe ChatRing::Knowledge::SourcePolicy do
     content = [
       '# Start',
       'Useful product documentation. ' * 5,
+      'Live conversation',
+      'Sarah Connor asks for an invented enterprise feature.',
+      'The bot promises a fictional capability.',
+      '## Verified capability',
+      'This product capability is supported by the page.',
       'We use cookies to run the site, improve performance, and remember your choices. You can change settings any time.'
     ].join("\n")
     expect(manifest.find { |entry| entry['url'].end_with?('/help/start') }).to include(
@@ -65,6 +70,8 @@ RSpec.describe ChatRing::Knowledge::SourcePolicy do
     expect(result.one?).to be(true)
     expect(result.first[:source_url]).to eq('https://example.com/docs/start')
     expect(result.first[:markdown]).not_to include('We use cookies')
+    expect(result.first[:markdown]).not_to include('fictional capability')
+    expect(result.first[:markdown]).to include('## Verified capability')
   end
 
   it 'rejects soft-404 and non-success pages' do

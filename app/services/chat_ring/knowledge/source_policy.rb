@@ -18,6 +18,7 @@ class ChatRing::Knowledge::SourcePolicy
     Unique Visitors|Engagement Rate|Leads Generated|Top Countries|Conversation Sentiment|
     High-intent buyer detected|Pricing intent|Calendar ready|CRM owner|AE assigned
   )\b/ix
+  DEMO_BLOCK_START = /\A(?:Live conversation|Conversion control panel|token|format_quote)\s*\z/i
   UNAPPROVED_COMPLIANCE_LINE = /\b(?:SOC\s*2|HIPAA|ISO\s*27001|end[- ]to[- ]end encrypt|data residency)\b/i
   PROMPT_INJECTION = /\b(?:ignore (?:all |any )?(?:previous|prior) instructions|
     reveal (?:the )?system prompt|you are now (?:a|an)|developer message:)\b/ix
@@ -113,9 +114,27 @@ class ChatRing::Knowledge::SourcePolicy
   # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
 
   def clean_markdown(value)
-    value.to_s.lines.reject do |line|
+    without_demo_blocks(value.to_s.lines).reject do |line|
       COOKIE_BANNER.match?(line) || DEMO_LINE.match?(line) || UNAPPROVED_COMPLIANCE_LINE.match?(line)
     end.join.strip
+  end
+
+  def without_demo_blocks(lines)
+    retained = []
+    skipping_demo_block = false
+    lines.each do |line|
+      if DEMO_BLOCK_START.match?(line.strip)
+        skipping_demo_block = true
+        next
+      end
+      if skipping_demo_block
+        next unless line.start_with?('## ')
+
+        skipping_demo_block = false
+      end
+      retained << line
+    end
+    retained
   end
 
   def ensure_complete!(pages, allowed)
