@@ -9,6 +9,8 @@ class ChatRing::Knowledge::SourcePolicy
     privacy(?:-policy)?|cookie(?:-policy|s)?|terms(?:-of-(?:service|use))?|legal|
     blog|news|changelog|careers?|jobs?|press
   )(?:/|\z)}ix
+  NESTED_POLICY_PATHS = %r{/(?:legal|polic(?:y|ies))/(?:privacy(?:-policy)?|cookie(?:-policy|s)?|terms(?:-of-(?:service|use))?)(?:/|\z)}i
+  USELESS_PAGE_TITLE = /\A\s*(?:privacy policy|cookie policy|terms (?:of service|of use)|sign in|log in|sign up|register|sitemap)\b/i
   SOFT_404 = /\b(?:page not found|404 not found|this page (?:does not|doesn't) exist)\b/i
   COOKIE_BANNER = /We use cookies to run the site, improve performance, and remember your choices\. You can change settings any time\./i
   DEMO_LINE = /\b(?:
@@ -37,10 +39,11 @@ class ChatRing::Knowledge::SourcePolicy
       url = ChatRing::Knowledge::FirecrawlClient.canonical_url(normalized.fetch('url'))
       enforce_origin!(url)
       path = URI.parse(url).path
+      excluded = excluded_before_scrape?(path, normalized)
       normalized.merge(
         'url' => url,
-        'included' => !EXCLUDED_PATHS.match?(path),
-        'exclusion_reason' => EXCLUDED_PATHS.match?(path) ? 'non_knowledge_route' : nil,
+        'included' => !excluded,
+        'exclusion_reason' => excluded ? 'non_knowledge_route' : nil,
         'authority_class' => authority_class(path)
       ).compact
     end
@@ -147,6 +150,11 @@ class ChatRing::Knowledge::SourcePolicy
 
       entry.merge('included' => false, 'exclusion_reason' => 'redundant_help_route')
     end
+  end
+
+  def excluded_before_scrape?(path, entry)
+    title = entry['title'].to_s
+    EXCLUDED_PATHS.match?(path) || NESTED_POLICY_PATHS.match?(path) || USELESS_PAGE_TITLE.match?(title)
   end
 
   def authority_class(path)

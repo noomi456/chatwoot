@@ -44,5 +44,5 @@ class ChatRing::Knowledge::Retriever
     )
   end
 
-  private_class_method :provider, :source_manifest
+  private_class_method :provider
 end

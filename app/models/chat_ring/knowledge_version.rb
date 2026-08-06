@@ -1,7 +1,10 @@
+require 'digest'
+
 class ChatRing::KnowledgeVersion < ApplicationRecord
   self.table_name = 'chat_ring_knowledge_versions'
 
   STATUSES = %w[pending crawling ingesting ready published retired failed].freeze
+  EVALUATION_STATUSES = %w[pending passed failed].freeze
 
   belongs_to :account
   belongs_to :inbox
@@ -18,6 +21,7 @@ class ChatRing::KnowledgeVersion < ApplicationRecord
   encrypts :provider_agent_api_key
 
   validates :status, inclusion: { in: STATUSES }
+  validates :evaluation_status, inclusion: { in: EVALUATION_STATUSES }
   validates :provider, :provider_release, :root_url, presence: true
   validate :inbox_belongs_to_account
 
@@ -25,6 +29,19 @@ class ChatRing::KnowledgeVersion < ApplicationRecord
 
   def fail!(code:, message:)
     update!(status: 'failed', failure_code: code.to_s, failure_message: message.to_s.truncate(1000))
+  end
+
+  def evaluation_binding_digest
+    document_hashes = documents.order(:id).pluck(:content_hash)
+    Digest::SHA256.hexdigest(
+      [manifest_digest, provider_release, config_snapshot, document_hashes].to_json
+    )
+  end
+
+  def evaluation_passed_for_current_content?
+    evaluation_status == 'passed' &&
+      evaluated_at.present? &&
+      evaluation_report['binding_digest'] == evaluation_binding_digest
   end
 
   private

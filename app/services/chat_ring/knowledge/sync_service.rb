@@ -14,6 +14,7 @@ class ChatRing::Knowledge::SyncService
 
   def self.start!(account:, inbox:, root_url:, publish_on_ready: false) # rubocop:disable Metrics/MethodLength
     raise ArgumentError, 'inbox must belong to account' unless inbox.account_id == account.id
+    raise ArgumentError, 'publish_on_ready is disabled; evaluate the ready version before publication' if publish_on_ready
 
     version = ChatRing::KnowledgeVersion.create!(
       account: account,
@@ -30,8 +31,7 @@ class ChatRing::Knowledge::SyncService
         'retrieval' => {
           'strategy' => ChatRing::Knowledge::DocsGptProvider::RETRIEVAL_STRATEGY,
           'score_threshold' => Float(ENV.fetch('DOCSGPT_SCORE_THRESHOLD'))
-        },
-        'publish_on_ready' => ActiveModel::Type::Boolean.new.cast(publish_on_ready)
+        }
       }
     )
     ChatRing::Knowledge::SyncJob.perform_later(version.id)
@@ -169,9 +169,11 @@ class ChatRing::Knowledge::SyncService
       provider_agent_id: nil,
       provider_agent_api_key: nil,
       provider_agent_creation_started_at: nil,
+      evaluation_status: 'pending',
+      evaluation_report: {},
+      evaluated_at: nil,
       ready_at: Time.current
     )
-    ChatRing::Knowledge::PublicationService.publish!(@version) if @version.config_snapshot['publish_on_ready']
     :complete
   end
 

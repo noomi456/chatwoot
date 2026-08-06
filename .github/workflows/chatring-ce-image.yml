@@ -89,6 +89,7 @@ jobs:
           spec/models/chat_ring/knowledge_document_spec.rb
           spec/services/chat_ring/knowledge/docs_gpt_client_spec.rb
           spec/services/chat_ring/knowledge/docs_gpt_provider_spec.rb
+          spec/services/chat_ring/knowledge/evaluation_service_spec.rb
           spec/services/chat_ring/knowledge/firecrawl_client_spec.rb
           spec/services/chat_ring/knowledge/source_policy_spec.rb
           spec/services/chat_ring/knowledge/sync_service_spec.rb

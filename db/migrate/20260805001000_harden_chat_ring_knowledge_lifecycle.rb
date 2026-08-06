@@ -2,7 +2,13 @@ class HardenChatRingKnowledgeLifecycle < ActiveRecord::Migration[7.1]
   def change # rubocop:disable Metrics/MethodLength
     add_column :chat_ring_knowledge_versions, :processing_lease_token, :string
     add_column :chat_ring_knowledge_versions, :processing_lease_expires_at, :datetime
+    add_column :chat_ring_knowledge_versions, :evaluation_status, :string, null: false, default: 'pending'
+    add_column :chat_ring_knowledge_versions, :evaluation_report, :jsonb, null: false, default: {}
+    add_column :chat_ring_knowledge_versions, :evaluated_at, :datetime
     add_index :chat_ring_knowledge_versions, :processing_lease_token, unique: true, where: 'processing_lease_token IS NOT NULL'
+    add_check_constraint :chat_ring_knowledge_versions,
+                         "evaluation_status IN ('pending', 'passed', 'failed')",
+                         name: 'chatring_knowledge_versions_evaluation_status_check'
 
     create_table :chat_ring_knowledge_publication_events do |t|
       t.references :account, null: false, foreign_key: true

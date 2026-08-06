@@ -26,10 +26,25 @@ namespace :chatring do
           document_count: version.documents.count,
           ready_document_count: version.documents.where(provider_status: 'ready').count,
           provider_source_ids: version.documents.distinct.pluck(:provider_source_id).compact,
+          evaluation_status: version.evaluation_status,
+          evaluated_at: version.evaluated_at,
+          evaluation_case_count: version.evaluation_report['case_count'],
+          evaluation_passed_count: version.evaluation_report['passed_count'],
           failure_code: version.failure_code,
           failure_message: version.failure_message
         }.to_json
       )
+    end
+
+    desc 'Evaluate a ready knowledge version using a JSON release-suite file'
+    task :evaluate, [:knowledge_version_id, :suite_path] => :environment do |_task, args|
+      suite_path = Pathname.new(args.fetch(:suite_path)).realpath
+      cases = JSON.parse(File.read(suite_path))
+      report = ChatRing::Knowledge::EvaluationService.evaluate!(
+        ChatRing::KnowledgeVersion.find(args.fetch(:knowledge_version_id)),
+        cases: cases
+      )
+      puts report.slice('suite_digest', 'case_count', 'passed_count').to_json
     end
 
     desc 'Publish a ready knowledge version for its inbox'

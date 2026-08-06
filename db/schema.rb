@@ -764,12 +764,16 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_05_001000) do
     t.datetime "updated_at", null: false
     t.string "processing_lease_token"
     t.datetime "processing_lease_expires_at"
+    t.string "evaluation_status", default: "pending", null: false
+    t.jsonb "evaluation_report", default: {}, null: false
+    t.datetime "evaluated_at"
     t.index ["account_id", "inbox_id", "created_at"], name: "index_chatring_knowledge_versions_on_scope_and_created_at"
     t.index ["account_id"], name: "index_chat_ring_knowledge_versions_on_account_id"
     t.index ["firecrawl_crawl_id"], name: "index_chat_ring_knowledge_versions_on_firecrawl_crawl_id", unique: true, where: "(firecrawl_crawl_id IS NOT NULL)"
     t.index ["inbox_id"], name: "index_chat_ring_knowledge_versions_on_inbox_id"
     t.index ["processing_lease_token"], name: "index_chat_ring_knowledge_versions_on_processing_lease_token", unique: true, where: "(processing_lease_token IS NOT NULL)"
     t.check_constraint "status::text = ANY (ARRAY['pending'::character varying, 'crawling'::character varying, 'ingesting'::character varying, 'ready'::character varying, 'published'::character varying, 'retired'::character varying, 'failed'::character varying]::text[])", name: "chatring_knowledge_versions_status_check"
+    t.check_constraint "evaluation_status::text = ANY (ARRAY['pending'::character varying, 'passed'::character varying, 'failed'::character varying]::text[])", name: "chatring_knowledge_versions_evaluation_status_check"
   end
 
   create_table "companies", force: :cascade do |t|
