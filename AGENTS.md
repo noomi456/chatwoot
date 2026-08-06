@@ -17,6 +17,8 @@ This repository is ChatRing's Community Edition conversation foundation, derived
 - Heavy or independently scalable execution remains replaceable behind narrow contracts: Firecrawl website extraction, DocsGPT ingestion/retrieval, model inference, long-running Skills, and artifact compilation. These dependencies must not create a second conversation ledger or send customer replies.
 - The disabled-by-default `ChatRing::AssistantSpike` remains an architecture proof only. It may schedule a deterministic reply through CE message/job/delivery seams, but it must not contain an LLM, retrieval, tools, Playbooks, artifacts, engagements, Voice, or production Assistant behavior.
 - `ChatRing::Knowledge` may define provider-neutral evidence contracts and selected-provider adapters. It must return evidence only; it cannot author or deliver a customer answer.
+- Phase 2A's lifecycle proof does not establish production retrieval readiness. Customer-facing knowledge use remains blocked until the score-bearing, abstaining, authority-filtered and lifecycle-hardened second-pass gate passes.
+- The legacy DocsGPT `POST /api/search` response is not a production evidence contract because it omits scores and bypasses DocsGPT's configured Dispatcher path. Production retrieval must expose provider scores and permit an empty EvidenceSet.
 - Preserve supported Chatwoot CE APIs, webhook contracts, database identifiers, migrations, SDK events, and environment variables unless an approved migration contract explicitly changes them.
 - ChatRing branding is a customer-facing presentation layer. Do not perform global internal identifier replacement.
 
