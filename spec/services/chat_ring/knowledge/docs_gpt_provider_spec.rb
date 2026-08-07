@@ -173,19 +173,19 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
     expect(result.items).to be_empty
   end
 
-  it 'rejects unscored provider results' do
+  it 'normalizes an unscored provider result as a typed invalid response' do
     stub_request(:post, retrieval_url).to_return(
       status: 200,
       headers: { 'Content-Type' => 'application/json' },
       body: accepted_payload(score: nil).to_json
     )
 
-    expect do
-      provider.retrieve(query: 'Question', knowledge_version_id: 'knowledge-v1', source_manifest: source_manifest)
-    end.to raise_error(described_class::ResponseError, /missing numeric score/)
+    result = provider.retrieve(query: 'Question', knowledge_version_id: 'knowledge-v1', source_manifest: source_manifest)
+
+    expect(result).to have_attributes(status: 'provider_error', error_code: 'provider_invalid_response', items: [])
   end
 
-  it 'rejects a non-finite provider score' do
+  it 'normalizes a non-finite provider score as a typed invalid response' do
     body = accepted_payload.to_json.sub('"score":0.81', '"score":1e400')
     stub_request(:post, retrieval_url).to_return(
       status: 200,
@@ -193,12 +193,12 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
       body: body
     )
 
-    expect do
-      provider.retrieve(query: 'Question', knowledge_version_id: 'knowledge-v1', source_manifest: source_manifest)
-    end.to raise_error(described_class::ResponseError, /invalid numeric score/)
+    result = provider.retrieve(query: 'Question', knowledge_version_id: 'knowledge-v1', source_manifest: source_manifest)
+
+    expect(result).to have_attributes(status: 'provider_error', error_code: 'provider_invalid_response', items: [])
   end
 
-  it 'rejects provider text that does not match its stable chunk hash' do
+  it 'normalizes tampered provider text as a typed integrity failure' do
     payload = accepted_payload
     payload[:chunks][0][:text] = 'Tampered provider excerpt'
     stub_request(:post, retrieval_url).to_return(
@@ -207,9 +207,9 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
       body: payload.to_json
     )
 
-    expect do
-      provider.retrieve(query: 'Question', knowledge_version_id: 'knowledge-v1', source_manifest: source_manifest)
-    end.to raise_error(described_class::ResponseError, /chunk content hash does not match/)
+    result = provider.retrieve(query: 'Question', knowledge_version_id: 'knowledge-v1', source_manifest: source_manifest)
+
+    expect(result).to have_attributes(status: 'provider_error', error_code: 'provider_integrity_error', items: [])
   end
 
   it 'preserves provider whitespace while validating the stable chunk hash' do
@@ -229,7 +229,7 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
     expect(result.items.first.excerpt).to eq(authority_text)
   end
 
-  it 'rejects evidence outside the selected version manifest' do
+  it 'normalizes evidence outside the selected version manifest as a typed integrity failure' do
     payload = accepted_payload
     payload[:chunks][0][:source] = 'unpublished-source'
     stub_request(:post, retrieval_url).to_return(
@@ -238,9 +238,9 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
       body: payload.to_json
     )
 
-    expect do
-      provider.retrieve(query: 'Question', knowledge_version_id: 'knowledge-v1', source_manifest: source_manifest)
-    end.to raise_error(described_class::ResponseError, /outside the knowledge-version manifest/)
+    result = provider.retrieve(query: 'Question', knowledge_version_id: 'knowledge-v1', source_manifest: source_manifest)
+
+    expect(result).to have_attributes(status: 'provider_error', error_code: 'provider_integrity_error', items: [])
   end
 
   it 'keeps provider failure distinct from insufficient evidence' do
@@ -252,7 +252,72 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
 
     result = provider.retrieve(query: 'Question', knowledge_version_id: 'knowledge-v1', source_manifest: source_manifest)
     expect(result.status).to eq('provider_error')
-    expect(result.error_code).to eq('provider_error')
+    expect(result.error_code).to eq('provider_unavailable')
+  end
+
+  it 'never accepts evidence from an HTTP 503 response' do
+    stub_request(:post, retrieval_url).to_return(
+      status: 503,
+      headers: { 'Content-Type' => 'application/json' },
+      body: accepted_payload.to_json
+    )
+
+    result = provider.retrieve(query: 'Question', knowledge_version_id: 'knowledge-v1', source_manifest: source_manifest)
+
+    expect(result).to have_attributes(status: 'provider_error', error_code: 'provider_unavailable', items: [])
+  end
+
+  {
+    401 => 'provider_authentication_failed',
+    403 => 'provider_authentication_failed',
+    404 => 'provider_source_missing',
+    429 => 'provider_rate_limited',
+    500 => 'provider_unavailable'
+  }.each do |status, error_code|
+    it "normalizes HTTP #{status} as #{error_code}" do
+      stub_request(:post, retrieval_url).to_return(status: status, body: 'provider failure')
+
+      result = provider.retrieve(
+        query: 'Question',
+        knowledge_version_id: 'knowledge-v1',
+        source_manifest: source_manifest
+      )
+
+      expect(result).to have_attributes(status: 'provider_error', error_code: error_code, items: [])
+    end
+  end
+
+  it 'keeps transport timeouts distinct from insufficient evidence' do
+    stub_request(:post, retrieval_url).to_timeout
+
+    result = provider.retrieve(query: 'Question', knowledge_version_id: 'knowledge-v1', source_manifest: source_manifest)
+
+    expect(result).to have_attributes(status: 'provider_error', error_code: 'provider_timeout', items: [])
+  end
+
+  [EOFError, Errno::ECONNABORTED, Errno::ECONNRESET, Errno::ETIMEDOUT, OpenSSL::SSL::SSLError].each do |error_class|
+    it "normalizes #{error_class} as a connection failure" do
+      stub_request(:post, retrieval_url).to_raise(error_class.new)
+
+      result = provider.retrieve(
+        query: 'Question',
+        knowledge_version_id: 'knowledge-v1',
+        source_manifest: source_manifest
+      )
+
+      expect(result).to have_attributes(status: 'provider_error', error_code: 'provider_connection_failed', items: [])
+    end
+  end
+
+  it 'normalizes malformed successful responses without hiding local configuration errors' do
+    stub_request(:post, retrieval_url).to_return(status: 200, body: 'not-json')
+
+    result = provider.retrieve(query: 'Question', knowledge_version_id: 'knowledge-v1', source_manifest: source_manifest)
+    expect(result).to have_attributes(status: 'provider_error', error_code: 'provider_invalid_response', items: [])
+
+    expect do
+      provider.retrieve(query: '', knowledge_version_id: 'knowledge-v1', source_manifest: source_manifest)
+    end.to raise_error(described_class::ConfigurationError, /query is required/)
   end
 
   it 'requires an exact SHA-256 content binding' do
@@ -280,6 +345,15 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
         knowledge_version_id: 'knowledge-v1',
         source_manifest: unsafe_manifest
       )
-    end.to raise_error(described_class::ConfigurationError, /CTA url must use http or https/)
+    end.to raise_error(described_class::ConfigurationError, /CTA url must be a safe public http or https URL/)
+
+    unsafe_manifest[provider_source_reference][:cta_candidates][0][:url] = 'http://127.0.0.1/admin'
+    expect do
+      provider.retrieve(
+        query: 'Question',
+        knowledge_version_id: 'knowledge-v1',
+        source_manifest: unsafe_manifest
+      )
+    end.to raise_error(described_class::ConfigurationError, /CTA url must be a safe public http or https URL/)
   end
 end

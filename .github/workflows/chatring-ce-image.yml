@@ -7,6 +7,7 @@ on:
       - codex/internal-assistant-spike
       - codex/rag-production-fix
       - codex/phase2a-final-audit
+      - codex/phase2a-lifecycle-hardening
   workflow_dispatch:
 
 permissions:
@@ -87,11 +88,14 @@ jobs:
       - name: Run Phase 2A contract tests
         run: >-
           bundle exec rspec
+          spec/configs/schedule_spec.rb
           spec/jobs/chat_ring/assistant_spike/response_job_spec.rb
           spec/models/chat_ring/knowledge_document_spec.rb
           spec/models/chat_ring/knowledge/scope_cleanup_spec.rb
           spec/models/chat_ring/knowledge_version_spec.rb
           spec/jobs/chat_ring/knowledge/provider_cleanup_job_spec.rb
+          spec/jobs/chat_ring/knowledge/lifecycle_reconciliation_job_spec.rb
+          spec/jobs/chat_ring/knowledge/provider_maintenance_job_spec.rb
           spec/services/chat_ring/knowledge/docs_gpt_client_spec.rb
           spec/services/chat_ring/knowledge/docs_gpt_provider_spec.rb
           spec/services/chat_ring/knowledge/evaluation_service_spec.rb
@@ -103,6 +107,8 @@ jobs:
           spec/services/chat_ring/knowledge/provider_chunk_validator_spec.rb
           spec/services/chat_ring/knowledge/provider_validator_spec.rb
           spec/services/chat_ring/knowledge/provider_cleanup_scheduler_spec.rb
+          spec/services/chat_ring/knowledge/provider_cleanup_reconciler_spec.rb
+          spec/services/chat_ring/knowledge/abandonment_service_spec.rb
           spec/services/chat_ring/knowledge/retriever_spec.rb
         env:
           RAILS_ENV: test
@@ -126,7 +132,9 @@ jobs:
           db/migrate/20260805001000_harden_chat_ring_knowledge_lifecycle.rb
           db/migrate/20260806000000_add_chat_ring_provider_cleanup_records.rb
           db/migrate/20260806001000_harden_chat_ring_knowledge_scope_deletion.rb
+          db/migrate/20260806002000_harden_chat_ring_knowledge_recovery.rb
           spec/models/chat_ring
+          spec/configs/schedule_spec.rb
           spec/jobs/chat_ring/assistant_spike
           spec/jobs/chat_ring/knowledge
           spec/services/chat_ring/knowledge
@@ -164,8 +172,84 @@ jobs:
           ! grep -q '_row_lookup' deploy/knowledge/docsgpt/chatring_extension.py
           python -m py_compile deploy/knowledge/docsgpt/chatring_extension.py
 
-  build:
+  validate-knowledge-image:
     needs: [validate, validate-knowledge]
+    runs-on: ubuntu-22.04
+    env:
+      DOCSGPT_SOURCE_COMMIT: 616e6fe9c435bbc6bb472636db6b3ee2b9bcaf66
+      DOCSGPT_BASE_IMAGE: chatring/docsgpt-upstream:616e6fe9c435bbc6bb472636db6b3ee2b9bcaf66
+      DOCSGPT_DERIVED_IMAGE: chatring/docsgpt-ci:${{ github.sha }}
+      DOCSGPT_PUBLISHED_IMAGE: ghcr.io/${{ github.repository_owner }}/chatring-docsgpt:sha-${{ github.sha }}
+    steps:
+      - name: Checkout pinned ChatRing CE source
+        uses: actions/checkout@v4
+
+      - name: Checkout exact DocsGPT source
+        uses: actions/checkout@v4
+        with:
+          repository: arc53/DocsGPT
+          ref: ${{ env.DOCSGPT_SOURCE_COMMIT }}
+          path: docsgpt-upstream
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build exact upstream DocsGPT image
+        id: upstream
+        uses: docker/build-push-action@v6
+        with:
+          context: docsgpt-upstream/application
+          file: docsgpt-upstream/application/Dockerfile
+          load: true
+          push: false
+          tags: ${{ env.DOCSGPT_BASE_IMAGE }}
+          cache-from: type=gha,scope=docsgpt-upstream
+          cache-to: type=gha,mode=max,scope=docsgpt-upstream
+
+      - name: Build ChatRing-derived DocsGPT image
+        run: |
+          # The exact upstream image was source-built and loaded into this job's
+          # Docker daemon above. Use that local tag here; appending its digest to
+          # an unpushed tag makes Buildx incorrectly attempt a Docker Hub pull.
+          docker build \
+            --file deploy/knowledge/Dockerfile \
+            --tag "${DOCSGPT_DERIVED_IMAGE}" \
+            --build-arg "DOCSGPT_BASE_IMAGE=${DOCSGPT_BASE_IMAGE}" \
+            --build-arg "DOCSGPT_SOURCE_REPOSITORY=https://github.com/arc53/DocsGPT" \
+            --build-arg "DOCSGPT_SOURCE_COMMIT=${DOCSGPT_SOURCE_COMMIT}" \
+            --build-arg "DOCSGPT_BASE_DIGEST=${{ steps.upstream.outputs.digest }}" \
+            --build-arg "CHATRING_SOURCE_COMMIT=${GITHUB_SHA}" \
+            .
+
+      - name: Run functional tests inside the derived image
+        run: >-
+          docker run --rm
+          --entrypoint python
+          --env PYTHONPATH=/app
+          --volume "$PWD/deploy/knowledge/docsgpt/chatring_extension_test.py:/tmp/chatring_extension_test.py:ro"
+          "${DOCSGPT_DERIVED_IMAGE}"
+          /tmp/chatring_extension_test.py
+
+      - name: Verify immutable source labels
+        run: |
+          test "$(docker image inspect --format '{{ index .Config.Labels "io.chatring.docsgpt.source_commit" }}' "${DOCSGPT_DERIVED_IMAGE}")" = "${DOCSGPT_SOURCE_COMMIT}"
+          test "$(docker image inspect --format '{{ index .Config.Labels "io.chatring.docsgpt.base_digest" }}' "${DOCSGPT_DERIVED_IMAGE}")" = "${{ steps.upstream.outputs.digest }}"
+          test "$(docker image inspect --format '{{ index .Config.Labels "io.chatring.source_commit" }}' "${DOCSGPT_DERIVED_IMAGE}")" = "${GITHUB_SHA}"
+
+      - name: Sign in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish functionally tested DocsGPT image
+        run: |
+          docker tag "${DOCSGPT_DERIVED_IMAGE}" "${DOCSGPT_PUBLISHED_IMAGE}"
+          docker push "${DOCSGPT_PUBLISHED_IMAGE}"
+
+  build:
+    needs: [validate, validate-knowledge, validate-knowledge-image]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout pinned ChatRing CE source
@@ -181,6 +265,7 @@ jobs:
         run: |
           test ! -e enterprise
           test ! -e spec/enterprise
+          test -f app/javascript/dashboard/api/enterprise/account.js
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3

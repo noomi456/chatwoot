@@ -93,7 +93,9 @@ RSpec.describe ChatRing::Knowledge::PublicationService do
       provider_source_id: 'source-retained',
       binding_digest: version.evaluation_binding_digest,
       status: 'retrying',
-      eligible_at: 1.minute.ago
+      eligible_at: 1.minute.ago,
+      lease_token: 'active-cleanup-owner',
+      lease_expires_at: 5.minutes.from_now
     )
 
     expect do

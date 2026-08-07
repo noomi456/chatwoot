@@ -1,5 +1,7 @@
 require 'digest'
 require 'httparty'
+require 'net/http'
+require 'openssl'
 require 'uri'
 
 # rubocop:disable Metrics/ClassLength
@@ -17,8 +19,33 @@ class ChatRing::Knowledge::DocsGptProvider
 
   class Error < StandardError; end
   class ConfigurationError < Error; end
-  class RequestError < Error; end
-  class ResponseError < Error; end
+
+  class RemoteError < Error
+    attr_reader :error_code
+
+    def initialize(message, error_code:)
+      super(message)
+      @error_code = error_code
+    end
+  end
+
+  class RequestError < RemoteError
+    def initialize(message, error_code: 'provider_connection_failed')
+      super
+    end
+  end
+
+  class ResponseError < RemoteError
+    def initialize(message, error_code: 'provider_invalid_response')
+      super
+    end
+  end
+
+  class IntegrityError < ResponseError
+    def initialize(message, error_code: 'provider_integrity_error')
+      super
+    end
+  end
 
   # rubocop:disable Metrics/ParameterLists
   def initialize(base_url:, provider_release:, provider_source_id:, account_id:, binding_digest:, internal_key:,
@@ -37,7 +64,7 @@ class ChatRing::Knowledge::DocsGptProvider
   end
   # rubocop:enable Metrics/ParameterLists
 
-  def retrieve(query:, knowledge_version_id:, source_manifest:, limit: DEFAULT_EVIDENCE_LIMIT) # rubocop:disable Metrics/MethodLength
+  def retrieve(query:, knowledge_version_id:, source_manifest:, limit: DEFAULT_EVIDENCE_LIMIT) # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
     resolved_query = required_string(query, 'query')
     raise ConfigurationError, "query must not exceed #{MAX_QUERY_LENGTH} characters" if resolved_query.length > MAX_QUERY_LENGTH
 
@@ -55,10 +82,19 @@ class ChatRing::Knowledge::DocsGptProvider
     items = status == 'accepted' ? build_items(payload, version_id, manifest, resolved_query) : []
     status = 'insufficient_evidence' if status == 'accepted' && items.empty?
     build_evidence_set(version_id, resolved_query, result_limit, payload, status, items)
-  rescue Timeout::Error
-    failure_set(version_id, resolved_query, result_limit, 'timeout', 'provider_timeout')
-  rescue SocketError, Errno::ECONNREFUSED, Errno::EHOSTUNREACH => e
-    failure_set(version_id, resolved_query, result_limit, 'provider_error', e.class.name)
+  rescue RequestError, ResponseError => e
+    log_provider_failure(e.error_code, e)
+    failure_set(version_id, resolved_query, result_limit, 'provider_error', e.error_code)
+  rescue Timeout::Error => e
+    log_provider_failure('provider_timeout', e)
+    failure_set(version_id, resolved_query, result_limit, 'provider_error', 'provider_timeout')
+  rescue SocketError, EOFError, Errno::ECONNABORTED, Errno::ECONNREFUSED, Errno::ECONNRESET, Errno::EHOSTUNREACH,
+         Errno::ENETUNREACH, Errno::EPIPE, Errno::ETIMEDOUT, OpenSSL::SSL::SSLError => e
+    log_provider_failure('provider_connection_failed', e)
+    failure_set(version_id, resolved_query, result_limit, 'provider_error', 'provider_connection_failed')
+  rescue HTTParty::Error, JSON::ParserError, Net::HTTPBadResponse, Net::HTTPHeaderSyntaxError, Net::ProtocolError => e
+    log_provider_failure('provider_invalid_response', e)
+    failure_set(version_id, resolved_query, result_limit, 'provider_error', 'provider_invalid_response')
   end
 
   private
@@ -69,12 +105,32 @@ class ChatRing::Knowledge::DocsGptProvider
       'Accept' => 'application/json'
     }.merge(auth_headers(body, version_id))
     response = HTTParty.post(retrieval_url, headers: headers, body: body, timeout: @timeout_seconds)
+    raise request_error(response.code) unless response.success? || response.code == 503
+
     parsed = response.parsed_response
-    raise ResponseError, "DocsGPT retrieval response is invalid (HTTP #{response.code})" unless parsed.is_a?(Hash)
+    unless parsed.is_a?(Hash)
+      error_code = response.code == 503 ? 'provider_unavailable' : 'provider_invalid_response'
+      raise ResponseError.new("DocsGPT retrieval response is invalid (HTTP #{response.code})", error_code: error_code)
+    end
 
-    return parsed if response.success? || response.code == 503
+    if response.code == 503
+      parsed['status'] = 'provider_error'
+      parsed['chatring_error_code'] = 'provider_unavailable'
+      return parsed
+    end
 
-    raise RequestError, "DocsGPT retrieval failed with HTTP #{response.code}"
+    parsed
+  end
+
+  def request_error(status)
+    error_code = case status
+                 when 401, 403 then 'provider_authentication_failed'
+                 when 404 then 'provider_source_missing'
+                 when 429 then 'provider_rate_limited'
+                 when 500..599 then 'provider_unavailable'
+                 else 'provider_invalid_response'
+                 end
+    RequestError.new("DocsGPT retrieval failed with HTTP #{status}", error_code: error_code)
   end
 
   def auth_headers(body, version_id)
@@ -118,7 +174,7 @@ class ChatRing::Knowledge::DocsGptProvider
 
     provider_chunk_id = required_response_string(hit['chunk_id'], rank, 'chunk_id')
     score = numeric_score(hit['score'], rank)
-    raise ResponseError, "DocsGPT result #{rank} is below the provider threshold" if score < @score_threshold
+    raise IntegrityError, "DocsGPT result #{rank} is below the provider threshold" if score < @score_threshold
 
     metadata = hit['metadata'].is_a?(Hash) ? hit['metadata'] : {}
     verify_chunk_content_hash!(metadata, excerpt, rank)
@@ -155,7 +211,7 @@ class ChatRing::Knowledge::DocsGptProvider
       provider_release: @provider_release,
       query: query,
       status: status,
-      error_code: status == 'provider_error' ? 'provider_error' : nil,
+      error_code: status == 'provider_error' ? payload['chatring_error_code'] || 'provider_unavailable' : nil,
       latency_ms: payload['latency_ms']&.to_i,
       retrieval_strategy: RETRIEVAL_STRATEGY,
       retrieval_configuration: retrieval_configuration(limit, payload).freeze,
@@ -192,7 +248,7 @@ class ChatRing::Knowledge::DocsGptProvider
     source = manifest[provider_reference]
     return source if source.present?
 
-    raise ResponseError, "DocsGPT result #{rank} references a source outside the knowledge-version manifest"
+    raise IntegrityError, "DocsGPT result #{rank} references a source outside the knowledge-version manifest"
   end
 
   def normalize_manifest(value)
@@ -268,12 +324,18 @@ class ChatRing::Knowledge::DocsGptProvider
 
   def verify_chunk_content_hash!(metadata, excerpt, rank)
     expected = metadata['chatring_content_hash'].to_s
-    raise ResponseError, "DocsGPT result #{rank} is missing a valid chunk content hash" unless expected.match?(/\A[0-9a-f]{64}\z/)
+    raise IntegrityError, "DocsGPT result #{rank} is missing a valid chunk content hash" unless expected.match?(/\A[0-9a-f]{64}\z/)
 
     actual = Digest::SHA256.hexdigest(excerpt)
     return if actual == expected
 
-    raise ResponseError, "DocsGPT result #{rank} chunk content hash does not match its excerpt"
+    raise IntegrityError, "DocsGPT result #{rank} chunk content hash does not match its excerpt"
+  end
+
+  def log_provider_failure(error_code, error)
+    Rails.logger.warn(
+      "ChatRing DocsGPT retrieval failure code=#{error_code} class=#{error.class.name} message=#{error.message.to_s.truncate(500)}"
+    )
   end
 
   def retrieval_url
@@ -292,12 +354,11 @@ class ChatRing::Knowledge::DocsGptProvider
 
   def required_http_url(value, name)
     url = required_string(value, name)
-    uri = URI.parse(url)
-    raise ConfigurationError, "#{name} must use http or https" unless uri.is_a?(URI::HTTP) && uri.host.present? && uri.userinfo.blank?
+    unless ChatRing::Knowledge::MarkdownStructure.safe_public_http_url?(url)
+      raise ConfigurationError, "#{name} must be a safe public http or https URL"
+    end
 
     url
-  rescue URI::InvalidURIError
-    raise ConfigurationError, "#{name} is invalid"
   end
 
   def required_string(value, name)

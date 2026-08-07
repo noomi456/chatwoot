@@ -53,6 +53,32 @@ RSpec.describe ChatRing::Knowledge::SyncService do
     expect(version.reload.status).to eq('pending')
   end
 
+  it 'treats an abandoned version as terminal when a delayed sync job arrives' do
+    version.update!(status: 'ready')
+    version.update!(status: 'abandoned', abandoned_at: Time.current, abandon_reason: 'administrator rejected candidate')
+    expect(firecrawl).not_to receive(:map)
+    expect(docs_gpt).not_to receive(:task_status)
+
+    outcome = described_class.new(version, firecrawl: firecrawl, docs_gpt: docs_gpt).tick
+
+    expect(outcome).to eq(:complete)
+    expect(version.reload.status).to eq('abandoned')
+  end
+
+  it 'fails an active build that remains nonterminal beyond the bounded deadline' do
+    version.update_column(:created_at, described_class::MAX_BUILD_AGE.ago - 1.minute) # rubocop:disable Rails/SkipsModelValidations
+    expect(firecrawl).not_to receive(:map)
+
+    expect do
+      described_class.new(version, firecrawl: firecrawl, docs_gpt: docs_gpt).tick
+    end.to raise_error(described_class::BuildDeadlineExceeded, /build deadline/)
+
+    expect(version.reload).to have_attributes(
+      status: 'failed',
+      failure_code: 'ChatRing::Knowledge::SyncService::BuildDeadlineExceeded'
+    )
+  end
+
   it 'refuses automatic publication before the retrieval evaluation gate' do
     expect do
       described_class.start!(account: account, inbox: inbox, root_url: 'https://example.com', publish_on_ready: true)

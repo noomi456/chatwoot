@@ -32,4 +32,19 @@ RSpec.describe ChatRing::KnowledgeVersion do
       )
     ).to be(true)
   end
+
+  it 'treats an abandoned build as terminal and immutable' do
+    version.update!(status: 'abandoned', abandoned_at: Time.current, abandon_reason: 'rejected')
+
+    expect(version.update(root_url: 'https://other.example/')).to be(false)
+    expect(version.errors[:base]).to include('completed knowledge-version build snapshot is immutable')
+
+    version.reload
+    expect(version.update(status: 'ready')).to be(false)
+    expect(version.errors[:status]).to include('cannot change after abandonment')
+
+    version.reload
+    expect(version.update(abandon_reason: 'rewritten')).to be(false)
+    expect(version.errors[:base]).to include('abandonment audit fields are immutable')
+  end
 end

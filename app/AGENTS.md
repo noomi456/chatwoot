@@ -21,8 +21,10 @@ Own ChatRing's customer- and agent-facing Community Edition application behavior
 - DocsGPT is a private replaceable execution dependency. ChatRing uses scoped service authentication and one isolated provider source per knowledge version; provider-side answer Agents and legacy search API keys are not part of the retrieval contract.
 - Production evidence must include a finite numeric provider score, score kind, rank, exact source/version binding, a verified provider chunk-content hash, canonical source URL and title, retrieved heading path, normalized page heading outline, safe source-derived CTA candidates, and retrieval configuration identity. Reject scoreless, non-finite, hash-mismatched, or off-manifest results and represent insufficient evidence as an empty typed outcome.
 - Once a knowledge version is ready, published, or retired, its build configuration, manifest, and source-document snapshots are immutable; create a new isolated version for any content or metadata change.
+- Active website builds fail closed after 24 hours, and release evaluation must reproduce the same ordered evidence identities across repeated retrievals before publication.
 - Only one worker may claim a knowledge-version build. Publication and rollback require validation and append-only publication events; provider cleanup failures remain durable and retryable.
-- Provider cleanup must serialize with publication, and Account/Inbox destruction must retain an independently executable provider tombstone before scoped database records cascade.
+- Provider cleanup must serialize with publication, use owner-aware expiring leases, recover lost due work through an hourly condition-driven sweep, and require explicit operator retry after bounded attempts are exhausted. Account/Inbox destruction must retain an independently executable provider tombstone before scoped database records cascade.
+- Unpublished evaluation-failed builds become explicitly abandoned only after a seven-day grace period. Published and rollback-protected versions can never be abandoned or cleaned.
 - `ChatRing::AssistantSpike` is a non-production deterministic boundary proof only. It may reuse the CE AgentBot sender contract and normal Message/Conversation/Sidekiq delivery lifecycle, while remaining disabled unless its explicit spike configuration is active.
 - Do not import or mirror Enterprise implementations.
 - Use installation configuration or the frontend branding helper for product identity instead of scattered hard-coded replacements.
@@ -36,7 +38,7 @@ Own ChatRing's customer- and agent-facing Community Edition application behavior
 
 - Exercise login, onboarding, dashboard, inbox, widget, survey, and transactional email surfaces in the deployed image.
 - Confirm API, webhook, WebSocket, and message-delivery contracts remain unchanged.
-- For Phase 2A, prove discovery saturation and origin rejection, page-quality/source-authority rules, manifest reconciliation, scored retrieval, unsupported-query abstention, concurrent build claims, authenticated provider calls, validated publication/rollback, durable cleanup, and rejection of hits outside the published manifest.
+- For Phase 2A, prove discovery saturation and origin rejection, page-quality/source-authority rules, manifest reconciliation, scored retrieval, unsupported-query abstention, concurrent build claims, authenticated provider calls, validated publication/rollback, durable owner-aware cleanup recovery, explicit abandonment, and rejection of hits outside the published manifest.
 - For the Assistant spike, prove idempotent retries, newest-message suppression, pending-to-open human takeover, normal `SendReplyJob` delivery, and identical persisted output in the Inbox and Classic Widget.
 
 ## Child DOX Index

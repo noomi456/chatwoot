@@ -13,6 +13,8 @@ RSpec.describe ChatRing::Knowledge::MarkdownStructure do
       #### Guided demo
       [Open in new tab](https://calendar.google.com/calendar/appointments/schedules/example)
       [Book a Demo](javascript:alert(1))
+      [Talk to Localhost](http://localhost:3000/admin)
+      [Book Private Demo](http://192.168.1.10/demo)
       [Talk to Sales](https://sales.example.net/contact)
       [Start 14-day Trial](/signup)
     MARKDOWN
@@ -59,5 +61,14 @@ RSpec.describe ChatRing::Knowledge::MarkdownStructure do
     expect do
       described_class.new(markdown: '# Unsafe', source_url: 'file:///tmp/unsafe').call
     end.to raise_error(described_class::Error, /http or https/)
+  end
+
+  it 'classifies only public HTTP destinations as safe' do
+    expect(described_class.safe_public_http_url?('https://example.com/demo')).to be(true)
+    expect(described_class.safe_public_http_url?('https://wa.me/15551234567')).to be(true)
+    expect(described_class.safe_public_http_url?('http://localhost/demo')).to be(false)
+    expect(described_class.safe_public_http_url?('http://service.internal/demo')).to be(false)
+    expect(described_class.safe_public_http_url?('http://10.0.0.4/demo')).to be(false)
+    expect(described_class.safe_public_http_url?('http://[::1]/demo')).to be(false)
   end
 end

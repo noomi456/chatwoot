@@ -3,6 +3,7 @@ require 'digest'
 class ChatRing::Knowledge::EvaluationService
   MIN_ACCEPTED_CASES = 5
   MIN_NEGATIVE_CASES = 5
+  RETRIEVAL_RUNS_PER_CASE = 2
   REQUIRED_CATEGORIES = %w[positive ambiguous unsupported adversarial compliance].freeze
   EXPECTATIONS = %w[accepted insufficient_evidence].freeze
 
@@ -86,21 +87,18 @@ class ChatRing::Knowledge::EvaluationService
       @cases.any? { |test_case| test_case['expectation'] == 'accepted' && test_case['expected_text'].blank? }
   end
 
-  def evaluate_case(test_case) # rubocop:disable Metrics/MethodLength
-    evidence_set = provider.retrieve(
-      query: test_case.fetch('query'),
-      knowledge_version_id: @version.id.to_s,
-      source_manifest: ChatRing::Knowledge::Retriever.source_manifest(@version),
-      limit: ChatRing::Knowledge::DocsGptProvider::DEFAULT_EVIDENCE_LIMIT
-    )
+  def evaluate_case(test_case)
+    evidence_sets = Array.new(RETRIEVAL_RUNS_PER_CASE) { retrieve(test_case.fetch('query')) }
+    evidence_set = evidence_sets.first
+    deterministic = evidence_sets.map { |result| evidence_signature(result) }.uniq.one?
     actual_urls = evidence_set.items.map(&:source_reference).uniq.sort
-    passed = expected_status?(test_case, evidence_set) &&
-             expected_source?(test_case, actual_urls) &&
-             expected_text?(test_case, evidence_set)
+    passed = case_passed?(test_case, evidence_set, actual_urls, deterministic)
     test_case.merge(
       'actual_status' => evidence_set.status,
       'actual_urls' => actual_urls,
       'evidence_ids' => evidence_set.items.map(&:id),
+      'deterministic' => deterministic,
+      'retrieval_runs' => RETRIEVAL_RUNS_PER_CASE,
       'passed' => passed
     )
   rescue StandardError => e
@@ -109,6 +107,30 @@ class ChatRing::Knowledge::EvaluationService
       'error_class' => e.class.name,
       'passed' => false
     )
+  end
+
+  def case_passed?(test_case, evidence_set, actual_urls, deterministic)
+    deterministic &&
+      expected_status?(test_case, evidence_set) &&
+      expected_source?(test_case, actual_urls) &&
+      expected_text?(test_case, evidence_set)
+  end
+
+  def retrieve(query)
+    provider.retrieve(
+      query: query,
+      knowledge_version_id: @version.id.to_s,
+      source_manifest: source_manifest,
+      limit: ChatRing::Knowledge::DocsGptProvider::DEFAULT_EVIDENCE_LIMIT
+    )
+  end
+
+  def evidence_signature(evidence_set)
+    [evidence_set.status, evidence_set.items.map(&:id)]
+  end
+
+  def source_manifest
+    @source_manifest ||= ChatRing::Knowledge::Retriever.source_manifest(@version)
   end
 
   def expected_status?(test_case, evidence_set)

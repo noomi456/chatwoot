@@ -20,6 +20,18 @@ trigger_hourly_scheduled_items_job:
   class: 'Internal::TriggerHourlyScheduledItemsJob'
   queue: scheduled_jobs
 
+# hourly repair sweep for missing knowledge cleanup jobs and expired owner leases
+chatring_knowledge_lifecycle_reconciliation_job:
+  cron: '23 * * * *'
+  class: 'ChatRing::Knowledge::LifecycleReconciliationJob'
+  queue: low
+
+# daily bounded housekeeping for DocsGPT's 24-hour idempotency records
+chatring_knowledge_provider_maintenance_job:
+  cron: '17 3 * * *'
+  class: 'ChatRing::Knowledge::ProviderMaintenanceJob'
+  queue: low
+
 # executed At every minute..
 trigger_imap_email_inboxes_job:
   cron: '*/1 * * * *'

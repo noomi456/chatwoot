@@ -17,6 +17,7 @@ Own GitHub Actions validation and immutable ChatRing Conversation Core image pub
 - Publish `linux/amd64` images tagged with the full source commit SHA.
 - Do not publish `latest` from the Phase 1 branch.
 - A build may not continue when branding tests or lint fail.
+- Build the approved DocsGPT source commit in CI, build the ChatRing-derived image from that exact base, and run scoped retrieval, mutation, provenance, and maintenance tests inside the resulting image before publishing it by immutable ChatRing commit tag.
 
 ## Work Guidance
 
@@ -28,6 +29,7 @@ Own GitHub Actions validation and immutable ChatRing Conversation Core image pub
 - `pnpm run eslint`
 - `pnpm exec vitest app/javascript/shared/helpers/specs/InstallationBranding.spec.js --run --no-cache`
 - Confirm the workflow's CE-boundary checks pass before accepting a GHCR artifact.
+- Confirm the published DocsGPT image records the approved upstream source commit, source-built base digest, and ChatRing source commit.
 
 ## Child DOX Index
 

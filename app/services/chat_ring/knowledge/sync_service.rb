@@ -5,12 +5,14 @@ require 'securerandom'
 class ChatRing::Knowledge::SyncService
   POLL_INTERVAL = 10.seconds
   PROCESSING_LEASE_TTL = 10.minutes
+  MAX_BUILD_AGE = 24.hours
   TERMINAL_TASK_FAILURES = %w[FAILURE REVOKED].freeze
   ACTIVE_TASK_STATUSES = %w[PENDING STARTED PROGRESS RETRY].freeze
 
   class Error < StandardError; end
   class IncompleteCrawlError < Error; end
   class ProviderIngestionError < Error; end
+  class BuildDeadlineExceeded < Error; end
 
   def self.start!(account:, inbox:, root_url:, publish_on_ready: false)
     raise ArgumentError, 'inbox must belong to account' unless inbox.account_id == account.id
@@ -116,11 +118,12 @@ class ChatRing::Knowledge::SyncService
     return :retry unless claim_processing_lease
 
     begin
+      ensure_build_within_deadline!
       case @version.reload.status
       when 'pending' then start_batch_scrape
       when 'crawling' then process_batch_scrape
       when 'ingesting' then process_ingestion
-      when 'ready', 'published', 'retired', 'failed' then :complete
+      when 'ready', 'published', 'retired', 'failed', 'abandoned' then :complete
       else raise Error, "Unknown knowledge version status #{@version.status.inspect}"
       end
     ensure
@@ -137,6 +140,13 @@ class ChatRing::Knowledge::SyncService
   end
 
   private
+
+  def ensure_build_within_deadline!
+    return unless %w[pending crawling ingesting].include?(@version.status)
+    return if @version.created_at > MAX_BUILD_AGE.ago
+
+    raise BuildDeadlineExceeded, "Knowledge version #{@version.id} exceeded the #{MAX_BUILD_AGE.inspect} build deadline"
+  end
 
   def claim_processing_lease
     @processing_lease_token = SecureRandom.uuid

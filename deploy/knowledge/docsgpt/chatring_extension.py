@@ -27,6 +27,10 @@ from application.parser.schema.base import Document
 from application.retriever import classic_rag as classic_rag_module
 from application.retriever.dispatcher import Dispatcher
 from application.storage.db.repositories.sources import SourcesRepository
+from application.storage.db.repositories.idempotency import IdempotencyRepository
+from application.storage.db.repositories.ingest_chunk_progress import (
+    IngestChunkProgressRepository,
+)
 from application.storage.db.session import db_readonly, db_session
 from application.storage.db.source_config import RetrievalConfig
 from application.storage.storage_creator import StorageCreator
@@ -44,6 +48,10 @@ _SOURCE_BINDING = re.compile(
     r"^chatring-a(?P<account>\d+)-v(?P<version>\d+)-(?P<digest>[0-9a-f]{64})$"
 )
 logger = logging.getLogger(__name__)
+MAINTENANCE_SOURCE_ID = "global-idempotency"
+MAINTENANCE_BINDING_DIGEST = hashlib.sha256(
+    b"chatring-docsgpt-maintenance-v1"
+).hexdigest()
 
 
 class ChatRingProviderError(RuntimeError):
@@ -162,7 +170,18 @@ def _delete_source(source: dict[str, Any]) -> None:
             pass
 
     with db_session() as connection:
+        IngestChunkProgressRepository(connection).delete(source_id)
         SourcesRepository(connection).delete(source_id, "local")
+
+
+def _delete_ingest_progress(source_id: str) -> None:
+    with db_session() as connection:
+        IngestChunkProgressRepository(connection).delete(source_id)
+
+
+def _cleanup_expired_idempotency() -> dict[str, int]:
+    with db_session() as connection:
+        return IdempotencyRepository(connection).cleanup_expired()
 
 
 def _strict_pgvector_search(self, question, k=2, *args, score_threshold=None, **kwargs):
@@ -454,6 +473,11 @@ def register_chat_ring_routes(blueprint):
             return jsonify({"status": "invalid_request"}), 400
         source = _source(source_id)
         if source is None:
+            try:
+                _delete_ingest_progress(source_id)
+            except Exception:
+                logger.exception("ChatRing DocsGPT orphan ingest-progress cleanup failed")
+                return jsonify({"status": "provider_error"}), 503
             return jsonify({"status": "already_absent", "source_id": source_id}), 200
         try:
             _verify_source_binding(source, account_id, version_id, binding_digest)
@@ -464,6 +488,29 @@ def register_chat_ring_routes(blueprint):
             logger.exception("ChatRing DocsGPT source cleanup failed")
             return jsonify({"status": "provider_error"}), 503
         return jsonify({"status": "deleted", "source_id": source_id}), 200
+
+    @blueprint.route("/api/internal/chatring/maintenance/idempotency", methods=["POST"])
+    def chatring_cleanup_expired_idempotency():
+        try:
+            account_id, version_id, binding_digest = _verify_scope(
+                "cleanup_expired_idempotency", MAINTENANCE_SOURCE_ID
+            )
+            if (account_id, version_id, binding_digest) != (
+                "0",
+                "0",
+                MAINTENANCE_BINDING_DIGEST,
+            ):
+                raise PermissionError("invalid maintenance scope")
+        except PermissionError:
+            return jsonify({"status": "forbidden"}), 403
+        except ChatRingProviderError:
+            return jsonify({"status": "provider_error"}), 503
+        try:
+            counts = _cleanup_expired_idempotency()
+        except Exception:
+            logger.exception("ChatRing DocsGPT idempotency cleanup failed")
+            return jsonify({"status": "provider_error"}), 503
+        return jsonify({"status": "completed", **counts}), 200
 
 
 PGVectorStore.search_with_scores = _strict_pgvector_search

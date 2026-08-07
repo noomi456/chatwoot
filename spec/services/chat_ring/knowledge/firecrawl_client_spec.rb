@@ -109,4 +109,13 @@ RSpec.describe ChatRing::Knowledge::FirecrawlClient do
     )
     expect(WebMock).to have_requested(:get, repeated_url).once
   end
+
+  it 'normalizes transient connection resets into retryable request errors' do
+    stub_request(:post, 'https://api.firecrawl.dev/v2/map').to_raise(Errno::ECONNRESET)
+
+    expect { client.map(url: 'https://example.com/') }.to raise_error(
+      described_class::RequestError,
+      /ECONNRESET/
+    )
+  end
 end

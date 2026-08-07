@@ -21,4 +21,19 @@ RSpec.context 'with valid schedule.yml' do
     # ensure that no duplicates exist
     expect(schedule_keys.count).to eq(schedule_keys.uniq.count)
   end
+
+  it 'runs knowledge lost-work recovery hourly and provider housekeeping daily' do
+    schedule = YAML.safe_load_file(Rails.root.join('config/schedule.yml'))
+
+    expect(schedule.fetch('chatring_knowledge_lifecycle_reconciliation_job')).to include(
+      'cron' => '23 * * * *',
+      'class' => 'ChatRing::Knowledge::LifecycleReconciliationJob',
+      'queue' => 'low'
+    )
+    expect(schedule.fetch('chatring_knowledge_provider_maintenance_job')).to include(
+      'cron' => '17 3 * * *',
+      'class' => 'ChatRing::Knowledge::ProviderMaintenanceJob',
+      'queue' => 'low'
+    )
+  end
 end

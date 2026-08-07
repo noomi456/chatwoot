@@ -68,4 +68,63 @@ RSpec.describe ChatRing::Knowledge::DocsGptClient do
     end
     expect(WebMock).to request_matcher
   end
+
+  it 'keeps ordinary ingestion task status responses separate from mutation contracts' do
+    stub_request(:get, 'http://docsgpt.internal:7091/api/task_status?task_id=task-1').to_return(
+      status: 200,
+      headers: { 'Content-Type' => 'application/json' },
+      body: { status: 'processing', progress: 50 }.to_json
+    )
+
+    expect(client.task_status('task-1')).to eq('status' => 'processing', 'progress' => 50)
+  end
+
+  it 'runs only the narrowly signed expired-idempotency maintenance operation' do
+    endpoint = 'http://docsgpt.internal:7091/api/internal/chatring/maintenance/idempotency'
+    stub_request(:post, endpoint).to_return(
+      status: 200,
+      headers: { 'Content-Type' => 'application/json' },
+      body: { status: 'completed', task_dedup_deleted: 4, webhook_dedup_deleted: 0 }.to_json
+    )
+
+    response = client.cleanup_expired_idempotency
+
+    expect(response).to include('status' => 'completed', 'task_dedup_deleted' => 4)
+    request_matcher = have_requested(:post, endpoint).with do |request|
+      headers = request.headers.transform_keys(&:downcase)
+      JSON.parse(request.body) == {} &&
+        headers['x-chatring-account'] == '0' &&
+        headers['x-chatring-knowledge-version'] == '0' &&
+        headers['x-chatring-binding-digest'] == described_class::MAINTENANCE_BINDING_DIGEST &&
+        headers['x-chatring-signature'].match?(/\A[0-9a-f]{64}\z/)
+    end
+    expect(WebMock).to request_matcher
+  end
+
+  it 'rejects malformed success responses from private mutation endpoints' do
+    stub_request(:post, 'http://docsgpt.internal:7091/api/internal/chatring/delete-source').to_return(
+      status: 200,
+      headers: { 'Content-Type' => 'application/json' },
+      body: { status: 'deleted', source_id: 'other-source' }.to_json
+    )
+
+    expect do
+      client.delete_source(
+        account_id: 42,
+        knowledge_version_id: 17,
+        binding_digest: 'a' * 64,
+        source_id: 'source-1'
+      )
+    end.to raise_error(described_class::ResponseError, /deletion response is invalid/)
+
+    stub_request(:post, 'http://docsgpt.internal:7091/api/internal/chatring/maintenance/idempotency').to_return(
+      status: 200,
+      headers: { 'Content-Type' => 'application/json' },
+      body: { status: 'completed', task_dedup_deleted: -1 }.to_json
+    )
+    expect { client.cleanup_expired_idempotency }.to raise_error(
+      described_class::ResponseError,
+      /maintenance response is invalid/
+    )
+  end
 end

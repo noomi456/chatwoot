@@ -3,9 +3,9 @@ require 'digest'
 class ChatRing::KnowledgeVersion < ApplicationRecord
   self.table_name = 'chat_ring_knowledge_versions'
 
-  STATUSES = %w[pending crawling ingesting ready published retired failed].freeze
+  STATUSES = %w[pending crawling ingesting ready published retired failed abandoned].freeze
   EVALUATION_STATUSES = %w[pending passed failed].freeze
-  IMMUTABLE_BUILD_STATUSES = %w[ready published retired].freeze
+  IMMUTABLE_BUILD_STATUSES = %w[ready published retired abandoned].freeze
   IMMUTABLE_BUILD_ATTRIBUTES = %w[
     account_id inbox_id provider provider_release root_url mapped_manifest manifest_digest crawl_errors config_snapshot
   ].freeze
@@ -33,6 +33,9 @@ class ChatRing::KnowledgeVersion < ApplicationRecord
   validates :provider, :provider_release, :root_url, presence: true
   validate :inbox_belongs_to_account
   validate :completed_build_snapshot_is_immutable, on: :update
+  validate :abandoned_status_has_audit_fields
+  validate :abandoned_version_is_terminal, on: :update
+  validate :abandonment_audit_is_immutable, on: :update
 
   scope :published, -> { where(status: 'published') }
 
@@ -59,6 +62,26 @@ class ChatRing::KnowledgeVersion < ApplicationRecord
     return if inbox.blank? || account.blank? || inbox.account_id == account_id
 
     errors.add(:inbox, 'must belong to the selected account')
+  end
+
+  def abandoned_status_has_audit_fields
+    return unless status == 'abandoned'
+    return if abandoned_at.present? && abandon_reason.present?
+
+    errors.add(:base, 'abandoned knowledge version requires timestamp and reason')
+  end
+
+  def abandoned_version_is_terminal
+    return unless attribute_in_database('status') == 'abandoned' && will_save_change_to_status?
+
+    errors.add(:status, 'cannot change after abandonment')
+  end
+
+  def abandonment_audit_is_immutable
+    return unless attribute_in_database('status') == 'abandoned'
+    return unless will_save_change_to_abandoned_at? || will_save_change_to_abandon_reason?
+
+    errors.add(:base, 'abandonment audit fields are immutable')
   end
 
   def completed_build_snapshot_is_immutable

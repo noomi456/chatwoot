@@ -1,5 +1,6 @@
 require 'digest'
 require 'httparty'
+require 'openssl'
 require 'uri'
 
 class ChatRing::Knowledge::FirecrawlClient
@@ -120,7 +121,9 @@ class ChatRing::Knowledge::FirecrawlClient
     raise ResponseError, 'Firecrawl response must be an object' unless parsed.is_a?(Hash)
 
     parsed
-  rescue Timeout::Error, SocketError => e
+  rescue Timeout::Error, SocketError, EOFError, HTTParty::Error, Errno::ECONNABORTED, Errno::ECONNREFUSED,
+         Errno::ECONNRESET, Errno::EHOSTUNREACH, Errno::ENETUNREACH, Errno::EPIPE, Errno::ETIMEDOUT,
+         OpenSSL::SSL::SSLError => e
     raise RequestError, "Firecrawl request failed: #{e.class.name}"
   end
 
