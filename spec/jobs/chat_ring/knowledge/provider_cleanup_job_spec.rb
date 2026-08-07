@@ -87,9 +87,10 @@ RSpec.describe ChatRing::Knowledge::ProviderCleanupJob do
     )
     error = ChatRing::Knowledge::DocsGptClient::RequestError.new('provider unavailable')
     allow(client).to receive(:delete_source).and_raise(error)
-    allow(ChatRing::Knowledge::DocsGptClient).to receive(:new).and_return(client)
+    job = described_class.new
+    allow(job).to receive(:docs_gpt_client).and_return(client)
 
-    expect { described_class.perform_now(cleanup.id) }.to have_enqueued_job(described_class)
+    expect { job.perform(cleanup.id) }.to raise_error(error)
 
     expect(cleanup.reload).to have_attributes(status: 'retrying', attempts: 1, last_error: 'provider unavailable')
   end

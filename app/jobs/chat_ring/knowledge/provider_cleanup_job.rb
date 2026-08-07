@@ -33,10 +33,11 @@ class ChatRing::Knowledge::ProviderCleanupJob < ApplicationJob
       cleanup.update!(status: 'succeeded', cleaned_at: Time.current, last_error: nil)
     end
   rescue ChatRing::Knowledge::DocsGptClient::Error => e
-    cleanup&.with_lock do
-      cleanup.update!(
+    retry_cleanup = ChatRing::KnowledgeProviderCleanup.find_by(id: cleanup_id)
+    retry_cleanup&.with_lock do
+      retry_cleanup.update!(
         status: 'retrying',
-        attempts: cleanup.attempts + 1,
+        attempts: retry_cleanup.attempts + 1,
         last_error: e.message.to_s.truncate(1000)
       )
     end
