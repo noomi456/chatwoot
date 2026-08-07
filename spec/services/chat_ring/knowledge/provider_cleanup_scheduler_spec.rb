@@ -36,6 +36,12 @@ RSpec.describe ChatRing::Knowledge::ProviderCleanupScheduler do
       attempts: 0
     )
     expect(cleanup.eligible_at).to be > Time.current
+
+    clear_enqueued_jobs
+    expect do
+      described_class.schedule_eligible!(account: account, inbox: inbox)
+    end.not_to have_enqueued_job(ChatRing::Knowledge::ProviderCleanupJob)
+    expect(cleanup.reload).to have_attributes(status: 'pending', attempts: 0)
   end
 
   it 'does not schedule a retained rollback target' do

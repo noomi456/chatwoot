@@ -41,9 +41,14 @@ class ChatRing::Knowledge::ProviderCleanupScheduler
     return if source_id.blank?
 
     cleanup = build_cleanup(version, source_id, eligible_at, force)
-    enqueue_cleanup(cleanup) if enqueue
+    enqueue_cleanup(cleanup) if enqueue && cleanup_schedule_changed?(cleanup)
     cleanup
   end
+
+  def self.cleanup_schedule_changed?(cleanup)
+    cleanup.present? && (cleanup.previously_new_record? || cleanup.saved_change_to_status? || cleanup.saved_change_to_eligible_at?)
+  end
+  private_class_method :cleanup_schedule_changed?
 
   def self.build_cleanup(version, source_id, eligible_at, force)
     version.with_lock do
