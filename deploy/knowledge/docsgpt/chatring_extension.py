@@ -251,7 +251,8 @@ def _chatring_markdown_chunk(self: MarkdownChunker, documents: list[Document]):
                     sections.append((current_path, "".join(current)))
                 level = len(match.group(1))
                 headings = [entry for entry in headings if entry[0] < level]
-                headings.append((level, match.group(2).strip()))
+                heading_text = re.sub(r"\s+", " ", match.group(2)).strip()
+                headings.append((level, heading_text))
                 current_path = [entry[1] for entry in headings]
                 current = [line]
             else:
