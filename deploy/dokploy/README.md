@@ -48,6 +48,14 @@ This trust rule is valid only while the Tunnel-to-Traefik source is `172.17.0.1`
 5. Deploy and wait for `prepare` to exit successfully, then require healthy Rails/PostgreSQL/Redis and running Sidekiq.
 6. Verify `/health`, login, dashboard, widget, handoff, persistence, restart, and backup/restore behavior.
 
+Phase 2A provider cleanup recovery is fail-closed at deployment. Keep
+`CHATRING_KNOWLEDGE_LIFECYCLE_RECONCILIATION_ENABLED=false` for the first coordinated
+Rails/DocsGPT rollout, run `chatring:knowledge:cleanup_report` for a read-only review,
+then run `chatring:knowledge:cleanup_reconcile`, set the flag to `true`, and restart Sidekiq. The enabled scheduler
+repairs due cleanup work that has lacked progress for 30 minutes and expired leases hourly; ordinary retries remain scheduled
+at their exact backoff time. It also abandons only unpublished evaluation-failed builds whose seven-day grace period has
+elapsed. DocsGPT expired-idempotency housekeeping runs once daily.
+
 ## Rollback
 
 Set `CHATRING_IMAGE` to the previous verified full-commit tag and redeploy. Do not roll back PostgreSQL after a migration unless the release explicitly documents a compatible database rollback. Preserve the three named volumes.

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_08_06_001000) do
+ActiveRecord::Schema[7.1].define(version: 2026_08_06_002000) do
   # These extensions should be enabled to support this database
   enable_extension "pg_stat_statements"
   enable_extension "pg_trgm"
@@ -723,9 +723,19 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_06_001000) do
     t.datetime "updated_at", null: false
     t.bigint "account_id", null: false
     t.bigint "inbox_id", null: false
+    t.string "lease_token"
+    t.datetime "lease_expires_at"
+    t.datetime "next_attempt_at", null: false
+    t.datetime "last_enqueued_at"
+    t.integer "manual_retry_count", default: 0, null: false
     t.index ["account_id", "inbox_id"], name: "index_chatring_provider_cleanups_on_scope"
     t.index ["knowledge_version_id"], name: "index_chatring_provider_cleanup_on_version", unique: true
-    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying, 'retrying'::character varying, 'succeeded'::character varying, 'cancelled'::character varying, 'failed'::character varying]::text[])", name: "chatring_knowledge_provider_cleanups_status_check"
+    t.index ["lease_token"], name: "index_chatring_provider_cleanups_on_lease_token", unique: true, where: "(lease_token IS NOT NULL)"
+    t.index ["status", "lease_expires_at"], name: "index_chatring_provider_cleanups_on_expired_leases"
+    t.index ["status", "next_attempt_at"], name: "index_chatring_provider_cleanups_on_due_work"
+    t.check_constraint "(lease_token IS NULL) = (lease_expires_at IS NULL)", name: "chatring_provider_cleanups_lease_pair_check"
+    t.check_constraint "(status::text = 'retrying'::text) = (lease_token IS NOT NULL)", name: "chatring_provider_cleanups_lease_status_check"
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying::text, 'retrying'::character varying::text, 'succeeded'::character varying::text, 'cancelled'::character varying::text, 'failed'::character varying::text])", name: "chatring_knowledge_provider_cleanups_status_check"
   end
 
   create_table "chat_ring_knowledge_publication_events", force: :cascade do |t|
@@ -785,13 +795,17 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_06_001000) do
     t.string "evaluation_status", default: "pending", null: false
     t.jsonb "evaluation_report", default: {}, null: false
     t.datetime "evaluated_at"
+    t.datetime "abandoned_at"
+    t.string "abandon_reason", limit: 1000
     t.index ["account_id", "inbox_id", "created_at"], name: "index_chatring_knowledge_versions_on_scope_and_created_at"
     t.index ["account_id"], name: "index_chat_ring_knowledge_versions_on_account_id"
     t.index ["firecrawl_crawl_id"], name: "index_chat_ring_knowledge_versions_on_firecrawl_crawl_id", unique: true, where: "(firecrawl_crawl_id IS NOT NULL)"
     t.index ["inbox_id"], name: "index_chat_ring_knowledge_versions_on_inbox_id"
     t.index ["processing_lease_token"], name: "index_chat_ring_knowledge_versions_on_processing_lease_token", unique: true, where: "(processing_lease_token IS NOT NULL)"
-    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying, 'crawling'::character varying, 'ingesting'::character varying, 'ready'::character varying, 'published'::character varying, 'retired'::character varying, 'failed'::character varying]::text[])", name: "chatring_knowledge_versions_status_check"
+    t.index ["status", "evaluation_status", "evaluated_at"], name: "index_chatring_knowledge_versions_on_abandonment_candidates"
     t.check_constraint "evaluation_status::text = ANY (ARRAY['pending'::character varying, 'passed'::character varying, 'failed'::character varying]::text[])", name: "chatring_knowledge_versions_evaluation_status_check"
+    t.check_constraint "status::text <> 'abandoned'::text OR abandoned_at IS NOT NULL AND abandon_reason IS NOT NULL", name: "chatring_knowledge_versions_abandonment_fields_check"
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying, 'crawling'::character varying, 'ingesting'::character varying, 'ready'::character varying, 'published'::character varying, 'retired'::character varying, 'failed'::character varying, 'abandoned'::character varying]::text[])", name: "chatring_knowledge_versions_status_check"
   end
 
   create_table "companies", force: :cascade do |t|

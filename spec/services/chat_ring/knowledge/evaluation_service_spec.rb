@@ -72,7 +72,8 @@ RSpec.describe ChatRing::Knowledge::EvaluationService do
     expect(report).to include('case_count' => 10, 'passed_count' => 10)
     expect(provider).to have_received(:retrieve).with(
       hash_including(limit: ChatRing::Knowledge::DocsGptProvider::DEFAULT_EVIDENCE_LIMIT)
-    ).exactly(10).times
+    ).exactly(20).times
+    expect(report.fetch('cases')).to all(include('deterministic' => true, 'retrieval_runs' => 2))
     expect(version.reload.evaluation_passed_for_current_content?).to be(true)
   end
 
@@ -89,5 +90,28 @@ RSpec.describe ChatRing::Knowledge::EvaluationService do
       /failed 5 evaluation case/
     )
     expect(version.reload.evaluation_status).to eq('failed')
+  end
+
+  it 'fails the gate when repeated retrieval changes its evidence identity' do
+    calls = Hash.new(0)
+    allow(provider).to receive(:retrieve) do |query:, **|
+      calls[query] += 1
+      if query.start_with?('positive', 'ambiguous')
+        evidence_id = query == 'positive 1' && calls[query] == 2 ? 'changed-evidence' : 'evidence-1'
+        evidence = Struct.new(:source_reference, :id, :excerpt).new(
+          'https://example.com/docs', evidence_id, 'This contains the expected phrase.'
+        )
+        result('accepted', [evidence])
+      else
+        result('insufficient_evidence')
+      end
+    end
+
+    expect { described_class.evaluate!(version, cases: cases, provider: provider) }.to raise_error(
+      described_class::Error,
+      /failed 1 evaluation case/
+    )
+    failed_case = version.reload.evaluation_report.fetch('cases').find { |entry| entry['query'] == 'positive 1' }
+    expect(failed_case).to include('deterministic' => false, 'passed' => false)
   end
 end

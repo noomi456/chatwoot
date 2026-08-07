@@ -1,11 +1,12 @@
 class ChatRing::Knowledge::ProviderCleanupScheduler
   RETENTION = 7.days
+  CLEANABLE_VERSION_STATUSES = %w[retired failed abandoned].freeze
 
   def self.schedule_eligible!(account:, inbox:)
     publications = ChatRing::KnowledgePublication.where(account: account, inbox: inbox)
     protected_ids = publications.pluck(:knowledge_version_id, :previous_knowledge_version_id).flatten.compact
     cancel_protected!(protected_ids)
-    ChatRing::KnowledgeVersion.where(account: account, inbox: inbox, status: %w[retired failed])
+    ChatRing::KnowledgeVersion.where(account: account, inbox: inbox, status: CLEANABLE_VERSION_STATUSES)
                               .where.not(id: protected_ids)
                               .find_each { |version| schedule!(version) }
   end
@@ -13,14 +14,16 @@ class ChatRing::Knowledge::ProviderCleanupScheduler
   def self.cancel_protected!(protected_ids)
     return if protected_ids.empty?
 
-    ChatRing::KnowledgeProviderCleanup.where(
-      knowledge_version_id: protected_ids,
-      status: %w[pending retrying]
-    ).find_each do |cleanup|
+    ChatRing::KnowledgeProviderCleanup.where(knowledge_version_id: protected_ids, status: 'pending').find_each do |cleanup|
       cleanup.with_lock do
         next unless cleanup.status == 'pending'
 
-        cleanup.update!(status: 'cancelled', last_error: 'knowledge version is retained by a publication pointer')
+        cleanup.update!(
+          status: 'cancelled',
+          lease_token: nil,
+          lease_expires_at: nil,
+          last_error: 'knowledge version is retained by a publication pointer'
+        )
       end
     end
   end
@@ -33,7 +36,10 @@ class ChatRing::Knowledge::ProviderCleanupScheduler
   end
 
   def self.enqueue!(cleanup_ids)
-    Array(cleanup_ids).each { |cleanup_id| ChatRing::Knowledge::ProviderCleanupJob.perform_later(cleanup_id) }
+    Array(cleanup_ids).each do |cleanup_id|
+      cleanup = ChatRing::KnowledgeProviderCleanup.find_by(id: cleanup_id)
+      enqueue_cleanup!(cleanup) if cleanup.present?
+    end
   end
 
   def self.schedule!(version, eligible_at: nil, force: false, enqueue: true)
@@ -41,12 +47,52 @@ class ChatRing::Knowledge::ProviderCleanupScheduler
     return if source_id.blank?
 
     cleanup = build_cleanup(version, source_id, eligible_at, force)
-    enqueue_cleanup(cleanup) if enqueue && cleanup_schedule_changed?(cleanup)
+    enqueue_cleanup!(cleanup) if enqueue && cleanup_schedule_changed?(cleanup)
     cleanup
   end
 
+  def self.enqueue_cleanup!(cleanup, now: Time.current)
+    return false unless cleanup.status == 'pending'
+
+    due_at = [cleanup.eligible_at, cleanup.next_attempt_at].compact.max
+    job = ChatRing::Knowledge::ProviderCleanupJob.set(wait_until: due_at).perform_later(cleanup.id)
+    return false unless job.successfully_enqueued?
+
+    cleanup.update_column(:last_enqueued_at, now) # rubocop:disable Rails/SkipsModelValidations
+    true
+  end
+
+  def self.retry_failed!(cleanup, now: Time.current)
+    cleanup.with_lock do
+      ensure_retryable!(cleanup)
+
+      cleanup.update!(
+        status: 'pending',
+        attempts: 0,
+        manual_retry_count: cleanup.manual_retry_count + 1,
+        next_attempt_at: now,
+        last_enqueued_at: nil,
+        lease_token: nil,
+        lease_expires_at: nil,
+        cleaned_at: nil,
+        last_error: nil
+      )
+    end
+    enqueue_cleanup!(cleanup, now: now)
+    cleanup
+  end
+
+  def self.ensure_retryable!(cleanup)
+    raise ArgumentError, 'Only a failed provider cleanup can be retried' unless cleanup.status == 'failed'
+
+    version = cleanup.knowledge_version
+    raise ArgumentError, 'A publication-protected provider cleanup cannot be retried' if version.present? && protected?(version)
+  end
+  private_class_method :ensure_retryable!
+
   def self.cleanup_schedule_changed?(cleanup)
-    cleanup.present? && (cleanup.previously_new_record? || cleanup.saved_change_to_status? || cleanup.saved_change_to_eligible_at?)
+    cleanup.present? &&
+      (cleanup.previously_new_record? || cleanup.saved_change_to_status? || cleanup.saved_change_to_next_attempt_at?)
   end
   private_class_method :cleanup_schedule_changed?
 
@@ -74,17 +120,18 @@ class ChatRing::Knowledge::ProviderCleanupScheduler
   private_class_method :provider_source_id
 
   def self.cleanup_eligible?(version)
-    %w[retired failed].include?(version.status) && !protected?(version)
+    CLEANABLE_VERSION_STATUSES.include?(version.status) && !protected?(version)
   end
   private_class_method :cleanup_eligible?
 
   def self.cleanup_assignable?(cleanup, force)
-    cleanup.new_record? || force || %w[cancelled failed].include?(cleanup.status)
+    cleanup.new_record? || force || cleanup.status == 'cancelled'
   end
   private_class_method :cleanup_assignable?
 
   def self.assign_cleanup(cleanup, version, source_id, eligible_at)
     succeeded = cleanup.status == 'succeeded'
+    first_attempt_at = eligible_at || [version.updated_at + RETENTION, Time.current].max
     cleanup.assign_attributes(
       knowledge_version_id: version.id,
       account_id: version.account_id,
@@ -93,19 +140,16 @@ class ChatRing::Knowledge::ProviderCleanupScheduler
       binding_digest: version.evaluation_binding_digest,
       status: succeeded ? 'succeeded' : 'pending',
       attempts: succeeded ? cleanup.attempts : 0,
-      eligible_at: eligible_at || [version.updated_at + RETENTION, Time.current].max,
+      eligible_at: first_attempt_at,
+      next_attempt_at: first_attempt_at,
+      last_enqueued_at: nil,
+      lease_token: nil,
+      lease_expires_at: nil,
       cleaned_at: succeeded ? cleanup.cleaned_at : nil,
       last_error: nil
     )
   end
   private_class_method :assign_cleanup
-
-  def self.enqueue_cleanup(cleanup)
-    return if cleanup.blank? || cleanup.status == 'succeeded'
-
-    ChatRing::Knowledge::ProviderCleanupJob.set(wait_until: cleanup.eligible_at).perform_later(cleanup.id)
-  end
-  private_class_method :enqueue_cleanup
 
   def self.reserve_for_publication!(version)
     cleanup = version.provider_cleanup
@@ -113,7 +157,12 @@ class ChatRing::Knowledge::ProviderCleanupScheduler
 
     cleanup.with_lock do
       if %w[pending cancelled].include?(cleanup.status)
-        cleanup.update!(status: 'cancelled', last_error: 'knowledge version is retained by a publication pointer')
+        cleanup.update!(
+          status: 'cancelled',
+          lease_token: nil,
+          lease_expires_at: nil,
+          last_error: 'knowledge version is retained by a publication pointer'
+        )
       else
         raise ChatRing::Knowledge::PublicationService::Error,
               "Knowledge version #{version.id} provider cleanup has already started"

@@ -31,7 +31,13 @@ namespace :chatring do
           evaluation_case_count: version.evaluation_report['case_count'],
           evaluation_passed_count: version.evaluation_report['passed_count'],
           failure_code: version.failure_code,
-          failure_message: version.failure_message
+          failure_message: version.failure_message,
+          abandoned_at: version.abandoned_at,
+          abandon_reason: version.abandon_reason,
+          provider_cleanup: version.provider_cleanup&.attributes&.slice(
+            'id', 'status', 'attempts', 'manual_retry_count', 'eligible_at', 'next_attempt_at',
+            'last_enqueued_at', 'lease_expires_at', 'cleaned_at', 'last_error'
+          )
         }.to_json
       )
     end
@@ -71,6 +77,53 @@ namespace :chatring do
         query: args.fetch(:query)
       )
       puts evidence.to_h.merge(items: evidence.items.map(&:to_h)).to_json
+    end
+
+    desc 'Abandon an unpublished ready knowledge version and retain its provider index for the cleanup window'
+    task :abandon, [:knowledge_version_id, :reason] => :environment do |_task, args|
+      version = ChatRing::Knowledge::AbandonmentService.abandon!(
+        ChatRing::KnowledgeVersion.find(args.fetch(:knowledge_version_id)),
+        reason: args.fetch(:reason)
+      )
+      puts({ knowledge_version_id: version.id, status: version.status, abandoned_at: version.abandoned_at }.to_json)
+    end
+
+    desc 'Reconcile missing, overdue and expired-lease provider cleanup work now'
+    task cleanup_reconcile: :environment do
+      abandoned = ChatRing::Knowledge::AbandonmentService.abandon_overdue_evaluation_failures!
+      ChatRing::Knowledge::ProviderCleanupReconciler.call
+      puts(
+        {
+          abandoned_version_ids: abandoned.map(&:id),
+          pending: ChatRing::KnowledgeProviderCleanup.where(status: 'pending').count,
+          retrying: ChatRing::KnowledgeProviderCleanup.where(status: 'retrying').count,
+          failed: ChatRing::KnowledgeProviderCleanup.where(status: 'failed').count
+        }.to_json
+      )
+    end
+
+    desc 'Report knowledge lifecycle repair candidates without changing state'
+    task cleanup_report: :environment do
+      puts ChatRing::Knowledge::ProviderCleanupReconciler.report.to_json
+    end
+
+    desc 'Explicitly retry one exhausted provider cleanup'
+    task :cleanup_retry, [:cleanup_id] => :environment do |_task, args|
+      cleanup = ChatRing::Knowledge::ProviderCleanupScheduler.retry_failed!(
+        ChatRing::KnowledgeProviderCleanup.find(args.fetch(:cleanup_id))
+      )
+      puts({ cleanup_id: cleanup.id, status: cleanup.status, manual_retry_count: cleanup.manual_retry_count }.to_json)
+    end
+
+    desc 'Run narrow DocsGPT expired-idempotency housekeeping now'
+    task provider_maintenance: :environment do
+      result = ChatRing::Knowledge::DocsGptClient.new(
+        base_url: ENV.fetch('DOCSGPT_BASE_URL'),
+        jwt_secret: ENV.fetch('DOCSGPT_JWT_SECRET'),
+        internal_key: ENV.fetch('DOCSGPT_INTERNAL_KEY'),
+        service_secret: ENV.fetch('DOCSGPT_SERVICE_SECRET')
+      ).cleanup_expired_idempotency
+      puts result.to_json
     end
   end
 end

@@ -3,6 +3,7 @@ require 'digest'
 require 'securerandom'
 require 'uri'
 
+# rubocop:disable Metrics/ClassLength
 class ChatRing::Knowledge::DocsGptClient
   USER_ID = 'local'.freeze
   DEFAULT_CHUNKS = ChatRing::Knowledge::DocsGptProvider::DEFAULT_EVIDENCE_LIMIT
@@ -22,6 +23,8 @@ class ChatRing::Knowledge::DocsGptClient
       rephrase_query: false
     }
   }.freeze
+  MAINTENANCE_SOURCE_ID = 'global-idempotency'.freeze
+  MAINTENANCE_BINDING_DIGEST = Digest::SHA256.hexdigest('chatring-docsgpt-maintenance-v1').freeze
 
   class Error < StandardError; end
   class ConfigurationError < Error; end
@@ -120,12 +123,53 @@ class ChatRing::Knowledge::DocsGptClient
       request.headers['Content-Type'] = 'application/json'
       request.body = body
     end
-    parse_response(response, expected_statuses: [200])
+    parsed = parse_response(response, expected_statuses: [200])
+    unless %w[deleted already_absent].include?(parsed['status']) && parsed['source_id'].to_s == source_id.to_s
+      raise ResponseError, 'DocsGPT deletion response is invalid'
+    end
+
+    parsed
+  rescue Faraday::Error => e
+    raise RequestError, "DocsGPT request failed: #{e.class.name}"
+  end
+
+  def cleanup_expired_idempotency
+    body = {}.to_json
+    response = json_connection.post('/api/internal/chatring/maintenance/idempotency') do |request|
+      request.headers.update(maintenance_headers(body))
+      request.headers['Content-Type'] = 'application/json'
+      request.body = body
+    end
+    validate_maintenance_response(response)
+  rescue KeyError, ArgumentError, TypeError
+    raise ResponseError, 'DocsGPT maintenance response is invalid'
   rescue Faraday::Error => e
     raise RequestError, "DocsGPT request failed: #{e.class.name}"
   end
 
   private
+
+  def maintenance_headers(body)
+    @auth.internal_headers(
+      body: body,
+      operation: 'cleanup_expired_idempotency',
+      source_id: MAINTENANCE_SOURCE_ID,
+      scope: {
+        account_id: 0,
+        knowledge_version_id: 0,
+        binding_digest: MAINTENANCE_BINDING_DIGEST
+      }
+    )
+  end
+
+  def validate_maintenance_response(response)
+    parsed = parse_response(response, expected_statuses: [200])
+    counts = %w[task_dedup_deleted webhook_dedup_deleted].map { |key| Integer(parsed.fetch(key)) }
+    raise ResponseError, 'DocsGPT maintenance response is invalid' unless
+      parsed['status'] == 'completed' && counts.all? { |count| count >= 0 }
+
+    parsed
+  end
 
   def json_connection
     @json_connection ||= Faraday.new(url: @base_url) do |connection|
@@ -193,3 +237,4 @@ class ChatRing::Knowledge::DocsGptClient
     result
   end
 end
+# rubocop:enable Metrics/ClassLength
