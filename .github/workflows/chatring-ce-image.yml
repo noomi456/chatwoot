@@ -207,21 +207,19 @@ jobs:
           cache-to: type=gha,mode=max,scope=docsgpt-upstream
 
       - name: Build ChatRing-derived DocsGPT image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: deploy/knowledge/Dockerfile
-          load: true
-          push: false
-          tags: ${{ env.DOCSGPT_DERIVED_IMAGE }}
-          build-args: |
-            DOCSGPT_BASE_IMAGE=${{ env.DOCSGPT_BASE_IMAGE }}@${{ steps.upstream.outputs.digest }}
-            DOCSGPT_SOURCE_REPOSITORY=https://github.com/arc53/DocsGPT
-            DOCSGPT_SOURCE_COMMIT=${{ env.DOCSGPT_SOURCE_COMMIT }}
-            DOCSGPT_BASE_DIGEST=${{ steps.upstream.outputs.digest }}
-            CHATRING_SOURCE_COMMIT=${{ github.sha }}
-          cache-from: type=gha,scope=docsgpt-derived
-          cache-to: type=gha,mode=max,scope=docsgpt-derived
+        run: |
+          # The exact upstream image was source-built and loaded into this job's
+          # Docker daemon above. Use that local tag here; appending its digest to
+          # an unpushed tag makes Buildx incorrectly attempt a Docker Hub pull.
+          docker build \
+            --file deploy/knowledge/Dockerfile \
+            --tag "${DOCSGPT_DERIVED_IMAGE}" \
+            --build-arg "DOCSGPT_BASE_IMAGE=${DOCSGPT_BASE_IMAGE}" \
+            --build-arg "DOCSGPT_SOURCE_REPOSITORY=https://github.com/arc53/DocsGPT" \
+            --build-arg "DOCSGPT_SOURCE_COMMIT=${DOCSGPT_SOURCE_COMMIT}" \
+            --build-arg "DOCSGPT_BASE_DIGEST=${{ steps.upstream.outputs.digest }}" \
+            --build-arg "CHATRING_SOURCE_COMMIT=${GITHUB_SHA}" \
+            .
 
       - name: Run functional tests inside the derived image
         run: >-
