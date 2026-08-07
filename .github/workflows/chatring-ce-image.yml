@@ -148,6 +148,9 @@ jobs:
           grep -q 'request.headers.get("X-Internal-Key"' deploy/knowledge/docsgpt/chatring_extension.py
           grep -q '_internal_key(), provided_internal_key' deploy/knowledge/docsgpt/chatring_extension.py
           grep -q 'MarkdownParser.parse_file = _chatring_markdown_parse_file' deploy/knowledge/docsgpt/chatring_extension.py
+          grep -q 'classic_rag_module.labels_from_metadata = _chatring_labels_from_metadata' deploy/knowledge/docsgpt/chatring_extension.py
+          grep -q 'DEFAULT_EVIDENCE_LIMIT = 8' deploy/knowledge/docsgpt/chatring_extension.py
+          ! grep -q '_row_lookup' deploy/knowledge/docsgpt/chatring_extension.py
           python -m py_compile deploy/knowledge/docsgpt/chatring_extension.py
 
   build:

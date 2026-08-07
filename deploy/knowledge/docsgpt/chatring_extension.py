@@ -14,7 +14,6 @@ import os
 import re
 import time
 import logging
-from collections import defaultdict, deque
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +24,7 @@ from application.core.settings import settings
 from application.parser.chunking_strategies import MarkdownChunker
 from application.parser.file.markdown_parser import MarkdownParser
 from application.parser.schema.base import Document
+from application.retriever import classic_rag as classic_rag_module
 from application.retriever.dispatcher import Dispatcher
 from application.storage.db.repositories.sources import SourcesRepository
 from application.storage.db.session import db_readonly, db_session
@@ -35,6 +35,7 @@ from application.vectorstore.vector_creator import VectorCreator
 
 
 MAX_QUERY_LENGTH = 2000
+DEFAULT_EVIDENCE_LIMIT = 8
 MAX_RESULTS = 20
 MAX_CLOCK_SKEW_SECONDS = 90
 DOC_TOKEN_LIMIT = 50000
@@ -291,28 +292,28 @@ def _chatring_markdown_parse_file(
     return Path(filepath).read_text(encoding="utf-8", errors=errors)
 
 
-def _row_lookup(source_id: str) -> dict[tuple[str, str], deque[dict[str, Any]]]:
-    store = VectorCreator.create_vectorstore(
-        settings.VECTOR_STORE, source_id, settings.EMBEDDINGS_KEY
+_ORIGINAL_LABELS_FROM_METADATA = classic_rag_module.labels_from_metadata
+_PROVENANCE_KEYS = (
+    "chatring_provider_chunk_id",
+    "chatring_document_id",
+    "chatring_chunk_index",
+    "chatring_content_hash",
+    "chatring_heading_path",
+)
+
+
+def _chatring_labels_from_metadata(
+    metadata: dict[str, Any], page_content: str, vectorstore_id: str
+) -> dict[str, Any]:
+    """Keep stable provenance on the scored documents returned by Dispatcher."""
+    labels = _ORIGINAL_LABELS_FROM_METADATA(metadata, page_content, vectorstore_id)
+    labels.update(
+        {key: metadata[key] for key in _PROVENANCE_KEYS if metadata.get(key) is not None}
     )
-    rows = sorted(store.get_chunks(), key=lambda row: int(row["doc_id"]))
-    lookup: dict[tuple[str, str], deque[dict[str, Any]]] = defaultdict(deque)
-    for row in rows:
-        metadata = row.get("metadata") or {}
-        key = (row.get("text", ""), str(metadata.get("source") or source_id))
-        lookup[key].append(row)
-    return lookup
+    return labels
 
 
 def _retrieve(source_id: str, query: str, limit: int, threshold: float):
-    # Fail before Dispatcher if embeddings, pgvector or the source index is down.
-    preflight = VectorCreator.create_vectorstore(
-        settings.VECTOR_STORE, source_id, settings.EMBEDDINGS_KEY
-    )
-    direct_hits = preflight.search_with_scores(
-        query, k=limit, score_threshold=threshold
-    )
-
     retrieval = RetrievalConfig(
         retriever="classic",
         exposure="prefetch",
@@ -336,22 +337,31 @@ def _retrieve(source_id: str, query: str, limit: int, threshold: float):
         **kwargs,
     )
     docs = dispatcher.search(query) or []
-    if direct_hits and not docs:
-        raise ChatRingProviderError(
-            "Dispatcher dropped score-qualified pgvector results"
+    if not docs:
+        # ClassicRAG intentionally catches vector-store failures. Probe only an
+        # empty result so dependency failure remains distinct from no evidence
+        # without doubling every successful embedding and pgvector search.
+        store = VectorCreator.create_vectorstore(
+            settings.VECTOR_STORE, source_id, settings.EMBEDDINGS_KEY
         )
-    lookup = _row_lookup(source_id)
+        direct_hits = store.search_with_scores(
+            query, k=limit, score_threshold=threshold
+        )
+        if direct_hits:
+            raise ChatRingProviderError(
+                "Dispatcher dropped score-qualified pgvector results"
+            )
+        return [], retrieval.model_dump()
+
     chunks = []
     for rank, doc in enumerate(docs, start=1):
-        key = (doc.get("text", ""), str(doc.get("source") or source_id))
-        if not lookup[key]:
+        chunk_id = doc.get("chatring_provider_chunk_id")
+        if chunk_id is None:
             raise ChatRingProviderError("retrieved chunk has no pgvector identity")
-        row = lookup[key].popleft()
-        metadata = row.get("metadata") or {}
         chunks.append(
             {
                 "rank": rank,
-                "chunk_id": str(row["doc_id"]),
+                "chunk_id": str(chunk_id),
                 "text": doc.get("text", ""),
                 "title": doc.get("title"),
                 "filename": doc.get("filename"),
@@ -359,14 +369,14 @@ def _retrieve(source_id: str, query: str, limit: int, threshold: float):
                 "score": doc.get("score"),
                 "score_kind": doc.get("score_kind"),
                 "metadata": {
-                    key: metadata.get(key)
+                    key: doc.get(key)
                     for key in (
                         "chatring_document_id",
                         "chatring_chunk_index",
                         "chatring_content_hash",
                         "chatring_heading_path",
                     )
-                    if metadata.get(key) is not None
+                    if doc.get(key) is not None
                 },
             }
         )
@@ -394,7 +404,7 @@ def register_chat_ring_routes(blueprint):
         if not source_id or not query or len(query) > MAX_QUERY_LENGTH:
             return jsonify({"status": "invalid_request"}), 400
         try:
-            limit = int(body.get("limit", 5))
+            limit = int(body.get("limit", DEFAULT_EVIDENCE_LIMIT))
             threshold = float(body.get("score_threshold"))
         except (TypeError, ValueError):
             return jsonify({"status": "invalid_request"}), 400
@@ -457,5 +467,6 @@ def register_chat_ring_routes(blueprint):
 
 
 PGVectorStore.search_with_scores = _strict_pgvector_search
+classic_rag_module.labels_from_metadata = _chatring_labels_from_metadata
 MarkdownParser.parse_file = _chatring_markdown_parse_file
 MarkdownChunker.chunk = _chatring_markdown_chunk
