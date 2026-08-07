@@ -12,7 +12,7 @@ RSpec.describe ChatRing::AssistantSpike::ResponseJob, type: :job do
       bot_config: { ChatRing::AssistantSpike::BOT_CONFIG_KEY => true }
     )
   end
-  let!(:agent_bot_inbox) { create(:agent_bot_inbox, account: account, inbox: inbox, agent_bot: agent_bot) }
+  let(:agent_bot_inbox) { create(:agent_bot_inbox, account: account, inbox: inbox, agent_bot: agent_bot) }
 
   around do |example|
     with_modified_env CHATRING_ASSISTANT_SPIKE_ENABLED: 'true', CHATRING_ASSISTANT_SPIKE_DELAY_SECONDS: '0' do
@@ -21,6 +21,7 @@ RSpec.describe ChatRing::AssistantSpike::ResponseJob, type: :job do
   end
 
   before do
+    agent_bot_inbox
     clear_enqueued_jobs
   end
 

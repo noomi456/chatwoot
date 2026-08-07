@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - codex/chatring-ce-foundation
+      - codex/internal-assistant-spike
+      - codex/rag-production-fix
+      - codex/phase2a-final-audit
   workflow_dispatch:
 
 permissions:
@@ -36,8 +39,133 @@ jobs:
       - name: Run ChatRing branding tests
         run: pnpm exec vitest app/javascript/shared/helpers/specs/InstallationBranding.spec.js --run --no-cache
 
+  validate-knowledge:
+    runs-on: ubuntu-22.04
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ''
+          POSTGRES_DB: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: Checkout pinned ChatRing CE source
+        uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+
+      - name: Strip proprietary Enterprise source
+        run: |
+          rm -rf enterprise
+          rm -rf spec/enterprise
+
+      - name: Prepare isolated test database
+        # Chatwoot's checked-in schema is the supported fresh-database baseline.
+        # Replaying historical migrations fails because some of them reference
+        # application/gem constants that no longer exist. Load that baseline,
+        # then apply only migrations newer than its recorded version.
+        run: bundle exec rails db:create db:schema:load db:migrate
+        env:
+          RAILS_ENV: test
+          REDIS_URL: redis://localhost:6379/0
+
+      - name: Run Phase 2A contract tests
+        run: >-
+          bundle exec rspec
+          spec/jobs/chat_ring/assistant_spike/response_job_spec.rb
+          spec/models/chat_ring/knowledge_document_spec.rb
+          spec/models/chat_ring/knowledge/scope_cleanup_spec.rb
+          spec/models/chat_ring/knowledge_version_spec.rb
+          spec/jobs/chat_ring/knowledge/provider_cleanup_job_spec.rb
+          spec/services/chat_ring/knowledge/docs_gpt_client_spec.rb
+          spec/services/chat_ring/knowledge/docs_gpt_provider_spec.rb
+          spec/services/chat_ring/knowledge/evaluation_service_spec.rb
+          spec/services/chat_ring/knowledge/firecrawl_client_spec.rb
+          spec/services/chat_ring/knowledge/markdown_structure_spec.rb
+          spec/services/chat_ring/knowledge/source_policy_spec.rb
+          spec/services/chat_ring/knowledge/sync_service_spec.rb
+          spec/services/chat_ring/knowledge/publication_service_spec.rb
+          spec/services/chat_ring/knowledge/provider_chunk_validator_spec.rb
+          spec/services/chat_ring/knowledge/provider_validator_spec.rb
+          spec/services/chat_ring/knowledge/provider_cleanup_scheduler_spec.rb
+          spec/services/chat_ring/knowledge/retriever_spec.rb
+        env:
+          RAILS_ENV: test
+          REDIS_URL: redis://localhost:6379/0
+
+      - name: Run Phase 2A Ruby lint
+        run: >-
+          bundle exec rubocop
+          app/models/concerns/chat_ring/assistant_spike
+          app/models/chat_ring
+          app/models/concerns/chat_ring/knowledge
+          app/services/chat_ring/assistant_spike
+          app/services/chat_ring/knowledge
+          app/services/chat_ring/assistant_spike.rb
+          app/jobs/chat_ring/assistant_spike
+          app/jobs/chat_ring/knowledge
+          config/initializers/chat_ring_assistant_spike.rb
+          config/initializers/chat_ring_knowledge_cleanup.rb
+          lib/tasks/chat_ring_knowledge.rake
+          db/migrate/20260805000000_create_chat_ring_knowledge_foundation.rb
+          db/migrate/20260805001000_harden_chat_ring_knowledge_lifecycle.rb
+          db/migrate/20260806000000_add_chat_ring_provider_cleanup_records.rb
+          db/migrate/20260806001000_harden_chat_ring_knowledge_scope_deletion.rb
+          spec/models/chat_ring
+          spec/jobs/chat_ring/assistant_spike
+          spec/jobs/chat_ring/knowledge
+          spec/services/chat_ring/knowledge
+
+      - name: Validate private DocsGPT deployment contract
+        env:
+          DOCSGPT_IMAGE: example/docsgpt@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          CHATRING_CORE_NETWORK: chatring-core
+          DOCSGPT_POSTGRES_URI: postgresql://docsgpt:password@postgres:5432/docsgpt
+          DOCSGPT_PGVECTOR_CONNECTION_STRING: postgresql://docsgpt:password@postgres:5432/docsgpt
+          DOCSGPT_CELERY_BROKER_URL: redis://:password@redis:6379/3
+          DOCSGPT_CELERY_RESULT_BACKEND: redis://:password@redis:6379/4
+          DOCSGPT_CACHE_REDIS_URL: redis://:password@redis:6379/5
+          DOCSGPT_INTERNAL_KEY: ci-only-internal-key
+          DOCSGPT_JWT_SECRET: ci-only-jwt-secret-with-sufficient-entropy
+          DOCSGPT_SERVICE_SECRET: ci-only-service-secret-with-sufficient-entropy
+        run: |
+          docker compose -f deploy/knowledge/compose.yml config --quiet
+          docker compose -f deploy/knowledge/compose.yml config --format json > /tmp/chatring-knowledge-compose.json
+          jq -e '.services | all(.ports == null)' /tmp/chatring-knowledge-compose.json
+          jq -e '.services["docs-gpt-volume-init"].network_mode == "none"' /tmp/chatring-knowledge-compose.json
+          jq -e '.services["docs-gpt-volume-init"].user == "0:0"' /tmp/chatring-knowledge-compose.json
+          jq -e '.services["docs-gpt-backend"].environment.INTERNAL_KEY == "ci-only-internal-key"' /tmp/chatring-knowledge-compose.json
+          jq -e '.services["docs-gpt-worker"].environment.INTERNAL_KEY == "ci-only-internal-key"' /tmp/chatring-knowledge-compose.json
+          jq -e '.services["docs-gpt-backend"].environment.AUTH_TYPE == "simple_jwt"' /tmp/chatring-knowledge-compose.json
+          jq -e '.services["docs-gpt-backend"].environment.WSGI_THREADPOOL_WORKERS == "12"' /tmp/chatring-knowledge-compose.json
+          jq -e '.services["docs-gpt-worker"].command | contains(["--concurrency=1", "--max-tasks-per-child=20"])' /tmp/chatring-knowledge-compose.json
+          grep -q 'DocsGPT JWT startup-log contract changed' deploy/knowledge/Dockerfile
+          grep -q 'Simple JWT authentication initialized' deploy/knowledge/Dockerfile
+          grep -q 'request.headers.get("X-Internal-Key"' deploy/knowledge/docsgpt/chatring_extension.py
+          grep -q '_internal_key(), provided_internal_key' deploy/knowledge/docsgpt/chatring_extension.py
+          grep -q 'MarkdownParser.parse_file = _chatring_markdown_parse_file' deploy/knowledge/docsgpt/chatring_extension.py
+          grep -q 'classic_rag_module.labels_from_metadata = _chatring_labels_from_metadata' deploy/knowledge/docsgpt/chatring_extension.py
+          grep -q 'DEFAULT_EVIDENCE_LIMIT = 8' deploy/knowledge/docsgpt/chatring_extension.py
+          ! grep -q '_row_lookup' deploy/knowledge/docsgpt/chatring_extension.py
+          python -m py_compile deploy/knowledge/docsgpt/chatring_extension.py
+
   build:
-    needs: validate
+    needs: [validate, validate-knowledge]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout pinned ChatRing CE source

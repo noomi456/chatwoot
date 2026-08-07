@@ -36,4 +36,4 @@ Own the reproducible Phase 1 deployment of ChatRing Conversation Core through Do
 
 ## Child DOX Index
 
-- No child DOX files currently required.
+- `knowledge/AGENTS.md` — isolated Phase 2A DocsGPT execution services and private-network deployment.

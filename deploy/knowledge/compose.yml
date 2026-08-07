@@ -1,0 +1,81 @@
+name: chatring-knowledge
+
+services:
+  docs-gpt-volume-init:
+    image: ${DOCSGPT_IMAGE:?DOCSGPT_IMAGE is required}
+    user: "0:0"
+    network_mode: none
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - chown -R appuser:appuser /app/inputs /app/indexes /app/vectors
+    volumes: &docs-gpt-volumes
+      - docs_gpt_inputs:/app/inputs
+      - docs_gpt_indexes:/app/indexes
+      - docs_gpt_vectors:/app/vectors
+
+  docs-gpt-backend:
+    image: ${DOCSGPT_IMAGE:?DOCSGPT_IMAGE is required}
+    restart: unless-stopped
+    environment: &docs-gpt-environment
+      AUTH_TYPE: simple_jwt
+      JWT_SECRET_KEY: ${DOCSGPT_JWT_SECRET:?DOCSGPT_JWT_SECRET is required}
+      CHATRING_SERVICE_SECRET: ${DOCSGPT_SERVICE_SECRET:?DOCSGPT_SERVICE_SECRET is required}
+      LOCAL_MODE_ADMIN: "false"
+      VECTOR_STORE: pgvector
+      EMBEDDINGS_NAME: huggingface_sentence-transformers/all-mpnet-base-v2
+      POSTGRES_URI: ${DOCSGPT_POSTGRES_URI:?DOCSGPT_POSTGRES_URI is required}
+      PGVECTOR_CONNECTION_STRING: ${DOCSGPT_PGVECTOR_CONNECTION_STRING:?DOCSGPT_PGVECTOR_CONNECTION_STRING is required}
+      AUTO_CREATE_DB: "false"
+      AUTO_MIGRATE: "true"
+      CELERY_BROKER_URL: ${DOCSGPT_CELERY_BROKER_URL:?DOCSGPT_CELERY_BROKER_URL is required}
+      CELERY_RESULT_BACKEND: ${DOCSGPT_CELERY_RESULT_BACKEND:?DOCSGPT_CELERY_RESULT_BACKEND is required}
+      CACHE_REDIS_URL: ${DOCSGPT_CACHE_REDIS_URL:?DOCSGPT_CACHE_REDIS_URL is required}
+      INTERNAL_KEY: ${DOCSGPT_INTERNAL_KEY:?DOCSGPT_INTERNAL_KEY is required}
+      API_URL: http://docs-gpt-backend:7091
+      STORAGE_TYPE: local
+      GRAPHRAG_ENABLED: "false"
+      VERSION_CHECK: "false"
+      FLASK_DEBUG_MODE: "false"
+      # Rails/Sidekiq has 10 callers; leave two slots for health and ingestion
+      # without allowing DocsGPT's upstream 96-thread default to inflate memory.
+      WSGI_THREADPOOL_WORKERS: "12"
+    volumes: *docs-gpt-volumes
+    networks:
+      - conversation-core
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:7091/api/health', timeout=5)"
+      interval: 10s
+      timeout: 6s
+      retries: 12
+      start_period: 90s
+    depends_on:
+      docs-gpt-volume-init:
+        condition: service_completed_successfully
+
+  docs-gpt-worker:
+    image: ${DOCSGPT_IMAGE:?DOCSGPT_IMAGE is required}
+    restart: unless-stopped
+    command: celery -A application.app.celery worker -l INFO -Q docsgpt,parsing --concurrency=1 --max-tasks-per-child=20
+    environment:
+      <<: *docs-gpt-environment
+      AUTO_MIGRATE: "false"
+    volumes: *docs-gpt-volumes
+    networks:
+      - conversation-core
+    depends_on:
+      docs-gpt-backend:
+        condition: service_healthy
+
+networks:
+  conversation-core:
+    external: true
+    name: ${CHATRING_CORE_NETWORK:?CHATRING_CORE_NETWORK is required}
+
+volumes:
+  docs_gpt_inputs:
+  docs_gpt_indexes:
+  docs_gpt_vectors:
