@@ -89,4 +89,24 @@ RSpec.describe ChatRing::Knowledge::FirecrawlClient do
       /outside the configured API origin/
     )
   end
+
+  it 'rejects a repeated pagination URL instead of looping indefinitely' do
+    repeated_url = 'https://api.firecrawl.dev/v2/batch/scrape/batch-123?skip=1'
+    stub_request(:get, 'https://api.firecrawl.dev/v2/batch/scrape/batch-123').to_return(
+      status: 200,
+      headers: { 'Content-Type' => 'application/json' },
+      body: { status: 'completed', data: [], next: repeated_url }.to_json
+    )
+    stub_request(:get, repeated_url).to_return(
+      status: 200,
+      headers: { 'Content-Type' => 'application/json' },
+      body: { status: 'completed', data: [], next: repeated_url }.to_json
+    )
+
+    expect { client.batch_status('batch-123') }.to raise_error(
+      described_class::ResponseError,
+      /refusing to loop indefinitely/
+    )
+    expect(WebMock).to have_requested(:get, repeated_url).once
+  end
 end

@@ -14,7 +14,7 @@ module ChatRing::AssistantSpike
 
   def internal_bot_for(inbox)
     return unless enabled?
-    return if inbox.hooks.where(app_id: 'dialogflow', status: 'enabled').exists?
+    return if inbox.hooks.exists?(app_id: 'dialogflow', status: 'enabled')
 
     bot_inbox = inbox.agent_bot_inbox
     return unless bot_inbox&.active?

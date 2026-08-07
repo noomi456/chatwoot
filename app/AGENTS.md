@@ -22,6 +22,7 @@ Own ChatRing's customer- and agent-facing Community Edition application behavior
 - Production evidence must include a finite numeric provider score, score kind, rank, exact source/version binding, a verified provider chunk-content hash, canonical source URL and title, retrieved heading path, normalized page heading outline, safe source-derived CTA candidates, and retrieval configuration identity. Reject scoreless, non-finite, hash-mismatched, or off-manifest results and represent insufficient evidence as an empty typed outcome.
 - Once a knowledge version is ready, published, or retired, its build configuration, manifest, and source-document snapshots are immutable; create a new isolated version for any content or metadata change.
 - Only one worker may claim a knowledge-version build. Publication and rollback require validation and append-only publication events; provider cleanup failures remain durable and retryable.
+- Provider cleanup must serialize with publication, and Account/Inbox destruction must retain an independently executable provider tombstone before scoped database records cascade.
 - `ChatRing::AssistantSpike` is a non-production deterministic boundary proof only. It may reuse the CE AgentBot sender contract and normal Message/Conversation/Sidekiq delivery lifecycle, while remaining disabled unless its explicit spike configuration is active.
 - Do not import or mirror Enterprise implementations.
 - Use installation configuration or the frontend branding helper for product identity instead of scattered hard-coded replacements.

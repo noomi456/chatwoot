@@ -1,34 +1,43 @@
 class ChatRing::Knowledge::PublicationService
   class Error < StandardError; end
 
-  def self.publish!(version, validator: ChatRing::Knowledge::ProviderValidator) # rubocop:disable Metrics/MethodLength
+  def self.publish!(version, validator: ChatRing::Knowledge::ProviderValidator)
     ensure_publishable!(version)
     validator.validate!(version)
-    publication = ChatRing::KnowledgePublication.transaction do
+    publication = publish_transaction(version)
+    schedule_cleanup(publication)
+    publication
+  end
+
+  def self.publish_transaction(version)
+    ChatRing::KnowledgePublication.transaction do
       Inbox.lock.find(version.inbox_id)
       version.lock!
       ensure_publishable!(version)
+      ChatRing::Knowledge::ProviderCleanupScheduler.reserve_for_publication!(version)
 
       publication = ChatRing::KnowledgePublication.find_or_initialize_by(
         account_id: version.account_id,
         inbox_id: version.inbox_id
       )
-      unless publication.persisted? && publication.knowledge_version_id == version.id
-        previous = publication.knowledge_version if publication.persisted?
-        previous&.update!(status: 'retired') if previous&.status == 'published'
-        version.update!(status: 'published', published_at: Time.current)
-        publication.update!(
-          knowledge_version: version,
-          previous_knowledge_version: previous,
-          published_at: Time.current
-        )
-        record_event!(publication, from: previous, to: version, action: 'publish')
-      end
+      activate_publication(publication, version) unless publication.persisted? && publication.knowledge_version_id == version.id
       publication
     end
-    schedule_cleanup(publication)
-    publication
   end
+  private_class_method :publish_transaction
+
+  def self.activate_publication(publication, version)
+    previous = publication.knowledge_version if publication.persisted?
+    previous&.update!(status: 'retired') if previous&.status == 'published'
+    version.update!(status: 'published', published_at: Time.current)
+    publication.update!(
+      knowledge_version: version,
+      previous_knowledge_version: previous,
+      published_at: Time.current
+    )
+    record_event!(publication, from: previous, to: version, action: 'publish')
+  end
+  private_class_method :activate_publication
 
   def self.rollback!(account:, inbox:, validator: ChatRing::Knowledge::ProviderValidator) # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
     publication = ChatRing::KnowledgePublication.find_by!(account: account, inbox: inbox)
@@ -45,6 +54,7 @@ class ChatRing::Knowledge::PublicationService
       raise Error, 'Rollback target changed during validation; retry the operation' unless previous.id == target.id
 
       ensure_evaluated!(previous, message: 'Rollback target has not passed the current retrieval evaluation')
+      ChatRing::Knowledge::ProviderCleanupScheduler.reserve_for_publication!(previous)
 
       current = publication.knowledge_version
       current.update!(status: 'retired')

@@ -6,6 +6,7 @@ class ChatRing::Knowledge::FirecrawlClient
   DEFAULT_BASE_URL = 'https://api.firecrawl.dev'.freeze
   DEFAULT_MAP_LIMIT = 5000
   MAX_URLS = 100_000
+  MAX_BATCH_PAGES = 10_000
 
   class Error < StandardError; end
   class ConfigurationError < Error; end
@@ -66,10 +67,17 @@ class ChatRing::Knowledge::FirecrawlClient
 
     data = Array(first_page['data'])
     next_url = first_page['next']
+    seen_pages = Set.new
+    page_count = 1
     while next_url.present?
-      page = request_json(:get, validated_next_url(next_url))
+      page_url = validated_next_url(next_url)
+      raise ResponseError, 'Firecrawl pagination URL repeated; refusing to loop indefinitely' unless seen_pages.add?(page_url)
+      raise ResponseError, "Firecrawl batch exceeded #{MAX_BATCH_PAGES} pages" if page_count >= MAX_BATCH_PAGES
+
+      page = request_json(:get, page_url)
       data.concat(Array(page['data']))
       next_url = page['next']
+      page_count += 1
     end
     first_page.merge('data' => data, 'next' => nil)
   end

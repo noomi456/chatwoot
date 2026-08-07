@@ -62,4 +62,42 @@ RSpec.describe ChatRing::Knowledge::PublicationService do
       /has not passed the current retrieval evaluation/
     )
   end
+
+  it 'cancels a pending provider deletion before publishing its retained version' do
+    version = ChatRing::KnowledgeVersion.create!(**attributes, status: 'ready')
+    mark_evaluated(version)
+    cleanup = ChatRing::KnowledgeProviderCleanup.create!(
+      knowledge_version: version,
+      account_id: account.id,
+      inbox_id: inbox.id,
+      provider_source_id: 'source-retained',
+      binding_digest: version.evaluation_binding_digest,
+      eligible_at: 1.day.from_now
+    )
+
+    described_class.publish!(version, validator: validator)
+
+    expect(cleanup.reload).to have_attributes(
+      status: 'cancelled',
+      last_error: 'knowledge version is retained by a publication pointer'
+    )
+  end
+
+  it 'refuses to publish after provider deletion has started' do
+    version = ChatRing::KnowledgeVersion.create!(**attributes, status: 'ready')
+    mark_evaluated(version)
+    ChatRing::KnowledgeProviderCleanup.create!(
+      knowledge_version: version,
+      account_id: account.id,
+      inbox_id: inbox.id,
+      provider_source_id: 'source-retained',
+      binding_digest: version.evaluation_binding_digest,
+      status: 'retrying',
+      eligible_at: 1.minute.ago
+    )
+
+    expect do
+      described_class.publish!(version, validator: validator)
+    end.to raise_error(described_class::Error, /provider cleanup has already started/)
+  end
 end

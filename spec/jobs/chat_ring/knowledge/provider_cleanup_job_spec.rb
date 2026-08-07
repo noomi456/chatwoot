@@ -26,6 +26,8 @@ RSpec.describe ChatRing::Knowledge::ProviderCleanupJob do
   it 'idempotently records successful provider deletion' do
     cleanup = ChatRing::KnowledgeProviderCleanup.create!(
       knowledge_version: version,
+      account_id: account.id,
+      inbox_id: inbox.id,
       provider_source_id: 'source-1',
       binding_digest: 'a' * 64,
       eligible_at: 1.minute.ago
@@ -61,6 +63,8 @@ RSpec.describe ChatRing::Knowledge::ProviderCleanupJob do
     )
     cleanup = ChatRing::KnowledgeProviderCleanup.create!(
       knowledge_version: version,
+      account_id: account.id,
+      inbox_id: inbox.id,
       provider_source_id: 'source-1',
       binding_digest: 'a' * 64,
       eligible_at: 1.minute.ago
@@ -70,5 +74,23 @@ RSpec.describe ChatRing::Knowledge::ProviderCleanupJob do
 
     expect(cleanup.reload.status).to eq('cancelled')
     expect(client).not_to have_received(:delete_source)
+  end
+
+  it 'durably counts a failed provider attempt after the locked deletion transaction rolls back' do
+    cleanup = ChatRing::KnowledgeProviderCleanup.create!(
+      knowledge_version: version,
+      account_id: account.id,
+      inbox_id: inbox.id,
+      provider_source_id: 'source-1',
+      binding_digest: 'a' * 64,
+      eligible_at: 1.minute.ago
+    )
+    error = ChatRing::Knowledge::DocsGptClient::RequestError.new('provider unavailable')
+    allow(client).to receive(:delete_source).and_raise(error)
+    allow(ChatRing::Knowledge::DocsGptClient).to receive(:new).and_return(client)
+
+    expect { described_class.perform_now(cleanup.id) }.to have_enqueued_job(described_class)
+
+    expect(cleanup.reload).to have_attributes(status: 'retrying', attempts: 1, last_error: 'provider unavailable')
   end
 end

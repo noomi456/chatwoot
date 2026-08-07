@@ -24,7 +24,7 @@ class ChatRing::KnowledgeVersion < ApplicationRecord
   has_one :provider_cleanup,
           class_name: 'ChatRing::KnowledgeProviderCleanup',
           inverse_of: :knowledge_version,
-          dependent: :restrict_with_exception
+          dependent: nil
 
   encrypts :provider_agent_api_key
 

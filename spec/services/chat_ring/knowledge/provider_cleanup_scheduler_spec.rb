@@ -95,6 +95,8 @@ RSpec.describe ChatRing::Knowledge::ProviderCleanupScheduler do
     version.update!(status: 'retired')
     cleanup = ChatRing::KnowledgeProviderCleanup.create!(
       knowledge_version: version,
+      account_id: account.id,
+      inbox_id: inbox.id,
       provider_source_id: 'source-retained',
       binding_digest: version.evaluation_binding_digest,
       eligible_at: 1.day.from_now
