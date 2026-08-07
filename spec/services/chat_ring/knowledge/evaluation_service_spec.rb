@@ -70,6 +70,9 @@ RSpec.describe ChatRing::Knowledge::EvaluationService do
     report = described_class.evaluate!(version, cases: cases, provider: provider)
 
     expect(report).to include('case_count' => 10, 'passed_count' => 10)
+    expect(provider).to have_received(:retrieve).with(
+      hash_including(limit: ChatRing::Knowledge::DocsGptProvider::DEFAULT_EVIDENCE_LIMIT)
+    ).exactly(10).times
     expect(version.reload.evaluation_passed_for_current_content?).to be(true)
   end
 

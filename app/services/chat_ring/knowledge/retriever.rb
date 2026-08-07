@@ -5,7 +5,8 @@ class ChatRing::Knowledge::Retriever
     current_version(inbox).id
   end
 
-  def self.retrieve(inbox:, query:, limit: 5, knowledge_version_id: nil)
+  def self.retrieve(inbox:, query:, limit: ChatRing::Knowledge::DocsGptProvider::DEFAULT_EVIDENCE_LIMIT,
+                    knowledge_version_id: nil)
     version = knowledge_version_id.present? ? pinned_version(inbox, knowledge_version_id) : current_version(inbox)
     provider(version).retrieve(
       query: query,

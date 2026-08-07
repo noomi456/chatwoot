@@ -7,6 +7,7 @@ class ChatRing::Knowledge::DocsGptProvider
   PROVIDER = 'docs_gpt'.freeze
   RETRIEVAL_STRATEGY = 'docs_gpt_dispatcher_classic_cosine'.freeze
   RETRIEVAL_PATH = '/api/internal/chatring/retrieve'.freeze
+  DEFAULT_EVIDENCE_LIMIT = 8
   MAX_RESULTS = 20
   MAX_QUERY_LENGTH = 2000
   HIGH_RISK_PATTERN = /\b(hipaa|soc\s*2|iso\s*27001|data\s+residen(?:cy|t)|end[- ]to[- ]end encrypt|gdpr (?:compliant|compliance))\b/i
@@ -36,7 +37,7 @@ class ChatRing::Knowledge::DocsGptProvider
   end
   # rubocop:enable Metrics/ParameterLists
 
-  def retrieve(query:, knowledge_version_id:, source_manifest:, limit: 5) # rubocop:disable Metrics/MethodLength
+  def retrieve(query:, knowledge_version_id:, source_manifest:, limit: DEFAULT_EVIDENCE_LIMIT) # rubocop:disable Metrics/MethodLength
     resolved_query = required_string(query, 'query')
     raise ConfigurationError, "query must not exceed #{MAX_QUERY_LENGTH} characters" if resolved_query.length > MAX_QUERY_LENGTH
 

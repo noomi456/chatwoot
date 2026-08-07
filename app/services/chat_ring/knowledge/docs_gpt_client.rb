@@ -5,7 +5,7 @@ require 'uri'
 
 class ChatRing::Knowledge::DocsGptClient
   USER_ID = 'local'.freeze
-  DEFAULT_CHUNKS = 5
+  DEFAULT_CHUNKS = ChatRing::Knowledge::DocsGptProvider::DEFAULT_EVIDENCE_LIMIT
   MAX_CHUNK_PAGES = 1000
   SOURCE_CONFIG = {
     kind: 'classic',

@@ -91,7 +91,7 @@ class ChatRing::Knowledge::EvaluationService
       query: test_case.fetch('query'),
       knowledge_version_id: @version.id.to_s,
       source_manifest: ChatRing::Knowledge::Retriever.source_manifest(@version),
-      limit: 5
+      limit: ChatRing::Knowledge::DocsGptProvider::DEFAULT_EVIDENCE_LIMIT
     )
     actual_urls = evidence_set.items.map(&:source_reference).uniq.sort
     passed = expected_status?(test_case, evidence_set) &&

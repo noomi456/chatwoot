@@ -60,7 +60,7 @@ RSpec.describe ChatRing::Knowledge::Retriever do
       query: 'Question',
       knowledge_version_id: first.id.to_s,
       source_manifest: described_class.source_manifest(first),
-      limit: 5
+      limit: ChatRing::Knowledge::DocsGptProvider::DEFAULT_EVIDENCE_LIMIT
     )
     manifest_entry = described_class.source_manifest(first).fetch(first.documents.first.provider_source_reference)
     expect(manifest_entry).to include(
