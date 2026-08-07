@@ -102,6 +102,25 @@ Rails.application.routes.draw do
               post :follow_up
             end
           end
+          namespace :chat_ring do
+            namespace :knowledge do
+              resources :websites, only: [:create]
+              resources :website_materials, only: [:destroy]
+              resources :file_sources, only: [:index, :show, :create, :update, :destroy] do
+                post :retry_parse, on: :member
+                post :enable, on: :member
+                delete :purge, on: :member
+              end
+              resources :versions, only: [:index, :show, :create] do
+                post :evaluate, on: :member
+                post :publish, on: :member
+              end
+              resource :publication, only: [:show] do
+                post :rollback
+              end
+              resources :retrieval_tests, only: [:create]
+            end
+          end
           resource :saml_settings, only: [:show, :create, :update, :destroy]
           resources :agent_bots, only: [:index, :create, :show, :update, :destroy] do
             delete :avatar, on: :member

@@ -3,6 +3,10 @@ module ChatRing::Knowledge::ScopeCleanup
     extend ActiveSupport::Concern
 
     included do
+      has_many :chat_ring_knowledge_file_sources,
+               class_name: 'ChatRing::KnowledgeFileSource',
+               dependent: :destroy,
+               inverse_of: :account
       before_destroy :prepare_chat_ring_knowledge_cleanup
       after_destroy_commit :enqueue_chat_ring_knowledge_cleanup
     end
@@ -22,6 +26,10 @@ module ChatRing::Knowledge::ScopeCleanup
     extend ActiveSupport::Concern
 
     included do
+      has_many :chat_ring_knowledge_file_sources,
+               class_name: 'ChatRing::KnowledgeFileSource',
+               dependent: :destroy,
+               inverse_of: :inbox
       before_destroy :prepare_chat_ring_knowledge_cleanup
       after_destroy_commit :enqueue_chat_ring_knowledge_cleanup
     end

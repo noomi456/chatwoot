@@ -44,33 +44,37 @@ class ChatRing::Knowledge::EvaluationService
 
   private
 
-  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength
   def normalize_cases(cases)
     raise Error, 'Evaluation cases must be an array' unless cases.is_a?(Array)
 
     cases.map.with_index do |entry, index|
       raise Error, "Evaluation case #{index + 1} must be an object" unless entry.is_a?(Hash)
 
-      test_case = entry.deep_stringify_keys
-      query = test_case['query'].to_s.squish
-      category = test_case['category'].to_s
-      expectation = test_case['expectation'].to_s
-      raise Error, "Evaluation case #{index + 1} is missing a query" if query.blank?
-      raise Error, "Evaluation case #{index + 1} has an invalid category" unless REQUIRED_CATEGORIES.include?(category)
-      raise Error, "Evaluation case #{index + 1} has an invalid expectation" unless EXPECTATIONS.include?(expectation)
-
-      {
-        'query' => query,
-        'category' => category,
-        'expectation' => expectation,
-        'expected_text' => test_case['expected_text'].to_s.squish.presence,
-        'expected_urls' => Array(test_case['expected_urls']).map do |url|
-          ChatRing::Knowledge::FirecrawlClient.canonical_url(url)
-        end.uniq.sort
-      }
+      normalize_case(entry.deep_stringify_keys, index)
     end
   end
-  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength
+
+  def normalize_case(test_case, index)
+    query = test_case['query'].to_s.squish
+    category = test_case['category'].to_s
+    expectation = test_case['expectation'].to_s
+    validate_case!(query, category, expectation, index)
+    sources = normalize_expected_sources(test_case)
+    {
+      'query' => query,
+      'category' => category,
+      'expectation' => expectation,
+      'expected_text' => test_case['expected_text'].to_s.squish.presence,
+      'expected_sources' => sources,
+      'expected_urls' => sources.select { |source| source.start_with?('http://', 'https://') }
+    }
+  end
+
+  def validate_case!(query, category, expectation, index)
+    raise Error, "Evaluation case #{index + 1} is missing a query" if query.blank?
+    raise Error, "Evaluation case #{index + 1} has an invalid category" unless REQUIRED_CATEGORIES.include?(category)
+    raise Error, "Evaluation case #{index + 1} has an invalid expectation" unless EXPECTATIONS.include?(expectation)
+  end
 
   def validate_suite! # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
     accepted = @cases.count { |test_case| test_case['expectation'] == 'accepted' }
@@ -80,22 +84,23 @@ class ChatRing::Knowledge::EvaluationService
     raise Error, "Evaluation suite requires at least #{MIN_ACCEPTED_CASES} accepted cases" if accepted < MIN_ACCEPTED_CASES
     raise Error, "Evaluation suite requires at least #{MIN_NEGATIVE_CASES} negative cases" if negative < MIN_NEGATIVE_CASES
     raise Error, "Evaluation suite is missing categories: #{missing_categories.join(', ')}" if missing_categories.any?
-    if @cases.any? { |test_case| test_case['expectation'] == 'accepted' && test_case['expected_urls'].empty? }
-      raise Error, 'Every accepted evaluation case must identify at least one expected source URL'
+    if @cases.any? { |test_case| test_case['expectation'] == 'accepted' && test_case['expected_sources'].empty? }
+      raise Error, 'Every accepted evaluation case must identify at least one expected source'
     end
     raise Error, 'Every accepted evaluation case must identify expected passage text' if
       @cases.any? { |test_case| test_case['expectation'] == 'accepted' && test_case['expected_text'].blank? }
   end
 
-  def evaluate_case(test_case)
+  def evaluate_case(test_case) # rubocop:disable Metrics/MethodLength
     evidence_sets = Array.new(RETRIEVAL_RUNS_PER_CASE) { retrieve(test_case.fetch('query')) }
     evidence_set = evidence_sets.first
     deterministic = evidence_sets.map { |result| evidence_signature(result) }.uniq.one?
-    actual_urls = evidence_set.items.map(&:source_reference).uniq.sort
-    passed = case_passed?(test_case, evidence_set, actual_urls, deterministic)
+    actual_sources = evidence_set.items.map(&:source_reference).uniq.sort
+    passed = case_passed?(test_case, evidence_set, actual_sources, deterministic)
     test_case.merge(
       'actual_status' => evidence_set.status,
-      'actual_urls' => actual_urls,
+      'actual_sources' => actual_sources,
+      'actual_urls' => actual_sources.select { |source| source.start_with?('http://', 'https://') },
       'evidence_ids' => evidence_set.items.map(&:id),
       'deterministic' => deterministic,
       'retrieval_runs' => RETRIEVAL_RUNS_PER_CASE,
@@ -109,10 +114,10 @@ class ChatRing::Knowledge::EvaluationService
     )
   end
 
-  def case_passed?(test_case, evidence_set, actual_urls, deterministic)
+  def case_passed?(test_case, evidence_set, actual_sources, deterministic)
     deterministic &&
       expected_status?(test_case, evidence_set) &&
-      expected_source?(test_case, actual_urls) &&
+      expected_source?(test_case, actual_sources) &&
       expected_text?(test_case, evidence_set)
   end
 
@@ -138,10 +143,10 @@ class ChatRing::Knowledge::EvaluationService
       (evidence_set.status != 'insufficient_evidence' || evidence_set.items.empty?)
   end
 
-  def expected_source?(test_case, actual_urls)
+  def expected_source?(test_case, actual_sources)
     return true if test_case['expectation'] == 'insufficient_evidence'
 
-    test_case.fetch('expected_urls').intersect?(actual_urls)
+    test_case.fetch('expected_sources').intersect?(actual_sources)
   end
 
   def expected_text?(test_case, evidence_set)
@@ -149,6 +154,20 @@ class ChatRing::Knowledge::EvaluationService
 
     needle = test_case.fetch('expected_text').downcase
     evidence_set.items.any? { |item| item.excerpt.to_s.downcase.include?(needle) }
+  end
+
+  def normalize_expected_sources(test_case)
+    values = Array(test_case['expected_sources'].presence || test_case['expected_urls'])
+    values.map do |value|
+      source = value.to_s.strip
+      if source.start_with?('http://', 'https://')
+        ChatRing::Knowledge::FirecrawlClient.canonical_url(source)
+      elsif source.start_with?('urn:chatring:knowledge-file:')
+        source
+      else
+        raise Error, 'Expected sources must be canonical URLs or ChatRing file URNs'
+      end
+    end.uniq.sort
   end
 
   def provider

@@ -325,6 +325,8 @@
     "COMPANIES": "Companies",
     "ALL_COMPANIES": "All Companies",
     "CAPTAIN": "Captain",
+    "CHATRING_AI": "AI",
+    "CHATRING_KNOWLEDGE": "Knowledge",
     "CALLS": "Calls",
     "CAPTAIN_ASSISTANTS": "Assistants",
     "CAPTAIN_OVERVIEW": "Overview",

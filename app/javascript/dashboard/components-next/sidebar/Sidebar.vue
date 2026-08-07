@@ -2,6 +2,7 @@
 import { h, ref, computed, onMounted, watch } from 'vue';
 import { provideSidebarContext, useSidebarResize } from './provider';
 import { useAccount } from 'dashboard/composables/useAccount';
+import { useAdmin } from 'dashboard/composables/useAdmin';
 import { useConfig } from 'dashboard/composables/useConfig';
 import { useKbd } from 'dashboard/composables/utils/useKbd';
 import { useMapGetter } from 'dashboard/composables/store';
@@ -44,6 +45,7 @@ const emit = defineEmits([
 ]);
 
 const { accountScopedRoute, isOnChatwootCloud } = useAccount();
+const { isAdmin } = useAdmin();
 const { isEnterprise } = useConfig();
 const store = useStore();
 
@@ -492,6 +494,22 @@ const menuItems = computed(() => {
         },
       ],
     },
+    ...(isAdmin.value
+      ? [
+          {
+            name: 'ChatRing AI',
+            icon: 'i-lucide-sparkles',
+            label: t('SIDEBAR.CHATRING_AI'),
+            children: [
+              {
+                name: 'ChatRing Knowledge',
+                label: t('SIDEBAR.CHATRING_KNOWLEDGE'),
+                to: accountScopedRoute('chatring_knowledge_index'),
+              },
+            ],
+          },
+        ]
+      : []),
     {
       name: 'Captain',
       icon: 'i-woot-captain',

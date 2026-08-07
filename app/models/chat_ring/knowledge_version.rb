@@ -30,7 +30,8 @@ class ChatRing::KnowledgeVersion < ApplicationRecord
 
   validates :status, inclusion: { in: STATUSES }
   validates :evaluation_status, inclusion: { in: EVALUATION_STATUSES }
-  validates :provider, :provider_release, :root_url, presence: true
+  validates :provider, :provider_release, presence: true
+  validates :root_url, presence: true, if: :website_documents?
   validate :inbox_belongs_to_account
   validate :completed_build_snapshot_is_immutable, on: :update
   validate :abandoned_status_has_audit_fields
@@ -57,6 +58,10 @@ class ChatRing::KnowledgeVersion < ApplicationRecord
   end
 
   private
+
+  def website_documents?
+    documents.loaded? ? documents.any? { |document| document.source_kind == 'website' } : documents.exists?(source_kind: 'website')
+  end
 
   def inbox_belongs_to_account
     return if inbox.blank? || account.blank? || inbox.account_id == account_id

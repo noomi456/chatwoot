@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_08_06_002000) do
+ActiveRecord::Schema[7.1].define(version: 2026_08_07_000000) do
   # These extensions should be enabled to support this database
   enable_extension "pg_stat_statements"
   enable_extension "pg_trgm"
@@ -692,7 +692,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_06_002000) do
 
   create_table "chat_ring_knowledge_documents", force: :cascade do |t|
     t.bigint "knowledge_version_id", null: false
-    t.string "source_url", null: false
+    t.string "source_url"
     t.string "title"
     t.text "markdown", null: false
     t.string "content_hash", null: false
@@ -704,10 +704,57 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_06_002000) do
     t.jsonb "metadata", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "source_kind", default: "website", null: false
+    t.string "source_reference", null: false
+    t.string "public_url"
+    t.bigint "file_source_id"
+    t.index ["file_source_id"], name: "index_chatring_knowledge_documents_on_file_source_id"
     t.index ["knowledge_version_id", "provider_file_name"], name: "index_chatring_knowledge_documents_on_version_and_file", unique: true
+    t.index ["knowledge_version_id", "source_reference"], name: "index_chatring_documents_on_version_and_reference", unique: true
     t.index ["knowledge_version_id", "source_url"], name: "index_chatring_knowledge_documents_on_version_and_url", unique: true
     t.index ["knowledge_version_id"], name: "index_chatring_knowledge_documents_on_version_id"
-    t.check_constraint "provider_status::text = ANY (ARRAY['pending'::character varying, 'processing'::character varying, 'ready'::character varying, 'failed'::character varying]::text[])", name: "chatring_knowledge_documents_provider_status_check"
+    t.check_constraint "provider_status::text = ANY (ARRAY['pending'::character varying::text, 'processing'::character varying::text, 'ready'::character varying::text, 'failed'::character varying::text])", name: "chatring_knowledge_documents_provider_status_check"
+    t.check_constraint "source_kind::text <> 'website'::text OR public_url IS NOT NULL", name: "chatring_knowledge_documents_website_url_check"
+    t.check_constraint "source_kind::text = ANY (ARRAY['website'::character varying, 'pdf'::character varying, 'docx'::character varying]::text[])", name: "chatring_knowledge_documents_source_kind_check"
+  end
+
+  create_table "chat_ring_knowledge_file_sources", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "inbox_id", null: false
+    t.uuid "source_key", default: -> { "gen_random_uuid()" }, null: false
+    t.string "status", default: "uploaded", null: false
+    t.string "source_kind", null: false
+    t.string "original_filename", null: false
+    t.string "content_type", null: false
+    t.bigint "byte_size", null: false
+    t.string "raw_content_hash", null: false
+    t.string "authority_class", default: "product_documentation", null: false
+    t.jsonb "parser_profile", default: {}, null: false
+    t.string "parser_profile_digest", null: false
+    t.text "markdown"
+    t.string "content_hash"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "parse_started_at"
+    t.datetime "parsed_at"
+    t.datetime "disabled_at"
+    t.string "failure_code"
+    t.string "failure_message", limit: 1000
+    t.bigint "created_by_id"
+    t.bigint "approved_by_id"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "inbox_id", "raw_content_hash", "parser_profile_digest"], name: "index_chatring_file_sources_on_scope_content_and_parser", unique: true
+    t.index ["account_id", "inbox_id", "status"], name: "index_chatring_file_sources_on_scope_and_status"
+    t.index ["account_id"], name: "index_chat_ring_knowledge_file_sources_on_account_id"
+    t.index ["approved_by_id"], name: "index_chat_ring_knowledge_file_sources_on_approved_by_id"
+    t.index ["created_by_id"], name: "index_chat_ring_knowledge_file_sources_on_created_by_id"
+    t.index ["inbox_id"], name: "index_chat_ring_knowledge_file_sources_on_inbox_id"
+    t.index ["source_key"], name: "index_chat_ring_knowledge_file_sources_on_source_key", unique: true
+    t.check_constraint "authority_class::text = ANY (ARRAY['product_documentation'::character varying, 'structured_commercial'::character varying, 'marketing'::character varying, 'approved_legal_policy'::character varying, 'approved_compliance'::character varying]::text[])", name: "chatring_file_sources_authority_check"
+    t.check_constraint "byte_size > 0 AND byte_size <= 52428800", name: "chatring_file_sources_size_check"
+    t.check_constraint "source_kind::text = ANY (ARRAY['pdf'::character varying, 'docx'::character varying]::text[])", name: "chatring_file_sources_kind_check"
+    t.check_constraint "status::text <> 'ready'::text OR markdown IS NOT NULL AND content_hash IS NOT NULL AND parsed_at IS NOT NULL", name: "chatring_file_sources_ready_snapshot_check"
+    t.check_constraint "status::text = ANY (ARRAY['uploaded'::character varying, 'parsing'::character varying, 'ready'::character varying, 'parse_indeterminate'::character varying, 'failed'::character varying, 'disabled'::character varying]::text[])", name: "chatring_file_sources_status_check"
   end
 
   create_table "chat_ring_knowledge_provider_cleanups", force: :cascade do |t|
@@ -750,7 +797,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_06_002000) do
     t.index ["from_knowledge_version_id"], name: "index_chatring_publication_events_on_from_version"
     t.index ["inbox_id"], name: "index_chat_ring_knowledge_publication_events_on_inbox_id"
     t.index ["to_knowledge_version_id"], name: "index_chatring_publication_events_on_to_version"
-    t.check_constraint "action::text = ANY (ARRAY['publish'::character varying, 'rollback'::character varying]::text[])", name: "chatring_knowledge_publication_events_action_check"
+    t.check_constraint "action::text = ANY (ARRAY['publish'::character varying::text, 'rollback'::character varying::text])", name: "chatring_knowledge_publication_events_action_check"
   end
 
   create_table "chat_ring_knowledge_publications", force: :cascade do |t|
@@ -774,7 +821,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_06_002000) do
     t.string "status", default: "pending", null: false
     t.string "provider", default: "docs_gpt", null: false
     t.string "provider_release", null: false
-    t.string "root_url", null: false
+    t.string "root_url"
     t.datetime "firecrawl_start_started_at"
     t.string "firecrawl_crawl_id"
     t.jsonb "mapped_manifest", default: [], null: false
@@ -803,9 +850,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_06_002000) do
     t.index ["inbox_id"], name: "index_chat_ring_knowledge_versions_on_inbox_id"
     t.index ["processing_lease_token"], name: "index_chat_ring_knowledge_versions_on_processing_lease_token", unique: true, where: "(processing_lease_token IS NOT NULL)"
     t.index ["status", "evaluation_status", "evaluated_at"], name: "index_chatring_knowledge_versions_on_abandonment_candidates"
-    t.check_constraint "evaluation_status::text = ANY (ARRAY['pending'::character varying, 'passed'::character varying, 'failed'::character varying]::text[])", name: "chatring_knowledge_versions_evaluation_status_check"
+    t.check_constraint "evaluation_status::text = ANY (ARRAY['pending'::character varying::text, 'passed'::character varying::text, 'failed'::character varying::text])", name: "chatring_knowledge_versions_evaluation_status_check"
     t.check_constraint "status::text <> 'abandoned'::text OR abandoned_at IS NOT NULL AND abandon_reason IS NOT NULL", name: "chatring_knowledge_versions_abandonment_fields_check"
-    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying, 'crawling'::character varying, 'ingesting'::character varying, 'ready'::character varying, 'published'::character varying, 'retired'::character varying, 'failed'::character varying, 'abandoned'::character varying]::text[])", name: "chatring_knowledge_versions_status_check"
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying::text, 'crawling'::character varying::text, 'ingesting'::character varying::text, 'ready'::character varying::text, 'published'::character varying::text, 'retired'::character varying::text, 'failed'::character varying::text, 'abandoned'::character varying::text])", name: "chatring_knowledge_versions_status_check"
   end
 
   create_table "companies", force: :cascade do |t|
@@ -1618,7 +1665,12 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_06_002000) do
 
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
+  add_foreign_key "chat_ring_knowledge_documents", "chat_ring_knowledge_file_sources", column: "file_source_id", on_delete: :nullify
   add_foreign_key "chat_ring_knowledge_documents", "chat_ring_knowledge_versions", column: "knowledge_version_id", on_delete: :cascade
+  add_foreign_key "chat_ring_knowledge_file_sources", "accounts", on_delete: :cascade
+  add_foreign_key "chat_ring_knowledge_file_sources", "inboxes", on_delete: :cascade
+  add_foreign_key "chat_ring_knowledge_file_sources", "users", column: "approved_by_id", on_delete: :nullify
+  add_foreign_key "chat_ring_knowledge_file_sources", "users", column: "created_by_id", on_delete: :nullify
   add_foreign_key "chat_ring_knowledge_publication_events", "accounts", on_delete: :cascade
   add_foreign_key "chat_ring_knowledge_publication_events", "chat_ring_knowledge_versions", column: "from_knowledge_version_id"
   add_foreign_key "chat_ring_knowledge_publication_events", "chat_ring_knowledge_versions", column: "to_knowledge_version_id"

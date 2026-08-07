@@ -9,6 +9,7 @@ import calls from './calls.json';
 import campaign from './campaign.json';
 import cannedMgmt from './cannedMgmt.json';
 import chatlist from './chatlist.json';
+import chatRingKnowledge from './chatRingKnowledge.json';
 import companies from './companies.json';
 import components from './components.json';
 import contact from './contact.json';
@@ -56,6 +57,7 @@ export default {
   ...campaign,
   ...cannedMgmt,
   ...chatlist,
+  ...chatRingKnowledge,
   ...companies,
   ...components,
   ...contact,

@@ -187,9 +187,12 @@ class ChatRing::Knowledge::DocsGptProvider
       provider_release: @provider_release,
       provider_source_id: @provider_source_id,
       provider_chunk_id: provider_chunk_id,
+      source_kind: source.fetch('source_kind'),
       source_reference: source.fetch('source_reference'),
       source_title: title,
+      public_url: source['public_url'],
       heading_path: heading_path,
+      page_locator: source['page_locator'],
       page_headings: source.fetch('headings'),
       cta_candidates: contextual_cta_candidates(source.fetch('cta_candidates'), heading_path),
       locator: heading_path || source['locator'].presence || source.fetch('source_reference'),
@@ -253,17 +256,23 @@ class ChatRing::Knowledge::DocsGptProvider
 
   def normalize_manifest(value)
     value.to_h.transform_keys(&:to_s).transform_values do |entry|
-      normalized = entry.to_h.deep_stringify_keys
-      {
-        'content_hash' => required_string(normalized['content_hash'], 'source content_hash'),
-        'source_reference' => required_string(normalized['source_reference'], 'source source_reference'),
-        'source_title' => normalized['source_title'].to_s.presence,
-        'locator' => normalized['locator'].to_s.presence,
-        'authority_class' => required_string(normalized['authority_class'], 'source authority_class'),
-        'headings' => normalize_headings(normalized['headings']),
-        'cta_candidates' => normalize_cta_candidates(normalized['cta_candidates'])
-      }
+      normalize_manifest_entry(entry.to_h.deep_stringify_keys)
     end
+  end
+
+  def normalize_manifest_entry(entry)
+    {
+      'content_hash' => required_string(entry['content_hash'], 'source content_hash'),
+      'source_kind' => entry['source_kind'].to_s.presence || 'website',
+      'source_reference' => required_string(entry['source_reference'], 'source source_reference'),
+      'source_title' => entry['source_title'].to_s.presence,
+      'public_url' => optional_public_url(entry['public_url']),
+      'locator' => entry['locator'].to_s.presence,
+      'page_locator' => entry['page_locator'].to_s.presence,
+      'authority_class' => required_string(entry['authority_class'], 'source authority_class'),
+      'headings' => normalize_headings(entry['headings']),
+      'cta_candidates' => normalize_cta_candidates(entry['cta_candidates'])
+    }
   end
 
   def normalize_headings(value)
@@ -359,6 +368,12 @@ class ChatRing::Knowledge::DocsGptProvider
     end
 
     url
+  end
+
+  def optional_public_url(value)
+    return if value.blank?
+
+    required_http_url(value, 'source public_url')
   end
 
   def required_string(value, name)

@@ -56,9 +56,9 @@ class ChatRing::Knowledge::MarkdownStructure
   end
   private_class_method :ip_address
 
-  def initialize(markdown:, source_url:)
+  def initialize(markdown:, source_url: nil)
     @markdown = markdown.to_s
-    @source_uri = parse_source_uri(source_url)
+    @source_uri = parse_source_uri(source_url) if source_url.present?
   end
 
   def call # rubocop:disable Metrics/CyclomaticComplexity
@@ -128,7 +128,10 @@ class ChatRing::Knowledge::MarkdownStructure
 
   def normalize_url(value)
     raw = value.to_s.delete_prefix('<').delete_suffix('>')
-    uri = URI.join(@source_uri.to_s, raw)
+    candidate = URI.parse(raw)
+    return if candidate.relative? && @source_uri.nil?
+
+    uri = @source_uri ? URI.join(@source_uri.to_s, raw) : candidate
     return if uri.to_s.length > MAX_URL_LENGTH || !self.class.safe_public_http_url?(uri.to_s)
 
     uri.fragment = uri.fragment.presence
@@ -138,6 +141,8 @@ class ChatRing::Knowledge::MarkdownStructure
   end
 
   def external?(uri)
+    return true if @source_uri.nil?
+
     [uri.scheme.downcase, uri.host.downcase, uri.port] != [@source_uri.scheme.downcase, @source_uri.host.downcase, @source_uri.port]
   end
 

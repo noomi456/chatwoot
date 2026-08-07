@@ -8,6 +8,7 @@ on:
       - codex/rag-production-fix
       - codex/phase2a-final-audit
       - codex/phase2a-lifecycle-hardening
+      - codex/phase2a-file-ingestion
   workflow_dispatch:
 
 permissions:
@@ -93,16 +94,26 @@ jobs:
           spec/models/chat_ring/knowledge_document_spec.rb
           spec/models/chat_ring/knowledge/scope_cleanup_spec.rb
           spec/models/chat_ring/knowledge_version_spec.rb
+          spec/requests/api/v1/accounts/chat_ring/knowledge_spec.rb
+          spec/jobs/chat_ring/knowledge/activation_job_spec.rb
           spec/jobs/chat_ring/knowledge/provider_cleanup_job_spec.rb
           spec/jobs/chat_ring/knowledge/lifecycle_reconciliation_job_spec.rb
           spec/jobs/chat_ring/knowledge/provider_maintenance_job_spec.rb
           spec/services/chat_ring/knowledge/docs_gpt_client_spec.rb
           spec/services/chat_ring/knowledge/docs_gpt_provider_spec.rb
           spec/services/chat_ring/knowledge/evaluation_service_spec.rb
+          spec/services/chat_ring/knowledge/file_parse_service_spec.rb
+          spec/services/chat_ring/knowledge/file_preflight_spec.rb
+          spec/services/chat_ring/knowledge/file_snapshot_normalizer_spec.rb
+          spec/services/chat_ring/knowledge/file_source_purge_service_spec.rb
+          spec/services/chat_ring/knowledge/file_source_service_spec.rb
+          spec/services/chat_ring/knowledge/file_source_reconciler_spec.rb
           spec/services/chat_ring/knowledge/firecrawl_client_spec.rb
+          spec/services/chat_ring/knowledge/firecrawl_parse_client_spec.rb
           spec/services/chat_ring/knowledge/markdown_structure_spec.rb
           spec/services/chat_ring/knowledge/source_policy_spec.rb
           spec/services/chat_ring/knowledge/sync_service_spec.rb
+          spec/services/chat_ring/knowledge/version_composer_spec.rb
           spec/services/chat_ring/knowledge/publication_service_spec.rb
           spec/services/chat_ring/knowledge/provider_chunk_validator_spec.rb
           spec/services/chat_ring/knowledge/provider_validator_spec.rb
@@ -120,6 +131,9 @@ jobs:
           app/models/concerns/chat_ring/assistant_spike
           app/models/chat_ring
           app/models/concerns/chat_ring/knowledge
+          app/controllers/api/v1/accounts/chat_ring/knowledge
+          app/controllers/concerns/chat_ring
+          app/policies/chat_ring
           app/services/chat_ring/assistant_spike
           app/services/chat_ring/knowledge
           app/services/chat_ring/assistant_spike.rb
@@ -133,6 +147,7 @@ jobs:
           db/migrate/20260806000000_add_chat_ring_provider_cleanup_records.rb
           db/migrate/20260806001000_harden_chat_ring_knowledge_scope_deletion.rb
           db/migrate/20260806002000_harden_chat_ring_knowledge_recovery.rb
+          db/migrate/20260807000000_add_chat_ring_knowledge_file_sources.rb
           spec/models/chat_ring
           spec/configs/schedule_spec.rb
           spec/jobs/chat_ring/assistant_spike

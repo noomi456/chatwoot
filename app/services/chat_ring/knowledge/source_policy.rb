@@ -103,7 +103,10 @@ class ChatRing::Knowledge::SourcePolicy
     raise PageQualityError, "Firecrawl page #{source_url} contains prompt-injection text" if PROMPT_INJECTION.match?(markdown)
 
     {
+      source_kind: 'website',
+      source_reference: source_url,
       source_url: source_url,
+      public_url: source_url,
       title: title.presence,
       markdown: markdown,
       content_hash: Digest::SHA256.hexdigest(markdown),

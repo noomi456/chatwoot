@@ -57,12 +57,13 @@ class ChatRing::Knowledge::SyncService
       )
       source_version.documents.order(:id).to_a.each do |document|
         verify_document_hash!(document)
-        structure = ChatRing::Knowledge::MarkdownStructure.new(
-          markdown: document.markdown,
-          source_url: document.source_url
-        ).call
+        structure = ChatRing::Knowledge::MarkdownStructure.new(markdown: document.markdown, source_url: document.public_url).call
         rebuilt.documents.create!(
+          source_kind: document.source_kind,
+          source_reference: document.source_reference,
           source_url: document.source_url,
+          public_url: document.public_url,
+          file_source: document.file_source,
           title: document.title,
           markdown: document.markdown,
           content_hash: document.content_hash,
@@ -91,14 +92,12 @@ class ChatRing::Knowledge::SyncService
       }
     }
   end
-  private_class_method :configuration_snapshot
 
   def self.verify_document_hash!(document)
     return if Digest::SHA256.hexdigest(document.markdown) == document.content_hash
 
     raise IncompleteCrawlError, "Stored document #{document.id} does not match its content hash"
   end
-  private_class_method :verify_document_hash!
 
   def self.verify_manifest_digest!(version)
     expected = Digest::SHA256.hexdigest(version.mapped_manifest.to_json)
@@ -106,12 +105,11 @@ class ChatRing::Knowledge::SyncService
 
     raise IncompleteCrawlError, "Stored knowledge version #{version.id} does not match its manifest digest"
   end
-  private_class_method :verify_manifest_digest!
 
   def initialize(version, firecrawl: nil, docs_gpt: nil)
     @version = version
-    @firecrawl = firecrawl || build_firecrawl_client
-    @docs_gpt = docs_gpt || build_docs_gpt_client
+    @firecrawl = firecrawl
+    @docs_gpt = docs_gpt
   end
 
   def tick # rubocop:disable Metrics/CyclomaticComplexity, Metrics/MethodLength
@@ -177,19 +175,14 @@ class ChatRing::Knowledge::SyncService
       raise IncompleteCrawlError, 'Firecrawl batch start has an indeterminate prior result; create a new staged version'
     end
 
-    mapped = @firecrawl.map(url: @version.root_url, limit: @version.config_snapshot.fetch('firecrawl_map_limit'))
-    mapped_manifest = source_policy.prepare_manifest(mapped)
-    raise IncompleteCrawlError, 'Firecrawl map returned no URLs' if mapped_manifest.empty?
-
-    accepted_urls = mapped_manifest.filter_map { |entry| entry['url'] if entry['included'] }
-    raise IncompleteCrawlError, 'Firecrawl map returned no accepted knowledge URLs' if accepted_urls.empty?
+    mapped_manifest, accepted_urls = mapped_sources
 
     @version.update!(
       firecrawl_start_started_at: Time.current,
       mapped_manifest: mapped_manifest,
       manifest_digest: Digest::SHA256.hexdigest(mapped_manifest.to_json)
     )
-    batch_id = @firecrawl.start_batch_scrape(urls: accepted_urls)
+    batch_id = firecrawl.start_batch_scrape(urls: accepted_urls)
     @version.update!(
       status: 'crawling',
       firecrawl_crawl_id: batch_id
@@ -197,13 +190,24 @@ class ChatRing::Knowledge::SyncService
     :retry
   end
 
+  def mapped_sources
+    mapped = firecrawl.map(url: @version.root_url, limit: @version.config_snapshot.fetch('firecrawl_map_limit'))
+    manifest = source_policy.prepare_manifest(mapped)
+    raise IncompleteCrawlError, 'Firecrawl map returned no URLs' if manifest.empty?
+
+    accepted_urls = manifest.filter_map { |entry| entry['url'] if entry['included'] }
+    raise IncompleteCrawlError, 'Firecrawl map returned no accepted knowledge URLs' if accepted_urls.empty?
+
+    [manifest, accepted_urls]
+  end
+
   def process_batch_scrape # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
-    payload = @firecrawl.batch_status(@version.firecrawl_crawl_id)
+    payload = firecrawl.batch_status(@version.firecrawl_crawl_id)
     status = payload['status'].to_s
     return :retry if %w[scraping pending].include?(status)
     raise IncompleteCrawlError, "Firecrawl batch scrape ended with status #{status}" unless status == 'completed'
 
-    error_payload = @firecrawl.batch_errors(@version.firecrawl_crawl_id)
+    error_payload = firecrawl.batch_errors(@version.firecrawl_crawl_id)
     documents = source_policy.normalize_pages(records: payload.fetch('data', []), manifest: @version.mapped_manifest)
     accepted_urls = documents.pluck(:source_url).to_set
     publication_manifest = @version.mapped_manifest.map do |entry|
@@ -234,7 +238,7 @@ class ChatRing::Knowledge::SyncService
       raise ProviderIngestionError, 'DocsGPT version upload is only partially recorded'
     end
 
-    task_status = @docs_gpt.task_status(documents.first.provider_task_id)['status'].to_s.upcase
+    task_status = docs_gpt.task_status(documents.first.provider_task_id)['status'].to_s.upcase
     return :retry if ACTIVE_TASK_STATUSES.include?(task_status)
 
     if TERMINAL_TASK_FAILURES.include?(task_status)
@@ -259,7 +263,7 @@ class ChatRing::Knowledge::SyncService
   end
 
   def start_version_upload(documents)
-    result = @docs_gpt.upload_version(@version)
+    result = docs_gpt.upload_version(@version)
     documents.each do |document|
       document.update!(
         provider_task_id: result.fetch(:task_id),
@@ -270,7 +274,7 @@ class ChatRing::Knowledge::SyncService
   end
 
   def finalize_version(documents)
-    chunks = @docs_gpt.chunks(documents.first.provider_source_id)
+    chunks = docs_gpt.chunks(documents.first.provider_source_id)
     matches_by_document = ChatRing::Knowledge::ProviderChunkValidator.validate!(
       documents: documents,
       chunks: chunks,
@@ -301,6 +305,14 @@ class ChatRing::Knowledge::SyncService
       internal_key: ENV.fetch('DOCSGPT_INTERNAL_KEY'),
       service_secret: ENV.fetch('DOCSGPT_SERVICE_SECRET')
     )
+  end
+
+  def firecrawl
+    @firecrawl ||= build_firecrawl_client
+  end
+
+  def docs_gpt
+    @docs_gpt ||= build_docs_gpt_client
   end
 
   def source_policy

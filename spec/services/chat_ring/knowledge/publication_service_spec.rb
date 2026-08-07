@@ -21,6 +21,25 @@ RSpec.describe ChatRing::Knowledge::PublicationService do
     )
   end
 
+  def create_ready_file_source
+    markdown = "# Private guide\n\nA file that must be present in every additive build."
+    source = ChatRing::KnowledgeFileSource.create!(
+      account: account,
+      inbox: inbox,
+      source_kind: 'pdf',
+      original_filename: 'Guide.pdf',
+      content_type: 'application/pdf',
+      byte_size: 100,
+      raw_content_hash: Digest::SHA256.hexdigest('Guide.pdf'),
+      parser_profile: { 'formats' => ['markdown'] },
+      parser_profile_digest: Digest::SHA256.hexdigest('profile'),
+      created_by: create(:user)
+    )
+    source.file.attach(io: File.open(Rails.root.join('spec/assets/sample.pdf'), 'rb'), filename: 'Guide.pdf', content_type: 'application/pdf')
+    source.update!(status: 'ready', markdown: markdown, content_hash: Digest::SHA256.hexdigest(markdown), parsed_at: Time.current)
+    source
+  end
+
   # rubocop:disable RSpec/MultipleExpectations
   it 'atomically switches the inbox pointer and preserves the previous version for rollback' do
     first = ChatRing::KnowledgeVersion.create!(**attributes, status: 'ready')
@@ -60,6 +79,27 @@ RSpec.describe ChatRing::Knowledge::PublicationService do
     expect { described_class.publish!(version, validator: validator) }.to raise_error(
       described_class::Error,
       /has not passed the current retrieval evaluation/
+    )
+  end
+
+  it 'activates a source-managed version after provider validation without a manual evaluation suite' do
+    version = ChatRing::KnowledgeVersion.create!(**attributes, status: 'ready')
+
+    publication = described_class.publish_verified!(version, validator: validator)
+
+    expect(publication.knowledge_version).to eq(version)
+    expect(version.reload.status).to eq('published')
+    expect(validator).to have_received(:validate!).with(version)
+  end
+
+  it 'refuses to publish a version that omits an enabled ready file source' do
+    version = ChatRing::KnowledgeVersion.create!(**attributes, status: 'ready')
+    create_ready_file_source
+    mark_evaluated(version)
+
+    expect { described_class.publish!(version, validator: validator) }.to raise_error(
+      described_class::Error,
+      /complete enabled file-source set/
     )
   end
 

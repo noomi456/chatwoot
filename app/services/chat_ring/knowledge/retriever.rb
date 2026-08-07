@@ -16,6 +16,17 @@ class ChatRing::Knowledge::Retriever
     )
   end
 
+  def self.preview(version:, query:, limit: ChatRing::Knowledge::DocsGptProvider::DEFAULT_EVIDENCE_LIMIT)
+    raise Error, 'Knowledge preview requires a ready, published, or retired version' unless %w[ready published retired].include?(version.status)
+
+    provider(version).retrieve(
+      query: query,
+      knowledge_version_id: version.id.to_s,
+      source_manifest: source_manifest(version),
+      limit: limit
+    )
+  end
+
   def self.current_publication(inbox)
     ChatRing::KnowledgePublication.includes(knowledge_version: :documents).find_by!(
       account_id: inbox.account_id,
@@ -53,9 +64,12 @@ class ChatRing::Knowledge::Retriever
     version.documents.index_by(&:provider_source_reference).transform_values do |document|
       {
         'content_hash' => document.content_hash,
-        'source_reference' => document.source_url,
+        'source_kind' => document.source_kind,
+        'source_reference' => document.source_reference,
         'source_title' => document.title,
-        'locator' => document.source_url,
+        'public_url' => document.public_url,
+        'locator' => document.public_url || document.title,
+        'page_locator' => document.metadata['page_locator'],
         'authority_class' => document.metadata['authority_class'].presence || 'unclassified_legacy',
         'headings' => document.metadata['headings'] || [],
         'cta_candidates' => document.metadata['cta_candidates'] || []

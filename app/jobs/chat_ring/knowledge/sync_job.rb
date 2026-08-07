@@ -14,5 +14,8 @@ class ChatRing::Knowledge::SyncJob < ApplicationJob
     version = ChatRing::KnowledgeVersion.find(version_id)
     outcome = ChatRing::Knowledge::SyncService.new(version).tick
     self.class.set(wait: ChatRing::Knowledge::SyncService::POLL_INTERVAL).perform_later(version_id) if outcome == :retry
+    return unless outcome == :complete && version.reload.status == 'ready' && version.config_snapshot['publish_on_ready']
+
+    ChatRing::Knowledge::ActivationJob.perform_later(version.id)
   end
 end
