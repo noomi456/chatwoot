@@ -4,10 +4,26 @@ class ChatRing::Knowledge::ProviderCleanupScheduler
   def self.schedule_eligible!(account:, inbox:)
     publications = ChatRing::KnowledgePublication.where(account: account, inbox: inbox)
     protected_ids = publications.pluck(:knowledge_version_id, :previous_knowledge_version_id).flatten.compact
+    cancel_protected!(protected_ids)
     ChatRing::KnowledgeVersion.where(account: account, inbox: inbox, status: %w[retired failed])
                               .where.not(id: protected_ids)
                               .find_each { |version| schedule!(version) }
   end
+
+  def self.cancel_protected!(protected_ids)
+    return if protected_ids.empty?
+
+    ChatRing::KnowledgeProviderCleanup.where(
+      knowledge_version_id: protected_ids,
+      status: %w[pending retrying]
+    ).find_each do |cleanup|
+      cleanup.update!(
+        status: 'cancelled',
+        last_error: 'knowledge version is retained by a publication pointer'
+      )
+    end
+  end
+  private_class_method :cancel_protected!
 
   def self.schedule!(version)
     source_ids = version.documents.distinct.pluck(:provider_source_id).compact_blank

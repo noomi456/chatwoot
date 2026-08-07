@@ -75,4 +75,51 @@ RSpec.describe ChatRing::Knowledge::ProviderCleanupScheduler do
     end.not_to have_enqueued_job(ChatRing::Knowledge::ProviderCleanupJob)
     expect(version.provider_cleanup).to be_nil
   end
+
+  it 'immediately cancels pending deletion when a version becomes protected' do
+    version = ChatRing::KnowledgeVersion.create!(
+      account: account,
+      inbox: inbox,
+      status: 'ingesting',
+      provider_release: 'provider-release',
+      root_url: 'https://example.com/'
+    )
+    version.documents.create!(
+      source_url: 'https://example.com/',
+      markdown: '# Example',
+      content_hash: 'a' * 64,
+      provider_file_name: 'example.md',
+      provider_source_id: 'source-retained',
+      provider_status: 'ready'
+    )
+    version.update!(status: 'retired')
+    cleanup = ChatRing::KnowledgeProviderCleanup.create!(
+      knowledge_version: version,
+      provider_source_id: 'source-retained',
+      binding_digest: version.evaluation_binding_digest,
+      eligible_at: 1.day.from_now
+    )
+    current = ChatRing::KnowledgeVersion.create!(
+      account: account,
+      inbox: inbox,
+      status: 'published',
+      provider_release: 'provider-release',
+      root_url: 'https://example.com/'
+    )
+    ChatRing::KnowledgePublication.create!(
+      account: account,
+      inbox: inbox,
+      knowledge_version: current,
+      previous_knowledge_version: version,
+      published_at: Time.current
+    )
+
+    expect do
+      described_class.schedule_eligible!(account: account, inbox: inbox)
+    end.not_to have_enqueued_job(ChatRing::Knowledge::ProviderCleanupJob)
+    expect(cleanup.reload).to have_attributes(
+      status: 'cancelled',
+      last_error: 'knowledge version is retained by a publication pointer'
+    )
+  end
 end
