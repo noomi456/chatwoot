@@ -41,8 +41,7 @@ jobs:
              [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
             changed=true
           elif git diff --quiet "${{ github.event.before }}" "${{ github.sha }}" -- \
-            deploy/knowledge \
-            .github/workflows/chatring-ce-image.yml; then
+            deploy/knowledge; then
             changed=false
           else
             changed=true
@@ -380,7 +379,7 @@ jobs:
           DEPENDENCY_IMAGE: ${{ steps.identity.outputs.image }}
         shell: bash
         run: |
-          digest="$(docker buildx imagetools inspect "$DEPENDENCY_IMAGE" | awk '/^Digest:/ { print $2; exit }')"
+          digest="$(docker buildx imagetools inspect "$DEPENDENCY_IMAGE" | awk '/^Digest:/ && !digest { digest=$2 } END { print digest }')"
           case "$digest" in
             sha256:????????????????????????????????????????????????????????????????) ;;
             *) echo "Invalid dependency image digest: $digest" >&2; exit 1 ;;
