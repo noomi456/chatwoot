@@ -17,6 +17,10 @@ permissions:
 jobs:
   deployment_check:
     name: Check Deployment
+    # This upstream workflow assumes Heroku review apps exist for every PR.
+    # ChatRing deploys through its VPS pipeline, so skip the 40-minute poll unless
+    # a repository explicitly enables the inherited Heroku review-app contract.
+    if: ${{ vars.HEROKU_REVIEW_APPS_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Install jq
@@ -50,4 +54,3 @@ jobs:
           done
           echo "Deployment failed after $max_attempts attempts"
           exit  1
-          fi
