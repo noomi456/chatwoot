@@ -45,6 +45,7 @@ This trust rule is valid only while the Tunnel-to-Traefik source is `172.17.0.1`
 2. GitHub Actions removes `enterprise/` and `spec/enterprise/` before building.
 3. Deploy the full immutable `sha-<40-character-commit>` GHCR tag.
 4. Generate all secrets outside Git and save them in Dokploy.
+   `CHATRING_LLM_API_KEY` is a deployment secret; never store it on an Assistant, AssistantVersion, or database record.
 5. Deploy and wait for `prepare` to exit successfully, then require healthy Rails/PostgreSQL/Redis and running Sidekiq.
 6. After the Workspace Knowledge cutover, run `bundle exec rails chatring:knowledge:cleanup_resume` once to enqueue the
    legacy provider-index cleanup rows created by the migration.
