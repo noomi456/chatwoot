@@ -88,7 +88,7 @@ class ChatRing::Brain::Runner
   end
 
   def mark_ineligible!(reason)
-    status = reason == 'newer_customer_message' ? :superseded : :ineligible
+    status = %w[newer_customer_message newer_human_reply].include?(reason) ? :superseded : :ineligible
     turn.update!(status: status, decision_type: reason, completed_at: Time.current)
   end
 

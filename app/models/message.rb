@@ -66,6 +66,7 @@ class Message < ApplicationRecord
   before_validation :prevent_message_flooding
   before_save :ensure_processed_message_content
   before_save :ensure_in_reply_to
+  before_create :lock_conversation_for_public_message
 
   validates :account_id, presence: true
   validates :inbox_id, presence: true
@@ -283,7 +284,21 @@ class Message < ApplicationRecord
     '[Attachment]' if attachments.any?
   end
 
+  def public_human_reply?
+    !private? && human_response?
+  end
+
+  def supersedes_ai_turn?
+    return false if private?
+
+    (incoming? && sender_type == 'Contact') || public_human_reply?
+  end
+
   private
+
+  def lock_conversation_for_public_message
+    Conversation.lock.find(conversation_id) if supersedes_ai_turn?
+  end
 
   def prevent_message_flooding
     # Added this to cover the validation specs in messages
