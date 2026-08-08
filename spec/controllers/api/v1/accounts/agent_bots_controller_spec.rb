@@ -53,6 +53,17 @@ RSpec.describe 'Agent Bot API', type: :request do
         expect(global_bot_response).to include('thumbnail')
         expect(account_bot_response).to include('thumbnail')
       end
+
+      it 'does not list managed ChatRing Assistant identities' do
+        managed_bot = create(:agent_bot, account: account, bot_type: :chatring_assistant, name: 'Managed Assistant')
+
+        get "/api/v1/accounts/#{account.id}/agent_bots",
+            headers: agent.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body.pluck('id')).not_to include(managed_bot.id)
+      end
     end
 
     context 'when it is an authenticated administrator' do
@@ -63,6 +74,17 @@ RSpec.describe 'Agent Bot API', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(response.body).to include(agent_bot.access_token.token)
+      end
+
+      it 'does not expose a managed ChatRing Assistant identity' do
+        managed_bot = create(:agent_bot, account: account, bot_type: :chatring_assistant)
+
+        get "/api/v1/accounts/#{account.id}/agent_bots/#{managed_bot.id}",
+            headers: admin.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:not_found)
+        expect(response.body).not_to include(managed_bot.access_token.token)
       end
 
       it 'supports API token authentication' do
@@ -142,6 +164,15 @@ RSpec.describe 'Agent Bot API', type: :request do
         end.to change(AgentBot, :count).by(1)
 
         expect(response).to have_http_status(:success)
+      end
+
+      it 'cannot create a managed ChatRing identity through the external API' do
+        post "/api/v1/accounts/#{account.id}/agent_bots",
+             headers: admin.create_new_auth_token,
+             params: valid_params.merge(bot_type: 'chatring_assistant')
+
+        expect(response).to have_http_status(:success)
+        expect(AgentBot.order(:id).last).to be_webhook
       end
 
       it 'would not create the agent bot when agent' do
@@ -225,6 +256,17 @@ RSpec.describe 'Agent Bot API', type: :request do
         expect(response).to have_http_status(:success)
         expect(Avatar::AvatarFromUrlJob).to have_been_enqueued.with(agent_bot, 'http://example.com/avatar.png')
       end
+
+      it 'does not update a managed ChatRing Assistant identity' do
+        managed_bot = create(:agent_bot, account: account, bot_type: :chatring_assistant)
+
+        patch "/api/v1/accounts/#{account.id}/agent_bots/#{managed_bot.id}",
+              headers: admin.create_new_auth_token,
+              params: valid_params,
+              as: :json
+
+        expect(response).to have_http_status(:not_found)
+      end
     end
   end
 
@@ -264,6 +306,17 @@ RSpec.describe 'Agent Bot API', type: :request do
 
         expect(response).to have_http_status(:not_found)
         expect(account.agent_bots.size).not_to eq(0)
+      end
+
+      it 'does not delete a managed ChatRing Assistant identity' do
+        managed_bot = create(:agent_bot, account: account, bot_type: :chatring_assistant)
+
+        delete "/api/v1/accounts/#{account.id}/agent_bots/#{managed_bot.id}",
+               headers: admin.create_new_auth_token,
+               as: :json
+
+        expect(response).to have_http_status(:not_found)
+        expect(managed_bot.reload).to be_present
       end
     end
   end
@@ -340,6 +393,18 @@ RSpec.describe 'Agent Bot API', type: :request do
         expect(response).to have_http_status(:not_found)
         global_bot.reload
         expect(global_bot.access_token.token).to eq(old_token)
+      end
+
+      it 'does not reset a managed ChatRing Assistant identity token' do
+        managed_bot = create(:agent_bot, account: account, bot_type: :chatring_assistant)
+        old_token = managed_bot.access_token.token
+
+        post "/api/v1/accounts/#{account.id}/agent_bots/#{managed_bot.id}/reset_access_token",
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:not_found)
+        expect(managed_bot.reload.access_token.token).to eq(old_token)
       end
     end
   end

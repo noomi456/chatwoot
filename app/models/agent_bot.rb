@@ -28,6 +28,7 @@ class AgentBot < ApplicationRecord
     account_id = account&.id
     where(account_id: [nil, account_id])
   }
+  scope :externally_manageable, -> { where.not(bot_type: :chatring_assistant) }
 
   has_many :agent_bot_inboxes, dependent: :destroy_async
   has_many :inboxes, through: :agent_bot_inboxes
@@ -38,7 +39,7 @@ class AgentBot < ApplicationRecord
                                     dependent: :nullify,
                                     inverse_of: :assignee_agent_bot
   belongs_to :account, optional: true
-  enum bot_type: { webhook: 0 }
+  enum bot_type: { webhook: 0, chatring_assistant: 1 }
 
   validates :outgoing_url, length: { maximum: Limits::URL_LENGTH_LIMIT }
 

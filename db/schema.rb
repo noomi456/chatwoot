@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_08_08_002000) do
+ActiveRecord::Schema[7.1].define(version: 2026_08_08_003000) do
   # These extensions should be enabled to support this database
   enable_extension "pg_stat_statements"
   enable_extension "pg_trgm"
@@ -691,6 +691,69 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_08_002000) do
     t.string "phone_number_health_error", limit: 500
     t.index ["phone_number"], name: "index_channel_whatsapp_on_phone_number", unique: true
     t.index ["phone_number_health_checked_at"], name: "index_channel_whatsapp_on_phone_number_health_checked_at"
+  end
+
+  create_table "chat_ring_assistant_agent_bot_connections", force: :cascade do |t|
+    t.bigint "workspace_id", null: false
+    t.bigint "assistant_id", null: false
+    t.bigint "agent_bot_id", null: false
+    t.string "access_token_secret_ref"
+    t.string "webhook_secret_ref"
+    t.integer "status", default: 0, null: false
+    t.datetime "last_verified_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_bot_id"], name: "idx_chatring_bot_connections_on_agent_bot", unique: true
+    t.index ["assistant_id"], name: "idx_chatring_bot_connections_on_assistant", unique: true
+    t.index ["workspace_id"], name: "idx_on_workspace_id_49db119b3e"
+  end
+
+  create_table "chat_ring_assistant_versions", force: :cascade do |t|
+    t.bigint "assistant_id", null: false
+    t.bigint "knowledge_scope_id", null: false
+    t.integer "version", null: false
+    t.jsonb "identity", default: {}, null: false
+    t.jsonb "goals", default: [], null: false
+    t.text "instructions", default: "", null: false
+    t.jsonb "response_guidelines", default: [], null: false
+    t.jsonb "guardrails", default: [], null: false
+    t.jsonb "audience_policy", default: {}, null: false
+    t.jsonb "availability_policy", default: {}, null: false
+    t.jsonb "handoff_policy", default: {}, null: false
+    t.jsonb "tool_grants", default: [], null: false
+    t.jsonb "conversation_policy", default: {}, null: false
+    t.datetime "published_at", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["assistant_id", "version"], name: "index_chat_ring_assistant_versions_on_assistant_id_and_version", unique: true
+    t.index ["knowledge_scope_id"], name: "index_chat_ring_assistant_versions_on_knowledge_scope_id"
+  end
+
+  create_table "chat_ring_assistants", force: :cascade do |t|
+    t.bigint "workspace_id", null: false
+    t.string "name", null: false
+    t.integer "status", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "current_version_id"
+    t.index ["current_version_id"], name: "index_chat_ring_assistants_on_current_version_id"
+    t.index ["workspace_id", "name"], name: "index_chat_ring_assistants_on_workspace_id_and_name", unique: true
+  end
+
+  create_table "chat_ring_inbox_assistant_bindings", force: :cascade do |t|
+    t.bigint "workspace_id", null: false
+    t.integer "chatwoot_inbox_id", null: false
+    t.bigint "assistant_id", null: false
+    t.bigint "assistant_agent_bot_connection_id", null: false
+    t.integer "status", default: 0, null: false
+    t.bigint "binding_version", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["assistant_agent_bot_connection_id"], name: "idx_chatring_bindings_on_bot_connection"
+    t.index ["assistant_id"], name: "index_chat_ring_inbox_assistant_bindings_on_assistant_id"
+    t.index ["workspace_id", "chatwoot_inbox_id", "binding_version"], name: "idx_chatring_bindings_on_inbox_version", unique: true
+    t.index ["workspace_id", "chatwoot_inbox_id"], name: "idx_chatring_bindings_one_active_per_inbox", unique: true, where: "(status = 1)"
+    t.index ["workspace_id"], name: "index_chat_ring_inbox_assistant_bindings_on_workspace_id"
   end
 
   create_table "chat_ring_knowledge_bases", force: :cascade do |t|
@@ -1721,6 +1784,17 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_08_002000) do
   add_foreign_key "agent_bot_inboxes", "accounts", on_delete: :cascade
   add_foreign_key "agent_bot_inboxes", "agent_bots", on_delete: :cascade
   add_foreign_key "agent_bot_inboxes", "inboxes", on_delete: :cascade
+  add_foreign_key "chat_ring_assistant_agent_bot_connections", "agent_bots", on_delete: :restrict
+  add_foreign_key "chat_ring_assistant_agent_bot_connections", "chat_ring_assistants", column: "assistant_id", on_delete: :cascade
+  add_foreign_key "chat_ring_assistant_agent_bot_connections", "chat_ring_workspaces", column: "workspace_id", on_delete: :cascade
+  add_foreign_key "chat_ring_assistant_versions", "chat_ring_assistants", column: "assistant_id", on_delete: :cascade
+  add_foreign_key "chat_ring_assistant_versions", "chat_ring_knowledge_scopes", column: "knowledge_scope_id", on_delete: :restrict
+  add_foreign_key "chat_ring_assistants", "chat_ring_assistant_versions", column: "current_version_id", on_delete: :nullify
+  add_foreign_key "chat_ring_assistants", "chat_ring_workspaces", column: "workspace_id", on_delete: :cascade
+  add_foreign_key "chat_ring_inbox_assistant_bindings", "chat_ring_assistant_agent_bot_connections", column: "assistant_agent_bot_connection_id", on_delete: :cascade
+  add_foreign_key "chat_ring_inbox_assistant_bindings", "chat_ring_assistants", column: "assistant_id", on_delete: :cascade
+  add_foreign_key "chat_ring_inbox_assistant_bindings", "chat_ring_workspaces", column: "workspace_id", on_delete: :cascade
+  add_foreign_key "chat_ring_inbox_assistant_bindings", "inboxes", column: "chatwoot_inbox_id", on_delete: :cascade
   add_foreign_key "chat_ring_knowledge_bases", "chat_ring_knowledge_indexes", column: "active_knowledge_index_id", on_delete: :nullify
   add_foreign_key "chat_ring_knowledge_bases", "chat_ring_workspaces", column: "workspace_id", on_delete: :cascade
   add_foreign_key "chat_ring_knowledge_documents", "chat_ring_knowledge_file_sources", column: "file_source_id", on_delete: :nullify
