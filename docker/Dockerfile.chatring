@@ -1,0 +1,67 @@
+ARG CHATRING_DEPENDENCY_IMAGE
+FROM ${CHATRING_DEPENDENCY_IMAGE} AS app-builder
+
+ARG CHATRING_SOURCE_COMMIT
+ARG RAILS_ENV="production"
+
+ENV RAILS_ENV=${RAILS_ENV} \
+    RAILS_SERVE_STATIC_FILES=true \
+    CW_EDITION=ce \
+    DISABLE_ENTERPRISE=true
+
+WORKDIR /app
+COPY . /app
+
+RUN test -n "$CHATRING_SOURCE_COMMIT" \
+  && test ! -e enterprise \
+  && test ! -e spec/enterprise \
+  && mkdir -p /app/log \
+  && if [ "$RAILS_ENV" = "production" ]; then \
+       SECRET_KEY_BASE=precompile_placeholder \
+       RAILS_LOG_TO_STDOUT=enabled \
+       bundle exec rake assets:precompile \
+       && rm -rf spec node_modules tmp/cache; \
+     fi \
+  && printf '%s\n' "$CHATRING_SOURCE_COMMIT" > /app/.git_sha \
+  && rm -rf .git \
+  && rm -f .gitignore
+
+FROM ruby:3.4.4-alpine3.21
+
+ARG CHATRING_SOURCE_COMMIT
+ARG NODE_VERSION="24.13.0"
+ARG PNPM_VERSION="10.2.0"
+ARG BUNDLE_WITHOUT="development:test"
+ARG RAILS_ENV="production"
+
+ENV NODE_VERSION=${NODE_VERSION} \
+    PNPM_VERSION=${PNPM_VERSION} \
+    BUNDLE_WITHOUT=${BUNDLE_WITHOUT} \
+    BUNDLER_VERSION=2.5.16 \
+    EXECJS_RUNTIME=Disabled \
+    RAILS_SERVE_STATIC_FILES=true \
+    BUNDLE_FORCE_RUBY_PLATFORM=1 \
+    RAILS_ENV=${RAILS_ENV} \
+    BUNDLE_PATH=/gems \
+    CW_EDITION=ce \
+    DISABLE_ENTERPRISE=true
+
+LABEL org.opencontainers.image.revision=${CHATRING_SOURCE_COMMIT}
+
+RUN apk add --no-cache \
+      build-base \
+      git \
+      imagemagick \
+      openssl \
+      postgresql-client \
+      tzdata \
+      vips \
+  && gem install bundler -v "$BUNDLER_VERSION"
+
+COPY --from=app-builder /usr/local/bin/node /usr/local/bin/
+COPY --from=app-builder /usr/local/lib/node_modules /usr/local/lib/node_modules
+COPY --from=app-builder /gems/ /gems/
+COPY --from=app-builder /app /app
+
+WORKDIR /app
+EXPOSE 3000
