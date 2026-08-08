@@ -59,7 +59,10 @@ RSpec.describe ChatRing::Brain::Runner do
 
     expect do
       described_class.new(turn, provider: provider).call
-    end.to raise_error(ChatRing::Brain::Runner::RetryableError, 'provider_failed')
+    end.to raise_error do |error|
+      expect(error.class.name).to eq('ChatRing::Brain::Runner::RetryableError')
+      expect(error.message).to eq('provider_failed')
+    end
 
     expect(turn.reload).to be_status_received
     expect(turn.failure_code).to eq('provider_failed')
