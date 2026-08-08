@@ -13,6 +13,10 @@ on:
       - codex/chatring-layered-build
   workflow_dispatch:
 
+concurrency:
+  group: chatring-conversation-core-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   packages: write
