@@ -46,7 +46,7 @@ RSpec.describe ChatRing::Knowledge::SourcePolicy do
     expect(result.fetch(:risk_flags)).to contain_exactly('possible_prompt_injection')
   end
 
-  it 'retains successful selected pages and reports a failed page separately' do
+  it 'retains successful requested pages and reports a failed page separately' do
     manifest = policy.prepare_manifest(
       [{ url: 'https://example.com/good' }, { url: 'https://example.com/missing' }]
     )
@@ -60,12 +60,27 @@ RSpec.describe ChatRing::Knowledge::SourcePolicy do
     expect(pages.pluck(:source_reference)).to eq(['https://example.com/good'])
     expect(errors).to contain_exactly(
       'url' => 'https://example.com/missing',
-      'error' => 'Firecrawl did not return this selected page'
+      'error' => 'Firecrawl did not return this requested page'
     )
   end
 
   it 'rejects mapped URLs outside the submitted website origin' do
     expect { policy.prepare_manifest([{ url: 'https://attacker.example/prompt' }]) }
       .to raise_error(described_class::OriginError, /outside the configured origin/)
+  end
+
+  it 'keeps the requested material identity when Firecrawl reports a normal canonical redirect' do
+    manifest = policy.prepare_manifest([{ url: 'http://example.com/features?id=123' }])
+    records = [{
+      markdown: '# Features\n\nUseful product information that is long enough for the knowledge base.',
+      metadata: { sourceURL: 'https://www.example.com/features?id=123', title: 'Features', statusCode: 200 }
+    }.deep_stringify_keys]
+
+    page = policy.normalize_pages(records: records, manifest: manifest).first
+
+    expect(page).to include(
+      source_reference: 'http://example.com/features?id=123',
+      public_url: 'https://www.example.com/features?id=123'
+    )
   end
 end

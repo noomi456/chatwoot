@@ -16,6 +16,7 @@ module ChatRing::Knowledge
     :cta_candidates,
     :locator,
     :authority_class,
+    :risk_flags,
     :excerpt,
     :source_content_hash,
     :rank,

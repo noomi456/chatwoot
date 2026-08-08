@@ -107,7 +107,7 @@ RSpec.describe ChatRing::Knowledge::FilePreflight do
     tempfile&.close!
   end
 
-  def zip_archive(entries)
+  def zip_archive(entries) # rubocop:disable Metrics/AbcSize
     body = +''.b
     directory = +''.b
     entries.each do |name, content|

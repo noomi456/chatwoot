@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_08_07_000000) do
+ActiveRecord::Schema[7.1].define(version: 2026_08_08_000000) do
   # These extensions should be enabled to support this database
   enable_extension "pg_stat_statements"
   enable_extension "pg_trgm"
@@ -690,8 +690,16 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_07_000000) do
     t.index ["phone_number_health_checked_at"], name: "index_channel_whatsapp_on_phone_number_health_checked_at"
   end
 
+  create_table "chat_ring_knowledge_bases", force: :cascade do |t|
+    t.bigint "workspace_id", null: false
+    t.bigint "active_knowledge_index_id"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["workspace_id"], name: "index_chat_ring_knowledge_bases_on_workspace_id", unique: true
+  end
+
   create_table "chat_ring_knowledge_documents", force: :cascade do |t|
-    t.bigint "knowledge_version_id", null: false
+    t.bigint "knowledge_index_id", null: false
     t.string "source_url"
     t.string "title"
     t.text "markdown", null: false
@@ -708,19 +716,19 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_07_000000) do
     t.string "source_reference", null: false
     t.string "public_url"
     t.bigint "file_source_id"
+    t.bigint "knowledge_material_id", null: false
     t.index ["file_source_id"], name: "index_chatring_knowledge_documents_on_file_source_id"
-    t.index ["knowledge_version_id", "provider_file_name"], name: "index_chatring_knowledge_documents_on_version_and_file", unique: true
-    t.index ["knowledge_version_id", "source_reference"], name: "index_chatring_documents_on_version_and_reference", unique: true
-    t.index ["knowledge_version_id", "source_url"], name: "index_chatring_knowledge_documents_on_version_and_url", unique: true
-    t.index ["knowledge_version_id"], name: "index_chatring_knowledge_documents_on_version_id"
+    t.index ["knowledge_index_id", "provider_file_name"], name: "index_chatring_knowledge_documents_on_version_and_file", unique: true
+    t.index ["knowledge_index_id", "source_reference"], name: "index_chatring_documents_on_version_and_reference", unique: true
+    t.index ["knowledge_index_id", "source_url"], name: "index_chatring_knowledge_documents_on_version_and_url", unique: true
+    t.index ["knowledge_index_id"], name: "index_chatring_knowledge_documents_on_version_id"
+    t.index ["knowledge_material_id"], name: "index_chat_ring_knowledge_documents_on_knowledge_material_id"
     t.check_constraint "provider_status::text = ANY (ARRAY['pending'::character varying::text, 'processing'::character varying::text, 'ready'::character varying::text, 'failed'::character varying::text])", name: "chatring_knowledge_documents_provider_status_check"
     t.check_constraint "source_kind::text <> 'website'::text OR public_url IS NOT NULL", name: "chatring_knowledge_documents_website_url_check"
-    t.check_constraint "source_kind::text = ANY (ARRAY['website'::character varying, 'pdf'::character varying, 'docx'::character varying]::text[])", name: "chatring_knowledge_documents_source_kind_check"
+    t.check_constraint "source_kind::text = ANY (ARRAY['website'::character varying, 'pdf'::character varying, 'docx'::character varying, 'doc'::character varying, 'odt'::character varying, 'rtf'::character varying, 'xlsx'::character varying, 'xls'::character varying, 'html'::character varying]::text[])", name: "chatring_knowledge_documents_source_kind_check"
   end
 
   create_table "chat_ring_knowledge_file_sources", force: :cascade do |t|
-    t.bigint "account_id", null: false
-    t.bigint "inbox_id", null: false
     t.uuid "source_key", default: -> { "gen_random_uuid()" }, null: false
     t.string "status", default: "uploaded", null: false
     t.string "source_kind", null: false
@@ -743,87 +751,25 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_07_000000) do
     t.bigint "approved_by_id"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.index ["account_id", "inbox_id", "raw_content_hash", "parser_profile_digest"], name: "index_chatring_file_sources_on_scope_content_and_parser", unique: true
-    t.index ["account_id", "inbox_id", "status"], name: "index_chatring_file_sources_on_scope_and_status"
-    t.index ["account_id"], name: "index_chat_ring_knowledge_file_sources_on_account_id"
+    t.bigint "knowledge_base_id", null: false
+    t.uuid "parse_token"
     t.index ["approved_by_id"], name: "index_chat_ring_knowledge_file_sources_on_approved_by_id"
     t.index ["created_by_id"], name: "index_chat_ring_knowledge_file_sources_on_created_by_id"
-    t.index ["inbox_id"], name: "index_chat_ring_knowledge_file_sources_on_inbox_id"
+    t.index ["knowledge_base_id", "raw_content_hash", "parser_profile_digest"], name: "index_chatring_file_sources_on_base_content_and_parser", unique: true
+    t.index ["knowledge_base_id", "status"], name: "index_chatring_file_sources_on_base_and_status"
+    t.index ["knowledge_base_id"], name: "index_chat_ring_knowledge_file_sources_on_knowledge_base_id"
     t.index ["source_key"], name: "index_chat_ring_knowledge_file_sources_on_source_key", unique: true
-    t.check_constraint "authority_class::text = ANY (ARRAY['product_documentation'::character varying, 'structured_commercial'::character varying, 'marketing'::character varying, 'approved_legal_policy'::character varying, 'approved_compliance'::character varying]::text[])", name: "chatring_file_sources_authority_check"
+    t.check_constraint "authority_class::text = ANY (ARRAY['product_documentation'::character varying::text, 'structured_commercial'::character varying::text, 'marketing'::character varying::text, 'approved_legal_policy'::character varying::text, 'approved_compliance'::character varying::text])", name: "chatring_file_sources_authority_check"
     t.check_constraint "byte_size > 0 AND byte_size <= 52428800", name: "chatring_file_sources_size_check"
-    t.check_constraint "source_kind::text = ANY (ARRAY['pdf'::character varying, 'docx'::character varying]::text[])", name: "chatring_file_sources_kind_check"
+    t.check_constraint "source_kind::text = ANY (ARRAY['pdf'::character varying, 'docx'::character varying, 'doc'::character varying, 'odt'::character varying, 'rtf'::character varying, 'xlsx'::character varying, 'xls'::character varying, 'html'::character varying]::text[])", name: "chatring_file_sources_kind_check"
     t.check_constraint "status::text <> 'ready'::text OR markdown IS NOT NULL AND content_hash IS NOT NULL AND parsed_at IS NOT NULL", name: "chatring_file_sources_ready_snapshot_check"
-    t.check_constraint "status::text = ANY (ARRAY['uploaded'::character varying, 'parsing'::character varying, 'ready'::character varying, 'parse_indeterminate'::character varying, 'failed'::character varying, 'disabled'::character varying]::text[])", name: "chatring_file_sources_status_check"
+    t.check_constraint "status::text = ANY (ARRAY['uploaded'::character varying, 'parsing'::character varying, 'ready'::character varying, 'refreshing'::character varying, 'refresh_failed'::character varying, 'parse_indeterminate'::character varying, 'failed'::character varying, 'deleted'::character varying]::text[])", name: "chatring_file_sources_status_check"
   end
 
-  create_table "chat_ring_knowledge_provider_cleanups", force: :cascade do |t|
-    t.bigint "knowledge_version_id", null: false
-    t.string "provider_source_id", null: false
-    t.string "binding_digest", null: false
-    t.string "status", default: "pending", null: false
-    t.integer "attempts", default: 0, null: false
-    t.datetime "eligible_at", null: false
-    t.datetime "cleaned_at"
-    t.string "last_error", limit: 1000
-    t.datetime "created_at", null: false
-    t.datetime "updated_at", null: false
-    t.bigint "account_id", null: false
-    t.bigint "inbox_id", null: false
-    t.string "lease_token"
-    t.datetime "lease_expires_at"
-    t.datetime "next_attempt_at", null: false
-    t.datetime "last_enqueued_at"
-    t.integer "manual_retry_count", default: 0, null: false
-    t.index ["account_id", "inbox_id"], name: "index_chatring_provider_cleanups_on_scope"
-    t.index ["knowledge_version_id"], name: "index_chatring_provider_cleanup_on_version", unique: true
-    t.index ["lease_token"], name: "index_chatring_provider_cleanups_on_lease_token", unique: true, where: "(lease_token IS NOT NULL)"
-    t.index ["status", "lease_expires_at"], name: "index_chatring_provider_cleanups_on_expired_leases"
-    t.index ["status", "next_attempt_at"], name: "index_chatring_provider_cleanups_on_due_work"
-    t.check_constraint "(lease_token IS NULL) = (lease_expires_at IS NULL)", name: "chatring_provider_cleanups_lease_pair_check"
-    t.check_constraint "(status::text = 'retrying'::text) = (lease_token IS NOT NULL)", name: "chatring_provider_cleanups_lease_status_check"
-    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying::text, 'retrying'::character varying::text, 'succeeded'::character varying::text, 'cancelled'::character varying::text, 'failed'::character varying::text])", name: "chatring_knowledge_provider_cleanups_status_check"
-  end
-
-  create_table "chat_ring_knowledge_publication_events", force: :cascade do |t|
-    t.bigint "account_id", null: false
-    t.bigint "inbox_id", null: false
-    t.bigint "from_knowledge_version_id"
-    t.bigint "to_knowledge_version_id", null: false
-    t.string "action", null: false
-    t.jsonb "metadata", default: {}, null: false
-    t.datetime "created_at", null: false
-    t.index ["account_id"], name: "index_chat_ring_knowledge_publication_events_on_account_id"
-    t.index ["from_knowledge_version_id"], name: "index_chatring_publication_events_on_from_version"
-    t.index ["inbox_id"], name: "index_chat_ring_knowledge_publication_events_on_inbox_id"
-    t.index ["to_knowledge_version_id"], name: "index_chatring_publication_events_on_to_version"
-    t.check_constraint "action::text = ANY (ARRAY['publish'::character varying::text, 'rollback'::character varying::text])", name: "chatring_knowledge_publication_events_action_check"
-  end
-
-  create_table "chat_ring_knowledge_publications", force: :cascade do |t|
-    t.bigint "account_id", null: false
-    t.bigint "inbox_id", null: false
-    t.bigint "knowledge_version_id", null: false
-    t.bigint "previous_knowledge_version_id"
-    t.datetime "published_at", null: false
-    t.datetime "created_at", null: false
-    t.datetime "updated_at", null: false
-    t.index ["account_id", "inbox_id"], name: "index_chatring_knowledge_publications_on_scope", unique: true
-    t.index ["account_id"], name: "index_chat_ring_knowledge_publications_on_account_id"
-    t.index ["inbox_id"], name: "index_chat_ring_knowledge_publications_on_inbox_id"
-    t.index ["knowledge_version_id"], name: "index_chatring_publications_on_version_id"
-    t.index ["previous_knowledge_version_id"], name: "index_chatring_publications_on_previous_version_id"
-  end
-
-  create_table "chat_ring_knowledge_versions", force: :cascade do |t|
-    t.bigint "account_id", null: false
-    t.bigint "inbox_id", null: false
+  create_table "chat_ring_knowledge_indexes", force: :cascade do |t|
     t.string "status", default: "pending", null: false
     t.string "provider", default: "docs_gpt", null: false
     t.string "provider_release", null: false
-    t.string "root_url"
-    t.datetime "firecrawl_start_started_at"
-    t.string "firecrawl_crawl_id"
     t.jsonb "mapped_manifest", default: [], null: false
     t.string "manifest_digest"
     t.jsonb "crawl_errors", default: [], null: false
@@ -834,25 +780,129 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_07_000000) do
     t.string "failure_code"
     t.text "failure_message"
     t.datetime "ready_at"
-    t.datetime "published_at"
+    t.datetime "activated_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.string "processing_lease_token"
-    t.datetime "processing_lease_expires_at"
-    t.string "evaluation_status", default: "pending", null: false
-    t.jsonb "evaluation_report", default: {}, null: false
-    t.datetime "evaluated_at"
-    t.datetime "abandoned_at"
-    t.string "abandon_reason", limit: 1000
-    t.index ["account_id", "inbox_id", "created_at"], name: "index_chatring_knowledge_versions_on_scope_and_created_at"
-    t.index ["account_id"], name: "index_chat_ring_knowledge_versions_on_account_id"
-    t.index ["firecrawl_crawl_id"], name: "index_chat_ring_knowledge_versions_on_firecrawl_crawl_id", unique: true, where: "(firecrawl_crawl_id IS NOT NULL)"
-    t.index ["inbox_id"], name: "index_chat_ring_knowledge_versions_on_inbox_id"
-    t.index ["processing_lease_token"], name: "index_chat_ring_knowledge_versions_on_processing_lease_token", unique: true, where: "(processing_lease_token IS NOT NULL)"
-    t.index ["status", "evaluation_status", "evaluated_at"], name: "index_chatring_knowledge_versions_on_abandonment_candidates"
-    t.check_constraint "evaluation_status::text = ANY (ARRAY['pending'::character varying::text, 'passed'::character varying::text, 'failed'::character varying::text])", name: "chatring_knowledge_versions_evaluation_status_check"
-    t.check_constraint "status::text <> 'abandoned'::text OR abandoned_at IS NOT NULL AND abandon_reason IS NOT NULL", name: "chatring_knowledge_versions_abandonment_fields_check"
-    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying::text, 'crawling'::character varying::text, 'ingesting'::character varying::text, 'ready'::character varying::text, 'published'::character varying::text, 'retired'::character varying::text, 'failed'::character varying::text, 'abandoned'::character varying::text])", name: "chatring_knowledge_versions_status_check"
+    t.datetime "discarded_at"
+    t.string "discard_reason", limit: 1000
+    t.bigint "workspace_id", null: false
+    t.bigint "knowledge_base_id", null: false
+    t.index ["knowledge_base_id", "created_at"], name: "index_chatring_versions_on_base_and_created_at"
+    t.index ["knowledge_base_id"], name: "index_chat_ring_knowledge_indexes_on_knowledge_base_id"
+    t.index ["workspace_id"], name: "index_chat_ring_knowledge_indexes_on_workspace_id"
+    t.check_constraint "status::text <> 'discarded'::text OR discarded_at IS NOT NULL AND discard_reason IS NOT NULL", name: "chatring_knowledge_indexes_discard_fields_check"
+    t.check_constraint "status::text = ANY (ARRAY['building'::character varying, 'ready'::character varying, 'active'::character varying, 'retired'::character varying, 'failed'::character varying, 'discarded'::character varying]::text[])", name: "chatring_knowledge_versions_status_check"
+  end
+
+  create_table "chat_ring_knowledge_materials", force: :cascade do |t|
+    t.bigint "knowledge_base_id", null: false
+    t.bigint "website_source_id"
+    t.bigint "file_source_id"
+    t.uuid "material_key", default: -> { "gen_random_uuid()" }, null: false
+    t.string "source_kind", null: false
+    t.string "source_reference", null: false
+    t.string "title"
+    t.string "public_url"
+    t.string "status", default: "processing", null: false
+    t.text "markdown"
+    t.string "content_hash"
+    t.string "authority_class", default: "product_documentation", null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.jsonb "risk_flags", default: [], null: false
+    t.datetime "extracted_at"
+    t.datetime "deleted_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["file_source_id"], name: "index_chat_ring_knowledge_materials_on_file_source_id"
+    t.index ["knowledge_base_id", "deleted_at"], name: "index_chatring_materials_on_base_and_deletion"
+    t.index ["knowledge_base_id", "source_reference"], name: "index_chatring_materials_on_base_and_reference", unique: true
+    t.index ["knowledge_base_id"], name: "index_chat_ring_knowledge_materials_on_knowledge_base_id"
+    t.index ["material_key"], name: "index_chat_ring_knowledge_materials_on_material_key", unique: true
+    t.index ["website_source_id"], name: "index_chat_ring_knowledge_materials_on_website_source_id"
+    t.check_constraint "((website_source_id IS NOT NULL)::integer + (file_source_id IS NOT NULL)::integer) = 1", name: "chatring_materials_exactly_one_source_check"
+    t.check_constraint "source_kind::text <> 'website'::text OR public_url IS NOT NULL", name: "chatring_materials_website_url_check"
+    t.check_constraint "source_kind::text = ANY (ARRAY['website'::character varying, 'pdf'::character varying, 'docx'::character varying, 'doc'::character varying, 'odt'::character varying, 'rtf'::character varying, 'xlsx'::character varying, 'xls'::character varying, 'html'::character varying]::text[])", name: "chatring_materials_source_kind_check"
+    t.check_constraint "status::text = ANY (ARRAY['processing'::character varying, 'available'::character varying, 'updating'::character varying, 'refresh_failed'::character varying, 'failed'::character varying]::text[])", name: "chatring_materials_status_check"
+  end
+
+  create_table "chat_ring_knowledge_provider_cleanups", force: :cascade do |t|
+    t.bigint "knowledge_index_id", null: false
+    t.string "provider_source_id", null: false
+    t.string "binding_digest", null: false
+    t.string "status", default: "pending", null: false
+    t.integer "attempts", default: 0, null: false
+    t.datetime "eligible_at", null: false
+    t.datetime "cleaned_at"
+    t.string "last_error", limit: 1000
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "account_id", null: false
+    t.bigint "knowledge_base_id"
+    t.index ["knowledge_base_id"], name: "idx_on_knowledge_base_id_af6eeac684"
+    t.index ["knowledge_base_id"], name: "index_chatring_provider_cleanups_on_base"
+    t.index ["knowledge_index_id"], name: "index_chatring_provider_cleanup_on_version", unique: true
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying::text, 'retrying'::character varying::text, 'succeeded'::character varying::text, 'cancelled'::character varying::text, 'failed'::character varying::text])", name: "chatring_knowledge_provider_cleanups_status_check"
+  end
+
+  create_table "chat_ring_knowledge_scope_materials", force: :cascade do |t|
+    t.bigint "knowledge_scope_id", null: false
+    t.bigint "knowledge_material_id", null: false
+    t.string "access", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["knowledge_material_id"], name: "idx_on_knowledge_material_id_46b38347f1"
+    t.index ["knowledge_scope_id", "knowledge_material_id"], name: "index_chatring_scope_materials_on_scope_and_material", unique: true
+    t.index ["knowledge_scope_id"], name: "idx_on_knowledge_scope_id_77c38a4f23"
+    t.check_constraint "access::text = ANY (ARRAY['allow'::character varying, 'deny'::character varying]::text[])", name: "chatring_scope_materials_access_check"
+  end
+
+  create_table "chat_ring_knowledge_scopes", force: :cascade do |t|
+    t.bigint "workspace_id", null: false
+    t.string "name", null: false
+    t.boolean "business_wide", default: false, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["workspace_id", "name"], name: "index_chat_ring_knowledge_scopes_on_workspace_id_and_name", unique: true
+    t.index ["workspace_id"], name: "index_chat_ring_knowledge_scopes_on_workspace_id"
+    t.index ["workspace_id"], name: "index_chatring_scopes_on_business_wide_workspace", unique: true, where: "(business_wide = true)"
+  end
+
+  create_table "chat_ring_knowledge_website_sources", force: :cascade do |t|
+    t.bigint "knowledge_base_id", null: false
+    t.uuid "source_key", default: -> { "gen_random_uuid()" }, null: false
+    t.string "source_type", default: "website", null: false
+    t.string "root_url", null: false
+    t.string "status", default: "mapping", null: false
+    t.uuid "extraction_token"
+    t.datetime "extraction_started_at"
+    t.datetime "firecrawl_request_started_at"
+    t.string "firecrawl_crawl_id"
+    t.jsonb "mapped_manifest", default: [], null: false
+    t.jsonb "crawl_errors", default: [], null: false
+    t.datetime "last_processed_at"
+    t.datetime "deleted_at"
+    t.string "failure_code"
+    t.string "failure_message", limit: 1000
+    t.bigint "created_by_id"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["created_by_id"], name: "index_chat_ring_knowledge_website_sources_on_created_by_id"
+    t.index ["firecrawl_crawl_id"], name: "idx_on_firecrawl_crawl_id_664880cb87", unique: true, where: "(firecrawl_crawl_id IS NOT NULL)"
+    t.index ["knowledge_base_id", "source_type", "root_url"], name: "index_chatring_web_sources_on_base_type_and_url", unique: true
+    t.index ["knowledge_base_id"], name: "index_chat_ring_knowledge_website_sources_on_knowledge_base_id"
+    t.index ["source_key"], name: "index_chat_ring_knowledge_website_sources_on_source_key", unique: true
+    t.check_constraint "source_type::text = ANY (ARRAY['website'::character varying, 'webpage'::character varying]::text[])", name: "chatring_website_sources_type_check"
+    t.check_constraint "status::text = ANY (ARRAY['mapping'::character varying, 'mapped'::character varying, 'extracting'::character varying, 'available'::character varying, 'refreshing'::character varying, 'refresh_failed'::character varying, 'failed'::character varying, 'deleted'::character varying]::text[])", name: "chatring_website_sources_status_check"
+  end
+
+  create_table "chat_ring_workspaces", force: :cascade do |t|
+    t.bigint "chatwoot_account_id", null: false
+    t.string "status", default: "active", null: false
+    t.integer "policy_version", default: 1, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["chatwoot_account_id"], name: "index_chat_ring_workspaces_on_chatwoot_account_id", unique: true
+    t.check_constraint "status::text = ANY (ARRAY['active'::character varying, 'suspended'::character varying, 'disabled'::character varying]::text[])", name: "chatring_workspaces_status_check"
   end
 
   create_table "companies", force: :cascade do |t|
@@ -1665,22 +1715,26 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_07_000000) do
 
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
+  add_foreign_key "chat_ring_knowledge_bases", "chat_ring_knowledge_indexes", column: "active_knowledge_index_id", on_delete: :nullify
+  add_foreign_key "chat_ring_knowledge_bases", "chat_ring_workspaces", column: "workspace_id", on_delete: :cascade
   add_foreign_key "chat_ring_knowledge_documents", "chat_ring_knowledge_file_sources", column: "file_source_id", on_delete: :nullify
-  add_foreign_key "chat_ring_knowledge_documents", "chat_ring_knowledge_versions", column: "knowledge_version_id", on_delete: :cascade
-  add_foreign_key "chat_ring_knowledge_file_sources", "accounts", on_delete: :cascade
-  add_foreign_key "chat_ring_knowledge_file_sources", "inboxes", on_delete: :cascade
+  add_foreign_key "chat_ring_knowledge_documents", "chat_ring_knowledge_indexes", column: "knowledge_index_id", on_delete: :cascade
+  add_foreign_key "chat_ring_knowledge_documents", "chat_ring_knowledge_materials", column: "knowledge_material_id", on_delete: :restrict
+  add_foreign_key "chat_ring_knowledge_file_sources", "chat_ring_knowledge_bases", column: "knowledge_base_id", on_delete: :cascade
   add_foreign_key "chat_ring_knowledge_file_sources", "users", column: "approved_by_id", on_delete: :nullify
   add_foreign_key "chat_ring_knowledge_file_sources", "users", column: "created_by_id", on_delete: :nullify
-  add_foreign_key "chat_ring_knowledge_publication_events", "accounts", on_delete: :cascade
-  add_foreign_key "chat_ring_knowledge_publication_events", "chat_ring_knowledge_versions", column: "from_knowledge_version_id"
-  add_foreign_key "chat_ring_knowledge_publication_events", "chat_ring_knowledge_versions", column: "to_knowledge_version_id"
-  add_foreign_key "chat_ring_knowledge_publication_events", "inboxes", on_delete: :cascade
-  add_foreign_key "chat_ring_knowledge_publications", "accounts", on_delete: :cascade
-  add_foreign_key "chat_ring_knowledge_publications", "chat_ring_knowledge_versions", column: "knowledge_version_id"
-  add_foreign_key "chat_ring_knowledge_publications", "chat_ring_knowledge_versions", column: "previous_knowledge_version_id"
-  add_foreign_key "chat_ring_knowledge_publications", "inboxes", on_delete: :cascade
-  add_foreign_key "chat_ring_knowledge_versions", "accounts", on_delete: :cascade
-  add_foreign_key "chat_ring_knowledge_versions", "inboxes", on_delete: :cascade
+  add_foreign_key "chat_ring_knowledge_indexes", "chat_ring_knowledge_bases", column: "knowledge_base_id", on_delete: :cascade
+  add_foreign_key "chat_ring_knowledge_indexes", "chat_ring_workspaces", column: "workspace_id", on_delete: :cascade
+  add_foreign_key "chat_ring_knowledge_materials", "chat_ring_knowledge_bases", column: "knowledge_base_id", on_delete: :cascade
+  add_foreign_key "chat_ring_knowledge_materials", "chat_ring_knowledge_file_sources", column: "file_source_id", on_delete: :cascade
+  add_foreign_key "chat_ring_knowledge_materials", "chat_ring_knowledge_website_sources", column: "website_source_id", on_delete: :cascade
+  add_foreign_key "chat_ring_knowledge_provider_cleanups", "chat_ring_knowledge_bases", column: "knowledge_base_id", on_delete: :nullify
+  add_foreign_key "chat_ring_knowledge_scope_materials", "chat_ring_knowledge_materials", column: "knowledge_material_id", on_delete: :cascade
+  add_foreign_key "chat_ring_knowledge_scope_materials", "chat_ring_knowledge_scopes", column: "knowledge_scope_id", on_delete: :cascade
+  add_foreign_key "chat_ring_knowledge_scopes", "chat_ring_workspaces", column: "workspace_id", on_delete: :cascade
+  add_foreign_key "chat_ring_knowledge_website_sources", "chat_ring_knowledge_bases", column: "knowledge_base_id", on_delete: :cascade
+  add_foreign_key "chat_ring_knowledge_website_sources", "users", column: "created_by_id", on_delete: :nullify
+  add_foreign_key "chat_ring_workspaces", "accounts", column: "chatwoot_account_id", on_delete: :cascade
   add_foreign_key "inboxes", "portals"
   add_foreign_key "user_sessions", "users"
   create_trigger("accounts_after_insert_row_tr", :generated => true, :compatibility => 1).

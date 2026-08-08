@@ -10,8 +10,6 @@ const { t } = useI18n();
 
 const activeInput = ref('webpages');
 const webpageInputUrl = ref('');
-const mappedWebsite = ref(null);
-const selectedWebsiteUrls = ref([]);
 const fileInput = ref(null);
 const materials = ref([]);
 const previewMaterial = ref(null);
@@ -33,10 +31,6 @@ const sourceTabs = computed(() => [
   },
 ]);
 
-const mappedPages = computed(() => mappedWebsite.value?.mapped_pages || []);
-const selectablePages = computed(() =>
-  mappedPages.value.filter(page => page.included)
-);
 const filteredMaterials = computed(() => {
   const query = searchQuery.value.trim().toLocaleLowerCase();
   if (!query) return materials.value;
@@ -103,36 +97,12 @@ const submitWebpageSource = async () => {
   isSubmitting.value = true;
   try {
     if (isCompleteWebsite(url)) {
-      const response = await ChatRingKnowledgeAPI.mapWebsite(url);
-      mappedWebsite.value = response.data;
-      selectedWebsiteUrls.value = response.data.mapped_pages
-        .filter(page => page.included)
-        .map(page => page.url);
+      await ChatRingKnowledgeAPI.addWebsite(url);
+      useAlert(t('CHATRING_KNOWLEDGE.WEBSITE_QUEUED'));
     } else {
       await ChatRingKnowledgeAPI.addWebpage(url);
       useAlert(t('CHATRING_KNOWLEDGE.WEBPAGE_QUEUED'));
-      webpageInputUrl.value = '';
-      mappedWebsite.value = null;
-      await loadMaterials({ quiet: true });
     }
-  } catch (error) {
-    useAlert(apiError(error));
-  } finally {
-    isSubmitting.value = false;
-  }
-};
-
-const addSelectedPages = async () => {
-  if (!mappedWebsite.value || !selectedWebsiteUrls.value.length) return;
-  isSubmitting.value = true;
-  try {
-    await ChatRingKnowledgeAPI.addWebsitePages(
-      mappedWebsite.value.id,
-      selectedWebsiteUrls.value
-    );
-    useAlert(t('CHATRING_KNOWLEDGE.WEBSITE_QUEUED'));
-    mappedWebsite.value = null;
-    selectedWebsiteUrls.value = [];
     webpageInputUrl.value = '';
     await loadMaterials({ quiet: true });
   } catch (error) {
@@ -140,12 +110,6 @@ const addSelectedPages = async () => {
   } finally {
     isSubmitting.value = false;
   }
-};
-
-const toggleMappedPage = url => {
-  selectedWebsiteUrls.value = selectedWebsiteUrls.value.includes(url)
-    ? selectedWebsiteUrls.value.filter(selected => selected !== url)
-    : [...selectedWebsiteUrls.value, url];
 };
 
 const uploadFile = async file => {
@@ -286,51 +250,13 @@ onBeforeUnmount(() => window.clearInterval(pollTimer));
             <Button
               :label="
                 isCompleteWebsite(webpageInputUrl.trim())
-                  ? t('CHATRING_KNOWLEDGE.FIND_PAGES')
+                  ? t('CHATRING_KNOWLEDGE.ADD_WEBSITE')
                   : t('CHATRING_KNOWLEDGE.ADD_PAGE')
               "
               :is-loading="isSubmitting"
               type="submit"
             />
           </form>
-
-          <div
-            v-if="mappedWebsite"
-            class="rounded-lg border border-n-weak overflow-hidden"
-          >
-            <div class="px-4 py-3 bg-n-alpha-2 text-sm text-n-slate-11">
-              {{ t('CHATRING_KNOWLEDGE.SELECT_PAGES') }}
-            </div>
-            <div class="max-h-72 overflow-y-auto divide-y divide-n-weak">
-              <label
-                v-for="page in selectablePages"
-                :key="page.url"
-                class="flex gap-3 px-4 py-3 cursor-pointer"
-              >
-                <input
-                  type="checkbox"
-                  :checked="selectedWebsiteUrls.includes(page.url)"
-                  @change="toggleMappedPage(page.url)"
-                />
-                <span class="min-w-0">
-                  <span class="block text-sm text-n-slate-12 truncate">
-                    {{ page.title || page.url }}
-                  </span>
-                  <span class="block text-xs text-n-slate-10 truncate">
-                    {{ page.url }}
-                  </span>
-                </span>
-              </label>
-            </div>
-            <div class="flex justify-end px-4 py-3 border-t border-n-weak">
-              <Button
-                :disabled="!selectedWebsiteUrls.length"
-                :label="t('CHATRING_KNOWLEDGE.ADD_SELECTED_PAGES')"
-                :is-loading="isSubmitting"
-                @click="addSelectedPages"
-              />
-            </div>
-          </div>
         </div>
 
         <div v-else class="grid gap-4 mt-6">
@@ -470,13 +396,20 @@ onBeforeUnmount(() => window.clearInterval(pollTimer));
             <h3 class="font-medium text-n-slate-12">
               {{ previewMaterial.name }}
             </h3>
-            <p class="mt-1 text-xs text-n-slate-10">
+            <p
+              v-if="previewMaterial.source_reference"
+              class="mt-1 text-xs text-n-slate-10"
+            >
               {{ previewMaterial.source_reference }}
             </p>
           </div>
           <div>
             <p class="font-medium text-n-slate-12">
-              {{ t('CHATRING_KNOWLEDGE.EXTRACTED_CONTENT') }}
+              {{
+                previewMaterial.available_to_ai
+                  ? t('CHATRING_KNOWLEDGE.CONTENT_AVAILABLE')
+                  : t('CHATRING_KNOWLEDGE.CONTENT_NOT_AVAILABLE')
+              }}
             </p>
             <pre
               class="mt-2 max-h-80 overflow-auto whitespace-pre-wrap rounded-lg bg-n-alpha-2 p-4 text-xs text-n-slate-11"

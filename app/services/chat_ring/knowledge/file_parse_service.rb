@@ -1,12 +1,16 @@
-class ChatRing::Knowledge::FileParseService
+class ChatRing::Knowledge::FileParseService # rubocop:disable Metrics/ClassLength
+  PARSE_STALE_AFTER = 15.minutes
+
   class Error < StandardError; end
 
-  def initialize(source, client: nil)
+  def initialize(source, client: nil, parse_token: nil)
     @source = source
     @client = client || ChatRing::Knowledge::FirecrawlParseClient.new(api_key: ENV.fetch('FIRECRAWL_API_KEY'))
+    @parse_token = parse_token.presence
   end
 
   def call # rubocop:disable Metrics/MethodLength
+    return :complete if @parse_token.blank?
     return :complete unless claim!
 
     @source.file.blob.open do |file|
@@ -22,10 +26,8 @@ class ChatRing::Knowledge::FileParseService
       finalize!(normalized)
     end
     :complete
-  rescue ChatRing::Knowledge::FirecrawlParseClient::RequestError => e
-    record_failure!(e)
-    :complete
-  rescue ChatRing::Knowledge::FirecrawlParseClient::ResponseError, ChatRing::Knowledge::FilePreflight::Error,
+  rescue ChatRing::Knowledge::FirecrawlParseClient::RequestError,
+         ChatRing::Knowledge::FirecrawlParseClient::ResponseError, ChatRing::Knowledge::FilePreflight::Error,
          ChatRing::Knowledge::FileSnapshotNormalizer::Error => e
     record_failure!(e)
     :complete
@@ -37,16 +39,22 @@ class ChatRing::Knowledge::FileParseService
 
   # Re-run always makes a new Firecrawl Parse request, even when the bytes are
   # identical. The old material remains active until this call succeeds.
+  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
   def self.rerun!(source)
+    parse_token = SecureRandom.uuid
     ChatRing::KnowledgeMaterial.transaction do
       source.knowledge_base.lock!
       source.lock!
       raise Error, 'Deleted files must be uploaded again, not re-run' if source.status == 'deleted'
-      raise Error, 'Another parse is already running' if %w[parsing refreshing].include?(source.status)
+      if %w[parsing refreshing].include?(source.status) && source.parse_started_at.present? &&
+         source.parse_started_at > PARSE_STALE_AFTER.ago
+        raise Error, 'Another parse is already running'
+      end
       raise Error, 'Knowledge file attachment is missing' unless source.file.attached?
 
       source.update!(
         status: source.materials.retrievable.exists? ? 'refreshing' : 'uploaded',
+        parse_token: parse_token,
         parse_started_at: nil,
         failure_code: nil,
         failure_message: nil
@@ -55,9 +63,23 @@ class ChatRing::Knowledge::FileParseService
         material.update!(status: material.markdown.present? ? 'updating' : 'processing')
       end
     end
-    ChatRing::Knowledge::FileParseJob.perform_later(source.id)
+    begin
+      job = ChatRing::Knowledge::FileParseJob.perform_later(source.id, parse_token)
+      raise Error, 'File parsing could not be queued' unless job.successfully_enqueued?
+    rescue StandardError => e
+      source.with_lock do
+        source.update!(status: source.materials.retrievable.exists? ? 'refresh_failed' : 'failed',
+                       parse_token: nil, failure_code: e.class.name,
+                       failure_message: 'File parsing could not be queued')
+        source.materials.active.find_each do |material|
+          material.update!(status: material.markdown.present? ? 'refresh_failed' : 'failed')
+        end
+      end
+      raise
+    end
     source
   end
+  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
 
   def self.restore_material!(source)
     raise Error, 'Only a parsed file can be restored' unless source.status == 'ready' && source.markdown.present?
@@ -69,6 +91,21 @@ class ChatRing::Knowledge::FileParseService
     end
     ChatRing::Knowledge::IndexBuilder.enqueue!(source.knowledge_base)
     source
+  rescue StandardError => e
+    mark_index_failure!(source, e)
+    raise
+  end
+
+  def self.mark_index_failure!(source, error)
+    ChatRing::KnowledgeMaterial.transaction do
+      source.knowledge_base.lock!
+      source.lock!
+      material = source.materials.active.first
+      live = material.present? && source.knowledge_base.material_available?(material)
+      source.update!(status: live ? 'refresh_failed' : 'failed', failure_code: error.class.name,
+                     failure_message: 'Knowledge indexing could not be queued')
+      material&.update!(status: live ? 'refresh_failed' : 'failed')
+    end
   end
 
   def self.upsert_material!(source)
@@ -95,10 +132,12 @@ class ChatRing::Knowledge::FileParseService
 
   private
 
-  def claim!
+  def claim! # rubocop:disable Metrics/CyclomaticComplexity
     claimed = false
     @source.with_lock do
       next unless %w[uploaded refreshing].include?(@source.status)
+      next unless @parse_token.present? && @source.parse_token == @parse_token
+      next if @source.status == 'refreshing' && @source.parse_started_at.present?
       raise Error, 'Knowledge file attachment is missing' unless @source.file.attached?
 
       refreshing = @source.status == 'refreshing'
@@ -124,19 +163,20 @@ class ChatRing::Knowledge::FileParseService
            preflight.source_kind == @source.source_kind
       raise ChatRing::Knowledge::FilePreflight::Error, 'Stored knowledge file no longer matches its identity'
     end
+
     preflight
   end
 
-  def finalize!(normalized)
+  def finalize!(normalized) # rubocop:disable Metrics/MethodLength
     ChatRing::KnowledgeMaterial.transaction do
       @source.knowledge_base.lock!
       @source.lock!
-      unless %w[parsing refreshing].include?(@source.status)
-        raise Error, 'Knowledge file parse was superseded before finalization'
-      end
+      raise Error, 'Knowledge file parse was superseded before finalization' unless @source.parse_token == @parse_token
+      raise Error, 'Knowledge file parse was superseded before finalization' unless %w[parsing refreshing].include?(@source.status)
 
       @source.update!(
         status: 'ready',
+        parse_token: nil,
         markdown: normalized.fetch(:markdown),
         content_hash: normalized.fetch(:content_hash),
         metadata: normalized.fetch(:metadata).merge('title' => normalized.fetch(:title)),
@@ -146,12 +186,19 @@ class ChatRing::Knowledge::FileParseService
       )
       self.class.upsert_material!(@source)
     end
-    ChatRing::Knowledge::IndexBuilder.enqueue!(@source.knowledge_base)
+    begin
+      ChatRing::Knowledge::IndexBuilder.enqueue!(@source.knowledge_base)
+    rescue StandardError => e
+      self.class.mark_index_failure!(@source, e)
+      raise
+    end
   end
 
+  # rubocop:disable Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
   def record_failure!(error)
     @source.reload if @source.has_changes_to_save?
     @source.with_lock do
+      next unless @source.parse_token == @parse_token
       next if @source.status == 'deleted'
 
       has_live_snapshot = @source.materials.retrievable.exists?
@@ -164,6 +211,7 @@ class ChatRing::Knowledge::FileParseService
                end
       @source.update!(
         status: status,
+        parse_token: nil,
         failure_code: error.class.name,
         failure_message: error.message.to_s.truncate(1000)
       )
@@ -172,4 +220,5 @@ class ChatRing::Knowledge::FileParseService
       end
     end
   end
+  # rubocop:enable Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
 end

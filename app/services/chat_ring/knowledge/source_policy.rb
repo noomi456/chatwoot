@@ -8,17 +8,17 @@ class ChatRing::Knowledge::SourcePolicy
 
   # These routes are excluded before paid extraction because they are
   # operational or boilerplate, not business knowledge. Content categories
-  # such as blogs, careers, security, and non-English pages remain selectable.
+  # such as blogs, careers, security, and non-English pages remain eligible.
   EXCLUDED_PATHS = %r{\A/(?:
     auth|login|log-in|sign[-_]?in|sign[-_]?up|register|admin|account|cart|checkout|search|unsubscribe|
     sitemaps?(?:\.xml)?|robots\.txt|404|privacy(?:-policy)?|cookie(?:-policy|s)?|
-    terms(?:-of-(?:service|use))?|legal
+    terms(?:-of-(?:service|use))?
   )(?:/|\z)}ix
   NESTED_POLICY_PATHS = %r{/(?:legal|polic(?:y|ies))/(?:privacy(?:-policy)?|cookie(?:-policy|s)?|terms(?:-of-(?:service|use))?)(?:/|\z)}i
-  USELESS_PAGE_TITLE = /\A\s*(?:privacy policy|cookie policy|terms (?:of service|of use)|sign in|log in|sign up|register|sitemap)\b/i
+  USELESS_PAGE_TITLE = /\A\s*(?:privacy policy|cookie policy|terms (?:of service|of use)|sign in|log in|sign up|sitemap)\s*\z/i
   SOFT_404 = /\b(?:page not found|404 not found|this page (?:does not|doesn't) exist)\b/i
-  PROMPT_INJECTION = /\b(?:ignore (?:all |any )?(?:previous|prior) instructions|
-    reveal (?:the )?system prompt|you are now (?:a|an)|developer message:)\b/ix
+  PROMPT_INJECTION = /\b(?:ignore\s+(?:all\s+|any\s+)?(?:previous|prior)\s+instructions|
+    reveal\s+(?:the\s+)?system\s+prompt|you\s+are\s+now\s+(?:a|an)|developer\s+message:|prompt\s+injection)\b/ix
 
   class Error < StandardError; end
   class OriginError < Error; end
@@ -32,9 +32,9 @@ class ChatRing::Knowledge::SourcePolicy
   def prepare_manifest(entries)
     raise Error, 'Firecrawl map must return an array' unless entries.is_a?(Array)
 
-    entries.map do |entry|
+    normalized_entries = entries.map do |entry|
       normalized = entry.to_h.deep_stringify_keys
-      url = ChatRing::Knowledge::FirecrawlClient.canonical_url(normalized.fetch('url'))
+      url = ChatRing::Knowledge::FirecrawlClient.canonical_url(normalized.fetch('url'), preserve_query: true)
       enforce_origin!(url)
       excluded = excluded_before_scrape?(URI.parse(url).path, normalized)
       normalized.merge(
@@ -43,11 +43,13 @@ class ChatRing::Knowledge::SourcePolicy
         'exclusion_reason' => excluded ? 'non_knowledge_route' : nil,
         'authority_class' => authority_class(URI.parse(url).path)
       ).compact
-    end.uniq { |entry| entry.fetch('url') }.sort_by { |entry| entry.fetch('url') }
+    end
+    normalized_entries.uniq { |entry| entry.fetch('url') }.sort_by { |entry| entry.fetch('url') }
   end
 
   # A failed page does not discard successful pages. The caller displays each
   # failure and indexes only the pages Firecrawl actually returned safely.
+  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
   def normalize_pages_with_errors(records:, manifest:)
     raise PageQualityError, 'Firecrawl scrape data must be an array' unless records.is_a?(Array)
 
@@ -61,33 +63,36 @@ class ChatRing::Knowledge::SourcePolicy
     end
     returned_urls = pages.pluck(:source_reference)
     (allowed.keys - returned_urls).each do |url|
-      errors << { 'url' => url, 'error' => 'Firecrawl did not return this selected page' }
+      errors << { 'url' => url, 'error' => 'Firecrawl did not return this requested page' }
     end
     total_bytes = pages.sum { |page| page.fetch(:markdown).bytesize }
     raise PageQualityError, "Accepted corpus exceeds #{MAX_CORPUS_BYTES} bytes" if total_bytes > MAX_CORPUS_BYTES
 
     [pages.sort_by { |page| page.fetch(:source_reference) }, errors]
   end
+  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
 
   def normalize_pages(records:, manifest:)
     pages, errors = normalize_pages_with_errors(records: records, manifest: manifest)
-    raise PageQualityError, errors.map { |error| error['error'] }.join('; ') if errors.any?
+    raise PageQualityError, errors.pluck('error').join('; ') if errors.any?
 
     pages
   end
 
   private
 
-  def normalize_page(record, allowed) # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
+  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
+  def normalize_page(record, allowed)
     raise PageQualityError, 'Firecrawl page must be an object' unless record.is_a?(Hash)
 
     metadata = record['metadata'].is_a?(Hash) ? record['metadata'] : {}
     source_url = ChatRing::Knowledge::FirecrawlClient.canonical_url(
-      metadata['sourceURL'] || metadata['url'] || record['url']
+      metadata['sourceURL'] || metadata['url'] || record['url'],
+      preserve_query: true
     )
     enforce_origin!(source_url)
-    manifest_entry = allowed[source_url]
-    raise PageQualityError, "Firecrawl returned an unselected URL #{source_url}" if manifest_entry.blank?
+    manifest_entry = allowed[source_url] || equivalent_manifest_entry(allowed, source_url)
+    raise PageQualityError, "Firecrawl returned an unrequested URL #{source_url}" if manifest_entry.blank?
 
     status = integer_status(metadata['statusCode'])
     raise PageQualityError, "Firecrawl page #{source_url} returned HTTP #{status}" unless status.between?(200, 299)
@@ -101,7 +106,7 @@ class ChatRing::Knowledge::SourcePolicy
     structure = ChatRing::Knowledge::MarkdownStructure.new(markdown: markdown, source_url: source_url).call
     {
       source_kind: 'website',
-      source_reference: source_url,
+      source_reference: manifest_entry.fetch('url'),
       public_url: source_url,
       title: title.presence,
       markdown: markdown,
@@ -116,10 +121,22 @@ class ChatRing::Knowledge::SourcePolicy
   rescue ChatRing::Knowledge::FirecrawlClient::ConfigurationError => e
     raise PageQualityError, e.message
   end
+  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
 
   def page_url(record)
     metadata = record.is_a?(Hash) && record['metadata'].is_a?(Hash) ? record['metadata'] : {}
     metadata['sourceURL'] || metadata['url'] || (record.is_a?(Hash) ? record['url'] : nil)
+  end
+
+  def equivalent_manifest_entry(allowed, source_url)
+    candidate = URI.parse(source_url)
+    allowed.values.find do |entry|
+      requested = URI.parse(entry.fetch('url'))
+      requested.host.to_s.downcase.delete_prefix('www.') == candidate.host.to_s.downcase.delete_prefix('www.') &&
+        requested.path == candidate.path && requested.query == candidate.query
+    end
+  rescue URI::InvalidURIError
+    nil
   end
 
   def excluded_before_scrape?(path, entry)
@@ -135,13 +152,29 @@ class ChatRing::Knowledge::SourcePolicy
 
   def enforce_origin!(value)
     candidate = URI.parse(value)
-    return if origin(candidate) == @origin
+    return if same_site_origin?(candidate)
 
     raise OriginError, "Mapped URL is outside the configured origin: #{value}"
   end
 
   def origin(uri)
     [uri.scheme.downcase, uri.host.downcase, uri.port]
+  end
+
+  def same_site_origin?(candidate)
+    root_scheme, root_host, root_port = @origin
+    candidate_host = candidate.host.to_s.downcase
+    same_host = candidate_host.delete_prefix('www.') == root_host.delete_prefix('www.')
+    same_port = candidate.port == root_port || (default_port?(candidate) && default_port_values?(root_scheme, root_port))
+    same_host && same_port
+  end
+
+  def default_port?(uri)
+    (uri.scheme == 'http' && uri.port == 80) || (uri.scheme == 'https' && uri.port == 443)
+  end
+
+  def default_port_values?(scheme, port)
+    (scheme == 'http' && port == 80) || (scheme == 'https' && port == 443)
   end
 
   def integer_status(value)

@@ -1,31 +1,37 @@
 module ChatRing::KnowledgeManagementSerialization
   private
 
-  def serialize_material(material, include_content: false, available_to_ai: nil)
-    available_to_ai = material.knowledge_base.active_knowledge_index&.documents&.exists?(knowledge_material_id: material.id) \
-      if available_to_ai.nil?
+  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
+  def serialize_material(material, include_content: false, available_to_ai: nil, active_document: nil)
+    active_document ||= material.knowledge_base.active_document_for(material)
+    available_to_ai = active_document.present? if available_to_ai.nil?
+    visible_markdown = available_to_ai ? active_document.markdown : material.markdown
+    visible_metadata = available_to_ai ? active_document.metadata : material.metadata
+    visible_name = available_to_ai ? active_document.title : material.title
+    visible_public_url = available_to_ai ? active_document.public_url : material.public_url
     result = {
       id: material.id,
       material_key: material.material_key,
-      name: material.title.presence || material.source_reference,
+      name: visible_name.presence || material.source_reference,
       type: material.source_kind,
-      source_reference: material.source_reference,
-      public_url: material.public_url,
-      characters: material.markdown.to_s.length,
+      source_reference: material.source_kind == 'website' ? material.source_reference : nil,
+      public_url: visible_public_url,
+      characters: visible_markdown.to_s.length,
       status: material_status(material, available_to_ai),
       available_to_ai: material.active? && available_to_ai,
-      authority_class: material.authority_class,
-      headings: material.metadata['headings'] || [],
-      cta_candidates: material.metadata['cta_candidates'] || [],
-      risk_flags: material.risk_flags,
+      authority_class: visible_metadata['authority_class'].presence || material.authority_class,
+      headings: visible_metadata['headings'] || [],
+      cta_candidates: visible_metadata['cta_candidates'] || [],
+      risk_flags: Array(visible_metadata['risk_flags'] || material.risk_flags),
       extracted_at: material.extracted_at,
       updated_at: material.updated_at
     }
-    result[:markdown] = material.markdown if include_content
+    result[:markdown] = visible_markdown if include_content
     result
   end
+  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
 
-  def material_status(material, available_to_ai)
+  def material_status(material, available_to_ai) # rubocop:disable Metrics/CyclomaticComplexity
     return 'deleted' unless material.active?
     return 'updating' if material.status == 'updating' && available_to_ai
     return 'refresh_failed' if material.status == 'refresh_failed' && available_to_ai
@@ -35,27 +41,10 @@ module ChatRing::KnowledgeManagementSerialization
     'processing'
   end
 
-  def serialize_website_source(source)
-    {
-      id: source.id,
-      source_type: source.source_type,
-      root_url: source.root_url,
-      status: source.status,
-      mapped_pages: source.mapped_manifest,
-      crawl_errors: source.crawl_errors,
-      failure_code: source.failure_code,
-      failure_message: source.failure_message,
-      last_processed_at: source.last_processed_at,
-      created_at: source.created_at,
-      updated_at: source.updated_at
-    }
-  end
-
   def serialize_file_source(source)
     {
       id: source.id,
       filename: source.original_filename,
-      source_reference: source.source_reference,
       type: source.source_kind,
       status: source.status,
       content_type: source.content_type,
@@ -67,14 +56,5 @@ module ChatRing::KnowledgeManagementSerialization
       created_at: source.created_at,
       updated_at: source.updated_at
     }
-  end
-
-  def serialize_evidence_set(evidence_set)
-    evidence_set.to_h.merge(items: evidence_set.items.map do |evidence|
-      evidence.to_h.merge(
-        page_headings: evidence.page_headings.map(&:to_h),
-        cta_candidates: evidence.cta_candidates.map(&:to_h)
-      )
-    end)
   end
 end

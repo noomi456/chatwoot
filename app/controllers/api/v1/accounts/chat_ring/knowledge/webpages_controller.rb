@@ -8,7 +8,7 @@ class Api::V1::Accounts::ChatRing::Knowledge::WebpagesController < Api::V1::Acco
       url: params.require(:url),
       actor: Current.user
     )
-    render json: serialize_website_source(source), status: :accepted
+    render json: { id: source.id, status: source.status }, status: :accepted
   rescue ChatRing::Knowledge::WebsiteSourceService::Error, ChatRing::Knowledge::FirecrawlClient::Error => e
     render_unprocessable(e)
   end

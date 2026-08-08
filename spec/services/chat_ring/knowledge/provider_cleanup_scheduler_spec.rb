@@ -46,6 +46,8 @@ RSpec.describe ChatRing::Knowledge::ProviderCleanupScheduler do
   end
 
   it 'schedules one idempotent cleanup for an inactive provider index' do
+    index
+
     expect do
       described_class.schedule_eligible!(knowledge_base: knowledge_base)
     end.to have_enqueued_job(ChatRing::Knowledge::ProviderCleanupJob)
@@ -61,7 +63,8 @@ RSpec.describe ChatRing::Knowledge::ProviderCleanupScheduler do
     clear_enqueued_jobs
     expect do
       described_class.schedule_eligible!(knowledge_base: knowledge_base)
-    end.not_to have_enqueued_job(ChatRing::Knowledge::ProviderCleanupJob)
+    end.to have_enqueued_job(ChatRing::Knowledge::ProviderCleanupJob).with(cleanup.id)
+    expect(index.reload.provider_cleanup.id).to eq(cleanup.id)
   end
 
   it 'never schedules the active index' do

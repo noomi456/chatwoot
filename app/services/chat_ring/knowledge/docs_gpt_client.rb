@@ -3,11 +3,11 @@ require 'digest'
 require 'securerandom'
 require 'uri'
 
-# rubocop:disable Metrics/ClassLength
-class ChatRing::Knowledge::DocsGptClient
+class ChatRing::Knowledge::DocsGptClient # rubocop:disable Metrics/ClassLength
   USER_ID = 'local'.freeze
   DEFAULT_CHUNKS = ChatRing::Knowledge::DocsGptProvider::DEFAULT_EVIDENCE_LIMIT
   MAX_CHUNK_PAGES = 1000
+  INGEST_NAMESPACE = ['fa25d5d1398b46dfac898d1c360b9bea'].pack('H*').freeze
   SOURCE_CONFIG = {
     kind: 'classic',
     chunking: {
@@ -39,44 +39,56 @@ class ChatRing::Knowledge::DocsGptClient
     )
   end
 
-  def upload_index(index) # rubocop:disable Metrics/AbcSize
+  def upload_index(index) # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
     documents = index.documents.order(:id).to_a
     raise ResponseError, 'DocsGPT upload requires at least one document' if documents.empty?
 
     boundary = "----ChatRingKnowledge#{SecureRandom.hex(16)}"
-    response = json_connection.post('/api/upload') do |request|
-      request.headers.update(@auth.user_headers)
+    body = multipart_body(boundary, index, documents)
+    source_name = source_binding_name(index)
+    response = json_connection.post('/api/internal/chatring/upload') do |request|
+      request.headers.update(internal_headers(index, body, 'upload_index', source_name))
+      request.headers['X-ChatRing-Provider-Source'] = source_name
       request.headers['Content-Type'] = "multipart/form-data; boundary=#{boundary}"
-      request.headers['Idempotency-Key'] = "chatring-knowledge-index-#{index.id}-#{index.provider_binding_digest}"
-      request.body = multipart_body(boundary, index, documents)
+      request.headers['Idempotency-Key'] = upload_idempotency_key(index)
+      request.body = body
     end
     parsed = parse_response(response, expected_statuses: [200])
+    source_id = required_value(parsed['source_id'], 'DocsGPT upload response is missing source_id')
+    raise ResponseError, 'DocsGPT upload returned an unexpected source_id' unless source_id == expected_source_id(index)
+
     {
       task_id: required_value(parsed['task_id'], 'DocsGPT upload response is missing task_id'),
-      source_id: required_value(parsed['source_id'], 'DocsGPT upload response is missing source_id')
+      source_id: source_id
     }
   rescue Faraday::Error => e
     raise RequestError, "DocsGPT request failed: #{e.class.name}"
   end
 
-  def task_status(task_id)
-    response = json_connection.get('/api/task_status', task_id: task_id) do |request|
-      request.headers.update(@auth.user_headers)
+  def task_status(index, task_id, source_id)
+    response = json_connection.get('/api/internal/chatring/task-status', task_id: task_id, source_id: source_id) do |request|
+      request.headers.update(internal_headers(index, '', 'task_status', source_id))
     end
     parse_response(response, expected_statuses: [200])
   rescue Faraday::Error => e
     raise RequestError, "DocsGPT request failed: #{e.class.name}"
   end
 
-  def chunks(source_id) # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
+  def chunks(index, source_id) # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
     page = 1
     all_chunks = []
     page_fingerprints = Set.new
     loop do
       raise ResponseError, "DocsGPT chunk pagination exceeded #{MAX_CHUNK_PAGES} pages" if page > MAX_CHUNK_PAGES
 
-      response = json_connection.get('/api/get_chunks', id: source_id, page: page, per_page: 100) do |request|
-        request.headers.update(@auth.user_headers)
+      response = json_connection.get(
+        '/api/internal/chatring/chunks',
+        source_id: source_id,
+        id: source_id,
+        page: page,
+        per_page: 100
+      ) do |request|
+        request.headers.update(internal_headers(index, '', 'inspect_chunks', source_id))
       end
       parsed = parse_response(response, expected_statuses: [200])
       chunks = Array(parsed['chunks'])
@@ -101,6 +113,10 @@ class ChatRing::Knowledge::DocsGptClient
     response.status == 200 && JSON.parse(response.body)['status'] == 'ok'
   rescue JSON::ParserError, Faraday::Error
     false
+  end
+
+  def expected_source_id(index)
+    uuid_v5(INGEST_NAMESPACE, "#{USER_ID}:#{upload_idempotency_key(index)}")
   end
 
   def delete_source(account_id:, knowledge_index_id:, binding_digest:, source_id:) # rubocop:disable Metrics/MethodLength
@@ -132,6 +148,31 @@ class ChatRing::Knowledge::DocsGptClient
   end
 
   private
+
+  def internal_headers(index, body, operation, source_id)
+    @auth.internal_headers(
+      body: body,
+      operation: operation,
+      source_id: source_id,
+      scope: {
+        account_id: index.account_id,
+        knowledge_index_id: index.id,
+        binding_digest: index.provider_binding_digest
+      }
+    )
+  end
+
+  def upload_idempotency_key(index)
+    "chatring-knowledge-index-#{index.id}-#{index.provider_binding_digest}"
+  end
+
+  def uuid_v5(namespace_bytes, value)
+    bytes = Digest::SHA1.digest(namespace_bytes + value.to_s.b).bytes.first(16)
+    bytes[6] = (bytes[6] & 0x0f) | 0x50
+    bytes[8] = (bytes[8] & 0x3f) | 0x80
+    hex = bytes.pack('C*').unpack1('H*')
+    [hex[0, 8], hex[8, 4], hex[12, 4], hex[16, 4], hex[20, 12]].join('-')
+  end
 
   def json_connection
     @json_connection ||= Faraday.new(url: @base_url) do |connection|
@@ -199,4 +240,3 @@ class ChatRing::Knowledge::DocsGptClient
     result
   end
 end
-# rubocop:enable Metrics/ClassLength

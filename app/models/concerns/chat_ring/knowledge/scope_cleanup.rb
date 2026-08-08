@@ -1,3 +1,4 @@
+# rubocop:disable Style/ClassAndModuleChildren
 module ChatRing::Knowledge::ScopeCleanup
   module AccountExtension
     extend ActiveSupport::Concern
@@ -29,3 +30,4 @@ module ChatRing::Knowledge::ScopeCleanup
     end
   end
 end
+# rubocop:enable Style/ClassAndModuleChildren

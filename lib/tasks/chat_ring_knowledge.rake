@@ -1,3 +1,4 @@
+# rubocop:disable Metrics/BlockLength
 namespace :chatring do
   namespace :knowledge do
     desc 'Show the account Training Materials and hidden provider-index state'
@@ -21,7 +22,9 @@ namespace :chatring do
               source_reference: material.source_reference,
               status: material.status,
               extracted_at: material.extracted_at,
-              available_to_ai: active_index&.documents&.exists?(knowledge_material_id: material.id) || false
+              available_to_ai: active_index&.documents&.where(knowledge_material_id: material.id)&.any? do |document|
+                document.metadata['material_key'] == material.material_key
+              end || false
             }
           end
         }.to_json
@@ -44,5 +47,20 @@ namespace :chatring do
       )
       puts({ cleanup_id: cleanup.id, status: cleanup.status }.to_json)
     end
+
+    desc 'Re-enqueue pending or failed obsolete-provider cleanups on explicit operator request'
+    task cleanup_resume: :environment do
+      resumed = []
+      ChatRing::KnowledgeProviderCleanup.where(status: %w[pending failed]).find_each do |cleanup|
+        if cleanup.status == 'failed'
+          ChatRing::Knowledge::ProviderCleanupScheduler.retry_failed!(cleanup)
+        else
+          ChatRing::Knowledge::ProviderCleanupScheduler.enqueue_cleanup!(cleanup)
+        end
+        resumed << cleanup.id
+      end
+      puts({ resumed_cleanup_ids: resumed }.to_json)
+    end
   end
 end
+# rubocop:enable Metrics/BlockLength

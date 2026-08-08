@@ -1,5 +1,9 @@
 require 'rails_helper'
 
+# The job constructs its Firecrawl client internally; this keeps these examples
+# focused on the job's result and stale-command behavior.
+# rubocop:disable RSpec/AnyInstance
+
 RSpec.describe ChatRing::Knowledge::WebsiteExtractionJob do
   let(:account) { create(:account) }
   let(:knowledge_base) { ChatRing::KnowledgeBase.for_account!(account) }
@@ -8,7 +12,7 @@ RSpec.describe ChatRing::Knowledge::WebsiteExtractionJob do
   let(:source) do
     knowledge_base.website_sources.create!(
       root_url: 'https://example.com/', status: 'extracting', firecrawl_crawl_id: 'crawl-1',
-      extraction_token: extraction_token,
+      extraction_token: extraction_token, extraction_started_at: Time.current,
       mapped_manifest: [
         { 'url' => 'https://example.com/good', 'included' => true, 'authority_class' => 'product_documentation' },
         { 'url' => 'https://example.com/missing', 'included' => true, 'authority_class' => 'product_documentation' }
@@ -25,7 +29,7 @@ RSpec.describe ChatRing::Knowledge::WebsiteExtractionJob do
     end
   end
 
-  it 'keeps a successful page when another selected page fails' do
+  it 'keeps a successful page when another requested page fails' do
     allow_any_instance_of(described_class).to receive(:firecrawl).and_return(firecrawl)
     allow(firecrawl).to receive(:batch_status).and_return(
       'status' => 'completed',
@@ -68,3 +72,4 @@ RSpec.describe ChatRing::Knowledge::WebsiteExtractionJob do
     expect(source.reload.status).to eq('extracting')
   end
 end
+# rubocop:enable RSpec/AnyInstance

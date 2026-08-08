@@ -42,7 +42,7 @@ class ChatRing::KnowledgeIndex < ApplicationRecord
   def provider_binding_digest
     document_hashes = documents.order(:id).pluck(:content_hash)
     Digest::SHA256.hexdigest(
-      [workspace_id, knowledge_base_id, manifest_digest, provider_release, config_snapshot, document_hashes].to_json
+      [manifest_digest, provider_release, config_snapshot, document_hashes].to_json
     )
   end
 

@@ -9,12 +9,16 @@ class ChatRing::Knowledge::ProviderCleanupScheduler
                   .find_each { |index| schedule!(index) }
   end
 
+  # rubocop:disable Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
   def self.schedule!(index, eligible_at: nil, force: false, enqueue: true)
     source_id = provider_source_id(index)
     return if source_id.blank? || (!force && protected?(index))
 
     cleanup = ChatRing::KnowledgeProviderCleanup.find_or_initialize_by(knowledge_index_id: index.id)
-    return cleanup if cleanup.persisted? && %w[pending retrying succeeded].include?(cleanup.status)
+    if cleanup.persisted? && %w[pending retrying succeeded].include?(cleanup.status)
+      enqueue_cleanup!(cleanup) if enqueue && cleanup.status == 'pending'
+      return cleanup
+    end
 
     cleanup.assign_attributes(
       knowledge_base: index.knowledge_base,
@@ -31,12 +35,16 @@ class ChatRing::Knowledge::ProviderCleanupScheduler
     enqueue_cleanup!(cleanup) if enqueue
     cleanup
   end
+  # rubocop:enable Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
 
   def self.enqueue_cleanup!(cleanup)
     return false unless cleanup.status == 'pending'
 
-    ChatRing::Knowledge::ProviderCleanupJob.set(wait_until: cleanup.eligible_at).perform_later(cleanup.id)
-    true
+    job = ChatRing::Knowledge::ProviderCleanupJob.set(wait_until: cleanup.eligible_at).perform_later(cleanup.id)
+    return true if job.successfully_enqueued?
+
+    cleanup.update!(status: 'failed', last_error: 'Provider cleanup could not be queued')
+    false
   end
 
   def self.retry_failed!(cleanup)
@@ -53,7 +61,8 @@ class ChatRing::Knowledge::ProviderCleanupScheduler
     return [] unless workspace&.knowledge_base
 
     workspace.knowledge_base.knowledge_indexes.filter_map do |index|
-      schedule!(index, eligible_at: Time.current, force: true, enqueue: false)
+      schedule!(index, eligible_at: Time.current + ChatRing::Knowledge::SyncService::UPLOAD_CLAIM_TIMEOUT,
+                       force: true, enqueue: false)
     end
   end
 

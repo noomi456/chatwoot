@@ -1,15 +1,16 @@
 class ChatRing::Knowledge::MaterialService
   class Error < StandardError; end
 
-  def self.delete!(material)
+  def self.delete!(material) # rubocop:disable Metrics/CyclomaticComplexity, Metrics/MethodLength
     file_source = nil
     blob_id = nil
+    deleted = false
     ChatRing::KnowledgeMaterial.transaction do
       material.knowledge_base.lock!
       file_source = material.file_source
       file_source&.lock!
       material.lock!
-      return material unless material.active?
+      next unless material.active?
 
       material.update!(
         status: 'failed',
@@ -24,6 +25,7 @@ class ChatRing::Knowledge::MaterialService
         blob_id = file_source.file.blob_id if file_source.file.attached?
         file_source.update!(
           status: 'deleted',
+          parse_token: nil,
           markdown: nil,
           content_hash: nil,
           metadata: {},
@@ -31,7 +33,10 @@ class ChatRing::Knowledge::MaterialService
           disabled_at: Time.current
         )
       end
+      deleted = true
     end
+
+    return material unless deleted
 
     # Retrieval checks the catalog tombstone immediately. Provider cleanup and
     # replacement happen after the user-visible delete has succeeded.

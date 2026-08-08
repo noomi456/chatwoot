@@ -102,8 +102,7 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
     )
     expect(evidence_set.items.first.cta_candidates.map(&:to_h)).to eq(
       [
-        { label: 'Start Trial', url: 'https://example.com/signup', heading_path: 'Pricing > Pro', external: false },
-        { label: 'Contact Sales', url: 'https://sales.example.net/contact', heading_path: 'Pricing', external: true }
+        { label: 'Start Trial', url: 'https://example.com/signup', heading_path: 'Pricing > Pro', external: false }
       ]
     )
     expect(evidence_set.items.first.id).to match(/\A[0-9a-f]{64}\z/)
@@ -115,7 +114,7 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
         headers['x-chatring-knowledge-index'] == 'knowledge-v1' &&
         headers['x-chatring-binding-digest'] == 'a' * 64 &&
         headers['x-chatring-signature'].match?(/\A[0-9a-f]{64}\z/) &&
-        body == { 'query' => 'How much is Pro?', 'source_id' => 'source-uuid', 'limit' => 4, 'score_threshold' => 0.62 }
+        body == { 'query' => 'How much is Pro?', 'source_id' => 'source-uuid', 'limit' => 20, 'score_threshold' => 0.62 }
     end
     expect(WebMock).to request_matcher
   end
@@ -137,9 +136,10 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
     expect(result.items).to be_empty
   end
 
-  it 'does not accept compliance claims from marketing pages' do
+  it 'returns compliance and legal evidence with authority metadata for the Brain to evaluate' do
     marketing_manifest = source_manifest.deep_dup
     marketing_manifest[provider_source_reference][:authority_class] = 'marketing'
+    marketing_manifest[provider_source_reference][:risk_flags] = ['possible_compliance_claim']
     stub_request(:post, retrieval_url).to_return(
       status: 200,
       headers: { 'Content-Type' => 'application/json' },
@@ -152,25 +152,11 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
       source_manifest: marketing_manifest
     )
 
-    expect(result.status).to eq('insufficient_evidence')
-    expect(result.items).to be_empty
-  end
-
-  it 'does not answer legal-policy questions from pricing or marketing evidence' do
-    stub_request(:post, retrieval_url).to_return(
-      status: 200,
-      headers: { 'Content-Type' => 'application/json' },
-      body: accepted_payload(authority_text: 'The Lite plan costs $29 per month.').to_json
+    expect(result.status).to eq('accepted')
+    expect(result.items.first).to have_attributes(
+      authority_class: 'marketing',
+      risk_flags: ['possible_compliance_claim']
     )
-
-    result = provider.retrieve(
-      query: 'What is the refund policy?',
-      knowledge_index_id: 'knowledge-v1',
-      source_manifest: source_manifest
-    )
-
-    expect(result.status).to eq('insufficient_evidence')
-    expect(result.items).to be_empty
   end
 
   it 'normalizes an unscored provider result as a typed invalid response' do

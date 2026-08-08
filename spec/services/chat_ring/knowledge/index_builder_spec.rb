@@ -1,6 +1,12 @@
 require 'rails_helper'
 
 RSpec.describe ChatRing::Knowledge::IndexBuilder do
+  around do |example|
+    with_modified_env DOCSGPT_SCORE_THRESHOLD: '0.35' do
+      example.run
+    end
+  end
+
   let(:account) { create(:account) }
   let(:knowledge_base) { ChatRing::KnowledgeBase.for_account!(account) }
 
@@ -14,8 +20,26 @@ RSpec.describe ChatRing::Knowledge::IndexBuilder do
     expect(index.documents.map(&:knowledge_material)).to contain_exactly(first_page, second_page, file)
     expect(index.documents.pluck(:provider_status).uniq).to eq(['pending'])
     expect(knowledge_base.knowledge_indexes.count).to eq(1)
-    expect(described_class.build!(knowledge_base)).to be_nil
+    expect(described_class.build!(knowledge_base)).to eq(index)
     expect(knowledge_base.knowledge_indexes.count).to eq(1)
+  end
+
+  it 'builds a replacement when the hidden retrieval configuration changes' do
+    website_material('https://example.com/docs', 'Current content')
+    original = described_class.build!(knowledge_base)
+    make_ready(original)
+    ChatRing::Knowledge::IndexActivationService.activate!(original)
+
+    replacement = with_modified_env(DOCSGPT_SCORE_THRESHOLD: '0.40') do
+      described_class.build!(knowledge_base)
+    end
+
+    expect(replacement).to be_present
+    expect(replacement).not_to eq(original)
+    expect(replacement.config_snapshot.dig('retrieval', 'score_threshold')).to eq(0.40)
+    make_ready(replacement)
+    expect(ChatRing::Knowledge::IndexActivationService.activate!(replacement)).to eq(:activated)
+    expect(knowledge_base.reload.active_knowledge_index).to eq(replacement)
   end
 
   it 'discards an older build instead of activating it over a newer material catalog' do
@@ -68,7 +92,7 @@ RSpec.describe ChatRing::Knowledge::IndexBuilder do
     )
   end
 
-  def file_material(filename, body)
+  def file_material(filename, body) # rubocop:disable Metrics/MethodLength
     source = knowledge_base.file_sources.create!(
       source_kind: 'pdf',
       original_filename: filename,

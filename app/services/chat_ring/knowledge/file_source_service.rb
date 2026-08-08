@@ -14,10 +14,8 @@ class ChatRing::Knowledge::FileSourceService
     @actor = actor
   end
 
-  def create! # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
-    unless ChatRing::KnowledgeFileSource::AUTHORITY_CLASSES.include?(@authority_class)
-      raise Error, 'Knowledge authority class is invalid'
-    end
+  def create!
+    raise Error, 'Knowledge authority class is invalid' unless ChatRing::KnowledgeFileSource::AUTHORITY_CLASSES.include?(@authority_class)
 
     preflight = ChatRing::Knowledge::FilePreflight.call(
       io: @uploaded_file.tempfile,
@@ -29,6 +27,16 @@ class ChatRing::Knowledge::FileSourceService
     existing = duplicate_source(preflight.content_hash, parser_profile_digest)
     return reuse_existing_source(existing, preflight) if existing
 
+    source, parse_token = create_source_and_material!(preflight, parser_profile, parser_profile_digest)
+    enqueue_parse!(source, parse_token)
+    Result.new(source: source, reused: false)
+  rescue ActiveRecord::RecordNotUnique
+    reuse_existing_source(duplicate_source!(preflight.content_hash, parser_profile_digest), preflight)
+  end
+
+  private
+
+  def create_source_and_material!(preflight, parser_profile, parser_profile_digest) # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
     source = @knowledge_base.file_sources.create!(
       source_kind: preflight.source_kind,
       original_filename: preflight.filename,
@@ -42,6 +50,8 @@ class ChatRing::Knowledge::FileSourceService
       created_by: @actor,
       approved_by: @actor
     )
+    parse_token = SecureRandom.uuid
+    source.update!(parse_token: parse_token)
     attach_file!(source, preflight)
     source.knowledge_base.materials.create!(
       file_source: source,
@@ -52,13 +62,12 @@ class ChatRing::Knowledge::FileSourceService
       authority_class: source.authority_class,
       metadata: source.metadata
     )
-    ChatRing::Knowledge::FileParseJob.perform_later(source.id)
-    Result.new(source: source, reused: false)
-  rescue ActiveRecord::RecordNotUnique
-    reuse_existing_source(duplicate_source!(preflight.content_hash, parser_profile_digest), preflight)
+    [source, parse_token]
+  rescue StandardError
+    source&.file&.purge if source&.file&.attached?
+    source&.destroy! if source&.persisted?
+    raise
   end
-
-  private
 
   def duplicate_source(content_hash, parser_profile_digest)
     @knowledge_base.file_sources.find_by(
@@ -71,9 +80,13 @@ class ChatRing::Knowledge::FileSourceService
     duplicate_source(content_hash, parser_profile_digest) || raise(Error, 'Duplicate knowledge source could not be loaded')
   end
 
+  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
   def reuse_existing_source(source, preflight)
     needs_parse = false
-    source.with_lock do
+    parse_token = nil
+    ChatRing::KnowledgeMaterial.transaction do # rubocop:disable Metrics/BlockLength
+      @knowledge_base.lock!
+      source.lock!
       source.update!(authority_class: @authority_class, approved_by: @actor)
       if source.status == 'deleted'
         attach_file!(source, preflight, destroy_source_on_failure: false) unless source.file.attached?
@@ -96,20 +109,39 @@ class ChatRing::Knowledge::FileSourceService
           source.update!(status: 'uploaded', parse_started_at: nil, failure_code: nil, failure_message: nil)
           needs_parse = true
         end
+      elsif source.status == 'uploaded'
+        needs_parse = true
+      elsif source.status == 'parsing' && source.parse_started_at.present? &&
+            source.parse_started_at <= ChatRing::Knowledge::FileParseService::PARSE_STALE_AFTER.ago
+        source.update!(status: 'uploaded', parse_started_at: nil, failure_code: nil, failure_message: nil)
+        needs_parse = true
+      end
+      if needs_parse
+        parse_token = SecureRandom.uuid
+        source.update!(parse_token: parse_token)
+        restore_processing_material!(source)
+      elsif source.status == 'ready'
+        restore_ready_material!(source)
       end
     end
 
     if needs_parse
-      restore_processing_material!(source)
-      ChatRing::Knowledge::FileParseJob.perform_later(source.id)
+      enqueue_parse!(source, parse_token)
     elsif source.status == 'ready'
-      ChatRing::Knowledge::FileParseService.restore_material!(source)
+      begin
+        ChatRing::Knowledge::IndexBuilder.enqueue!(@knowledge_base)
+      rescue StandardError => e
+        ChatRing::Knowledge::FileParseService.mark_index_failure!(source, e)
+        raise
+      end
     end
     Result.new(source: source, reused: true)
   end
+  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
 
   def restore_processing_material!(source)
     material = source.knowledge_base.materials.find_or_initialize_by(source_reference: source.source_reference)
+    material.material_key = SecureRandom.uuid if material.persisted? && !material.active?
     material.assign_attributes(
       file_source: source,
       website_source: nil,
@@ -121,6 +153,12 @@ class ChatRing::Knowledge::FileSourceService
       deleted_at: nil
     )
     material.save!
+  end
+
+  def restore_ready_material!(source)
+    material = source.knowledge_base.materials.find_or_initialize_by(source_reference: source.source_reference)
+    material.update!(material_key: SecureRandom.uuid) if material.persisted? && !material.active?
+    ChatRing::Knowledge::FileParseService.upsert_material!(source)
   end
 
   def attach_file!(source, preflight, destroy_source_on_failure: true)
@@ -135,6 +173,20 @@ class ChatRing::Knowledge::FileSourceService
   rescue StandardError
     source.destroy! if destroy_source_on_failure
     blob&.purge
+    raise
+  end
+
+  def enqueue_parse!(source, parse_token)
+    job = ChatRing::Knowledge::FileParseJob.perform_later(source.id, parse_token)
+    raise Error, 'File parsing could not be queued' unless job.successfully_enqueued?
+  rescue StandardError => e
+    source.with_lock do
+      source.update!(status: 'failed', parse_token: nil, failure_code: e.class.name,
+                     failure_message: 'File parsing could not be queued')
+      source.materials.active.find_each do |material|
+        material.update!(status: material.markdown.present? ? 'refresh_failed' : 'failed')
+      end
+    end
     raise
   end
 end

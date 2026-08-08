@@ -21,5 +21,4 @@ RSpec.context 'with valid schedule.yml' do
     # ensure that no duplicates exist
     expect(schedule_keys.count).to eq(schedule_keys.uniq.count)
   end
-
 end

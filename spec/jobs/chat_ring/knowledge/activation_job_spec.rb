@@ -22,4 +22,12 @@ RSpec.describe ChatRing::Knowledge::ActivationJob do
 
     expect(ChatRing::Knowledge::IndexActivationService).to have_received(:activate!).with(index)
   end
+
+  it 'is harmless when the same activation job is delivered twice' do
+    knowledge_base.update!(active_knowledge_index: index)
+    index.update!(status: 'active', activated_at: Time.current)
+
+    expect { described_class.perform_now(index.id) }.not_to raise_error
+    expect(knowledge_base.reload.active_knowledge_index).to eq(index)
+  end
 end

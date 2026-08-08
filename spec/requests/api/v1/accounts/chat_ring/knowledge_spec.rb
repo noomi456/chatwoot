@@ -41,6 +41,7 @@ RSpec.describe 'ChatRing Training Materials API', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body).to include('name' => 'Guide.pdf', 'markdown' => material.markdown)
+    expect(response.parsed_body['source_reference']).to be_nil
     expect(response.parsed_body.keys).not_to include('file', 'blob_key', 'storage_url')
   end
 
@@ -55,7 +56,7 @@ RSpec.describe 'ChatRing Training Materials API', type: :request do
     expect(knowledge_base.materials.active).to be_empty
   end
 
-  it 'routes Re-run to Firecrawl for the exact selected material' do
+  it 'routes Re-run to Firecrawl for that exact material' do
     material = website_material
     allow(ChatRing::Knowledge::WebsiteSourceService).to receive(:rerun!).with(material).and_return(material.website_source)
 
@@ -67,7 +68,8 @@ RSpec.describe 'ChatRing Training Materials API', type: :request do
 
   it 'routes a single webpage directly to Scrape without a website Map request' do
     allow(ChatRing::Knowledge::WebsiteSourceService).to receive(:add_webpage!).and_call_original
-    allow(ChatRing::Knowledge::WebsiteExtractionJob).to receive(:perform_later)
+    extraction_job = instance_double(ChatRing::Knowledge::WebsiteExtractionJob, successfully_enqueued?: true)
+    allow(ChatRing::Knowledge::WebsiteExtractionJob).to receive(:perform_later).and_return(extraction_job)
 
     post "#{base_path}/webpages",
          params: { url: 'https://example.com/features' },
@@ -76,6 +78,20 @@ RSpec.describe 'ChatRing Training Materials API', type: :request do
     expect(response).to have_http_status(:accepted)
     expect(ChatRing::Knowledge::WebsiteExtractionJob).to have_received(:perform_later)
       .with(kind_of(Integer), ['https://example.com/features'], false, 'single', kind_of(String))
+  end
+
+  it 'routes one complete-website Add command through Map and automatic extraction' do
+    source = knowledge_base.website_sources.create!(root_url: 'https://example.com/', status: 'extracting')
+    allow(ChatRing::Knowledge::WebsiteSourceService).to receive(:add_website!).and_return(source)
+
+    post "#{base_path}/websites",
+         params: { root_url: 'https://example.com/' },
+         headers: admin.create_new_auth_token
+
+    expect(response).to have_http_status(:accepted)
+    expect(ChatRing::Knowledge::WebsiteSourceService).to have_received(:add_website!).with(
+      account: account, root_url: 'https://example.com/', actor: admin
+    )
   end
 
   it 'does not expose version, publish, or rollback management routes' do
@@ -92,7 +108,7 @@ RSpec.describe 'ChatRing Training Materials API', type: :request do
   end
 
   def create_website_material(base, source, url)
-    markdown = '# Website\n\nCurrent product information from the selected webpage.'
+    markdown = '# Website\n\nCurrent product information from the webpage.'
     base.materials.create!(
       website_source: source, source_kind: 'website', source_reference: url, public_url: url,
       title: 'Website', status: 'available', markdown: markdown,

@@ -1,6 +1,7 @@
 require 'digest'
 require 'uri'
 
+# rubocop:disable Metrics/ClassLength, Style/OneClassPerFile
 class RebuildChatRingKnowledgeAsWorkspaceCatalog < ActiveRecord::Migration[7.1]
   class LegacyVersion < ActiveRecord::Base
     self.table_name = 'chat_ring_knowledge_versions'
@@ -30,6 +31,7 @@ class RebuildChatRingKnowledgeAsWorkspaceCatalog < ActiveRecord::Migration[7.1]
     attach_hidden_provider_builds
     backfill_workspace_catalogs
     enforce_workspace_scope
+    create_cutover_cleanup_records
     remove_per_inbox_publication_boundary
     rename_hidden_provider_storage
   end
@@ -85,6 +87,8 @@ class RebuildChatRingKnowledgeAsWorkspaceCatalog < ActiveRecord::Migration[7.1]
       t.string :root_url, null: false
       t.string :status, null: false, default: 'mapping'
       t.uuid :extraction_token
+      t.datetime :extraction_started_at
+      t.datetime :firecrawl_request_started_at
       t.string :firecrawl_crawl_id
       t.jsonb :mapped_manifest, null: false, default: []
       t.jsonb :crawl_errors, null: false, default: []
@@ -96,10 +100,18 @@ class RebuildChatRingKnowledgeAsWorkspaceCatalog < ActiveRecord::Migration[7.1]
       t.timestamps
     end
     add_index :chat_ring_knowledge_website_sources, :source_key, unique: true
-    add_index :chat_ring_knowledge_website_sources, [:knowledge_base_id, :source_type, :root_url], unique: true,
-              name: 'index_chatring_web_sources_on_base_type_and_url'
-    add_index :chat_ring_knowledge_website_sources, :firecrawl_crawl_id, unique: true,
-              where: 'firecrawl_crawl_id IS NOT NULL'
+    add_index(
+      :chat_ring_knowledge_website_sources,
+      [:knowledge_base_id, :source_type, :root_url],
+      unique: true,
+      name: 'index_chatring_web_sources_on_base_type_and_url'
+    )
+    add_index(
+      :chat_ring_knowledge_website_sources,
+      :firecrawl_crawl_id,
+      unique: true,
+      where: 'firecrawl_crawl_id IS NOT NULL'
+    )
     add_check_constraint :chat_ring_knowledge_website_sources,
                          "status IN ('mapping', 'mapped', 'extracting', 'available', 'refreshing', " \
                          "'refresh_failed', 'failed', 'deleted')",
@@ -130,8 +142,12 @@ class RebuildChatRingKnowledgeAsWorkspaceCatalog < ActiveRecord::Migration[7.1]
       t.timestamps
     end
     add_index :chat_ring_knowledge_materials, :material_key, unique: true
-    add_index :chat_ring_knowledge_materials, [:knowledge_base_id, :source_reference], unique: true,
-              name: 'index_chatring_materials_on_base_and_reference'
+    add_index(
+      :chat_ring_knowledge_materials,
+      [:knowledge_base_id, :source_reference],
+      unique: true,
+      name: 'index_chatring_materials_on_base_and_reference'
+    )
     add_index :chat_ring_knowledge_materials, [:knowledge_base_id, :deleted_at],
               name: 'index_chatring_materials_on_base_and_deletion'
     add_check_constraint :chat_ring_knowledge_materials,
@@ -157,8 +173,13 @@ class RebuildChatRingKnowledgeAsWorkspaceCatalog < ActiveRecord::Migration[7.1]
       t.timestamps
     end
     add_index :chat_ring_knowledge_scopes, [:workspace_id, :name], unique: true
-    add_index :chat_ring_knowledge_scopes, :workspace_id, unique: true,
-              where: 'business_wide = TRUE', name: 'index_chatring_scopes_on_business_wide_workspace'
+    add_index(
+      :chat_ring_knowledge_scopes,
+      :workspace_id,
+      unique: true,
+      where: 'business_wide = TRUE',
+      name: 'index_chatring_scopes_on_business_wide_workspace'
+    )
 
     create_table :chat_ring_knowledge_scope_materials do |t|
       t.references :knowledge_scope, null: false, foreign_key: { to_table: :chat_ring_knowledge_scopes, on_delete: :cascade }
@@ -166,8 +187,8 @@ class RebuildChatRingKnowledgeAsWorkspaceCatalog < ActiveRecord::Migration[7.1]
       t.string :access, null: false
       t.timestamps
     end
-    add_index :chat_ring_knowledge_scope_materials, [:knowledge_scope_id, :knowledge_material_id], unique: true,
-              name: 'index_chatring_scope_materials_on_scope_and_material'
+    add_index :chat_ring_knowledge_scope_materials, [:knowledge_scope_id, :knowledge_material_id],
+              unique: true, name: 'index_chatring_scope_materials_on_scope_and_material'
     add_check_constraint :chat_ring_knowledge_scope_materials,
                          "access IN ('allow', 'deny')",
                          name: 'chatring_scope_materials_access_check'
@@ -180,6 +201,7 @@ class RebuildChatRingKnowledgeAsWorkspaceCatalog < ActiveRecord::Migration[7.1]
                   foreign_key: { to_table: :chat_ring_knowledge_bases, on_delete: :cascade }
     add_reference :chat_ring_knowledge_file_sources, :knowledge_base,
                   foreign_key: { to_table: :chat_ring_knowledge_bases, on_delete: :cascade }
+    add_column :chat_ring_knowledge_file_sources, :parse_token, :uuid
     add_reference :chat_ring_knowledge_documents, :knowledge_material,
                   foreign_key: { to_table: :chat_ring_knowledge_materials, on_delete: :restrict }
     add_reference :chat_ring_knowledge_provider_cleanups, :knowledge_base,
@@ -391,7 +413,7 @@ class RebuildChatRingKnowledgeAsWorkspaceCatalog < ActiveRecord::Migration[7.1]
       raise ActiveRecord::IrreversibleMigration,
             "Account #{account_id} has conflicting per-Inbox knowledge; resolve it before Workspace cutover"
     end
-    publications.max_by { |publication| [publication.published_at || Time.at(0), publication.id] }.knowledge_version_id
+    publications.max_by { |publication| [publication.published_at || Time.zone.at(0), publication.id] }.knowledge_version_id
   end
 
   def normalize_hidden_indexes(account_id, active_id)
@@ -419,6 +441,41 @@ class RebuildChatRingKnowledgeAsWorkspaceCatalog < ActiveRecord::Migration[7.1]
     SQL
   end
 
+  def create_cutover_cleanup_records
+    LegacyVersion.where(status: %w[retired failed discarded]).find_each do |index|
+      next if select_value(<<~SQL.squish)
+        SELECT 1 FROM chat_ring_knowledge_provider_cleanups WHERE knowledge_version_id = #{index.id}
+      SQL
+
+      source_ids = LegacyDocument.where(knowledge_version_id: index.id).distinct.pluck(:provider_source_id).compact_blank
+      next if source_ids.empty?
+
+      if source_ids.many?
+        raise ActiveRecord::IrreversibleMigration,
+              "Provider index #{index.id} has multiple DocsGPT sources; resolve it before Workspace cutover"
+      end
+
+      binding_digest = legacy_binding_digest(index)
+      quoted_source_id = connection.quote(source_ids.first)
+      quoted_digest = connection.quote(binding_digest)
+      execute <<~SQL.squish
+        INSERT INTO chat_ring_knowledge_provider_cleanups
+          (knowledge_version_id, knowledge_base_id, account_id, inbox_id, provider_source_id, binding_digest,
+           status, attempts, eligible_at, created_at, updated_at)
+        VALUES
+          (#{index.id}, #{index.knowledge_base_id}, #{index.account_id}, #{index.inbox_id}, #{quoted_source_id}, #{quoted_digest},
+           'pending', 0, CURRENT_TIMESTAMP + INTERVAL '1 hour', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      SQL
+    end
+  end
+
+  def legacy_binding_digest(index)
+    document_hashes = LegacyDocument.where(knowledge_version_id: index.id).order(:id).pluck(:content_hash)
+    Digest::SHA256.hexdigest(
+      [index.manifest_digest, index.provider_release, index.config_snapshot, document_hashes].to_json
+    )
+  end
+
   def fallback_active_provider_build(account_id)
     LegacyVersion.where(account_id: account_id, status: 'published').order(published_at: :desc, id: :desc).pick(:id)
   end
@@ -429,18 +486,18 @@ class RebuildChatRingKnowledgeAsWorkspaceCatalog < ActiveRecord::Migration[7.1]
     Digest::SHA256.hexdigest(rows.to_json)
   end
 
-  def backfill_materials(account_id, knowledge_base_id, active_version_id)
+  def backfill_materials(account_id, knowledge_base_id, active_version_id) # rubocop:disable Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
     version_ids = LegacyVersion.where(account_id: account_id).pluck(:id)
     documents = LegacyDocument.where(knowledge_version_id: version_ids).order(:id).to_a
     active_references = documents.select { |document| document.knowledge_version_id == active_version_id }
-                                 .map(&:source_reference).to_set
+                                 .to_set(&:source_reference)
 
     documents.group_by(&:source_reference).each_value do |rows|
       document = rows.find { |row| row.knowledge_version_id == active_version_id } || rows.last
       source_columns = material_source_columns(document, knowledge_base_id)
       active_material = active_references.include?(document.source_reference) && !disabled_file_document?(document)
       deleted_at = active_material ? 'NULL' : 'CURRENT_TIMESTAMP'
-      material_id = select_value(<<~SQL.squish).to_i
+      inserted_material = select_rows(<<~SQL.squish).first
         INSERT INTO chat_ring_knowledge_materials
           (knowledge_base_id, website_source_id, file_source_id, source_kind, source_reference, title, public_url,
            status, markdown, content_hash, authority_class, metadata, extracted_at, deleted_at, created_at, updated_at)
@@ -451,11 +508,15 @@ class RebuildChatRingKnowledgeAsWorkspaceCatalog < ActiveRecord::Migration[7.1]
            #{quote(document.metadata.to_h['authority_class'].presence || 'product_documentation')},
            #{quote(document.metadata.to_json)}::jsonb, #{quote(document.updated_at)}, #{deleted_at},
            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        RETURNING id
+        RETURNING id, material_key
       SQL
+      material_id = inserted_material.fetch('id').to_i
+      material_key = inserted_material.fetch('material_key')
       execute <<~SQL.squish
         UPDATE chat_ring_knowledge_documents
-        SET knowledge_material_id = #{material_id}
+        SET knowledge_material_id = #{material_id},
+            metadata = COALESCE(metadata, '{}'::jsonb) ||
+                       jsonb_build_object('material_key', #{quote(material_key)}::text)
         WHERE knowledge_version_id IN (#{version_ids.join(',')})
           AND source_reference = #{quote(document.source_reference)}
       SQL
@@ -523,3 +584,4 @@ class RebuildChatRingKnowledgeAsWorkspaceCatalog < ActiveRecord::Migration[7.1]
   end
   # rubocop:enable Metrics/AbcSize, Metrics/MethodLength
 end
+# rubocop:enable Metrics/ClassLength, Style/OneClassPerFile

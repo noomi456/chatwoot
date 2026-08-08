@@ -13,26 +13,13 @@ class ChatRing::Knowledge::Retriever
     index = active_provider_index(knowledge_base)
     return empty_set(query, limit) if index.blank? || knowledge_base.materials.retrievable.none?
 
-    provider(index).retrieve(
+    evidence_set = provider(index).retrieve(
       query: query,
       knowledge_index_id: index.id.to_s,
       source_manifest: source_manifest(index, knowledge_scope: knowledge_scope),
       limit: limit
     )
-  end
-
-  def self.preview(account:, query:, limit: ChatRing::Knowledge::DocsGptProvider::DEFAULT_EVIDENCE_LIMIT,
-                   knowledge_scope: nil)
-    knowledge_base = knowledge_base_for(account)
-    index = active_provider_index(knowledge_base)
-    return empty_set(query, limit) if index.blank? || knowledge_base.materials.retrievable.none?
-
-    provider(index).retrieve(
-      query: query,
-      knowledge_index_id: index.id.to_s,
-      source_manifest: source_manifest(index, knowledge_scope: knowledge_scope),
-      limit: limit
-    )
+    filter_live_evidence(evidence_set, index, knowledge_scope)
   end
 
   def self.knowledge_base_for(account)
@@ -49,11 +36,13 @@ class ChatRing::Knowledge::Retriever
   end
   private_class_method :active_provider_index
 
-  def self.source_manifest(index, knowledge_scope:)
+  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
+  def self.source_manifest(index, knowledge_scope: nil)
     index.documents.includes(:knowledge_material).index_by(&:provider_source_reference).transform_values do |document|
       material = document.knowledge_material
       {
-        'active' => material.active? && scope_allows?(material, knowledge_scope),
+        'active' => material.active? && document.metadata['material_key'] == material.material_key &&
+          scope_allows?(material, knowledge_scope),
         'content_hash' => document.content_hash,
         'source_kind' => document.source_kind,
         'source_reference' => document.source_reference,
@@ -62,11 +51,13 @@ class ChatRing::Knowledge::Retriever
         'locator' => document.public_url || document.title,
         'page_locator' => document.metadata['page_locator'],
         'authority_class' => document.metadata['authority_class'].presence || material.authority_class,
+        'risk_flags' => Array(document.metadata['risk_flags'] || material.risk_flags),
         'headings' => document.metadata['headings'] || [],
         'cta_candidates' => document.metadata['cta_candidates'] || []
       }
     end
   end
+  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
 
   def self.scope_allows?(material, scope)
     return true if scope.blank?
@@ -78,6 +69,34 @@ class ChatRing::Knowledge::Retriever
     scope.business_wide?
   end
   private_class_method :scope_allows?
+
+  def self.filter_live_evidence(evidence_set, index, knowledge_scope) # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
+    return evidence_set unless evidence_set.status == 'accepted'
+
+    documents = index.documents.includes(:knowledge_material).index_by(&:source_reference)
+    items = evidence_set.items.select do |evidence|
+      document = documents[evidence.source_reference]
+      next false if document.blank?
+
+      material = document.knowledge_material.reload
+      material.active? && document.metadata['material_key'] == material.material_key &&
+        scope_allows?(material, knowledge_scope)
+    end
+    status = items.empty? ? 'insufficient_evidence' : 'accepted'
+    ChatRing::Knowledge::EvidenceSet.new(
+      knowledge_index_id: evidence_set.knowledge_index_id,
+      provider: evidence_set.provider,
+      provider_release: evidence_set.provider_release,
+      query: evidence_set.query,
+      status: status,
+      error_code: evidence_set.error_code,
+      latency_ms: evidence_set.latency_ms,
+      retrieval_strategy: evidence_set.retrieval_strategy,
+      retrieval_configuration: evidence_set.retrieval_configuration,
+      items: items.freeze
+    )
+  end
+  private_class_method :filter_live_evidence
 
   def self.provider(index)
     source_ids = index.documents.pluck(:provider_source_id).compact_blank.uniq

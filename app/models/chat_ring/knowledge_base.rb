@@ -29,11 +29,22 @@ class ChatRing::KnowledgeBase < ApplicationRecord
 
   def self.for_account!(account)
     workspace = ChatRing::Workspace.for_account!(account)
-    knowledge_base = create_or_find_by!(workspace: workspace)
-    workspace.knowledge_scopes.create_or_find_by!(name: 'Business-wide') do |scope|
+    knowledge_base = find_or_create_by!(workspace: workspace)
+    workspace.knowledge_scopes.find_or_create_by!(name: 'Business-wide') do |scope|
       scope.business_wide = true
     end
     knowledge_base
+  end
+
+  def active_document_for(material)
+    document = active_knowledge_index&.documents&.find_by(knowledge_material_id: material.id)
+    return if document.blank? || document.metadata['material_key'] != material.material_key
+
+    document
+  end
+
+  def material_available?(material)
+    active_document_for(material).present?
   end
 
   private

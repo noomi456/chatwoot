@@ -27,10 +27,12 @@ RSpec.describe ChatRing::Knowledge::MaterialService do
     )
     material
 
+    index_job = have_enqueued_job(ChatRing::Knowledge::IndexBuildJob).with(knowledge_base.id)
+    purge_job = have_enqueued_job(ChatRing::Knowledge::FileAttachmentPurgeJob).with(source.id, source.file.blob_id)
+
     expect do
       described_class.delete!(material)
-    end.to have_enqueued_job(ChatRing::Knowledge::IndexBuildJob).with(knowledge_base.id)
-      .and have_enqueued_job(ChatRing::Knowledge::FileAttachmentPurgeJob).with(source.id, source.file.blob_id)
+    end.to index_job.and(purge_job)
 
     expect(material.reload).to have_attributes(deleted_at: be_present, markdown: nil, content_hash: nil)
     expect(source.reload).to have_attributes(status: 'deleted', markdown: nil, content_hash: nil)

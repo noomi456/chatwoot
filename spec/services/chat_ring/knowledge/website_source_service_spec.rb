@@ -5,26 +5,20 @@ RSpec.describe ChatRing::Knowledge::WebsiteSourceService do
   let(:admin) { create(:user, account: account, role: :administrator) }
   let(:firecrawl) { instance_double(ChatRing::Knowledge::FirecrawlClient) }
 
-  it 'maps first and excludes useless routes before the user starts paid extraction' do
+  it 'maps, excludes useless routes, and queues the remaining pages from one Add command' do
     allow(firecrawl).to receive(:map).and_return(
       [{ 'url' => 'https://example.com/docs' }, { 'url' => 'https://example.com/privacy-policy' }]
     )
+    extraction_job = instance_double(ChatRing::Knowledge::WebsiteExtractionJob, successfully_enqueued?: true)
+    allow(ChatRing::Knowledge::WebsiteExtractionJob).to receive(:perform_later).and_return(extraction_job)
 
-    source = described_class.map!(
+    source = described_class.add_website!(
       account: account, root_url: 'https://example.com/', actor: admin, firecrawl: firecrawl
     )
 
     expect(source.mapped_manifest.find { |entry| entry['url'].end_with?('/docs') }).to include('included' => true)
     expect(source.mapped_manifest.find { |entry| entry['url'].end_with?('/privacy-policy') })
       .to include('included' => false)
-  end
-
-  it 'creates one processing Training Material per page selected by the user' do
-    source = mapped_source
-    allow(ChatRing::Knowledge::WebsiteExtractionJob).to receive(:perform_later)
-
-    described_class.extract!(source: source, selected_urls: ['https://example.com/docs'])
-
     expect(source.materials.active).to contain_exactly(
       an_object_having_attributes(source_reference: 'https://example.com/docs', status: 'processing')
     )
@@ -33,7 +27,8 @@ RSpec.describe ChatRing::Knowledge::WebsiteSourceService do
   end
 
   it 'scrapes one explicit webpage without calling Firecrawl Map' do
-    allow(ChatRing::Knowledge::WebsiteExtractionJob).to receive(:perform_later)
+    extraction_job = instance_double(ChatRing::Knowledge::WebsiteExtractionJob, successfully_enqueued?: true)
+    allow(ChatRing::Knowledge::WebsiteExtractionJob).to receive(:perform_later).and_return(extraction_job)
 
     source = described_class.add_webpage!(
       account: account, url: 'https://example.com/features', actor: admin
@@ -52,7 +47,7 @@ RSpec.describe ChatRing::Knowledge::WebsiteSourceService do
       .with(source.id, ['https://example.com/features'], false, 'single', source.reload.extraction_token)
   end
 
-  it 're-runs only the exact webpage selected by the user' do
+  it 're-runs only the exact Training Material requested by the user' do
     source = mapped_source
     material = source.materials.create!(
       knowledge_base: source.knowledge_base,
@@ -60,7 +55,8 @@ RSpec.describe ChatRing::Knowledge::WebsiteSourceService do
       public_url: 'https://example.com/docs', title: 'Docs', status: 'available',
       markdown: '# Existing', content_hash: Digest::SHA256.hexdigest('# Existing'), extracted_at: Time.current
     )
-    allow(ChatRing::Knowledge::WebsiteExtractionJob).to receive(:perform_later)
+    extraction_job = instance_double(ChatRing::Knowledge::WebsiteExtractionJob, successfully_enqueued?: true)
+    allow(ChatRing::Knowledge::WebsiteExtractionJob).to receive(:perform_later).and_return(extraction_job)
 
     described_class.rerun!(material)
 
@@ -71,6 +67,7 @@ RSpec.describe ChatRing::Knowledge::WebsiteSourceService do
 
   it 'keeps a user-deleted page excluded when the same full website is mapped again' do
     source = mapped_source
+    source.update!(status: 'available')
     source.materials.create!(
       knowledge_base: source.knowledge_base,
       source_kind: 'website', source_reference: 'https://example.com/docs',

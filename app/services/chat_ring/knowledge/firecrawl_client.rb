@@ -21,7 +21,7 @@ class ChatRing::Knowledge::FirecrawlClient
   end
 
   def map(url:, limit: DEFAULT_MAP_LIMIT) # rubocop:disable Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
-    root_url = canonical_url(url)
+    root_url = canonical_url(url, preserve_query: false)
     resolved_limit = bounded_limit(limit)
     payload = request_json(
       :post,
@@ -46,7 +46,7 @@ class ChatRing::Knowledge::FirecrawlClient
 
   def scrape(url:, max_age: nil)
     body = {
-      url: canonical_url(url),
+      url: canonical_url(url, preserve_query: true),
       formats: ['markdown'],
       onlyMainContent: true
     }
@@ -61,7 +61,7 @@ class ChatRing::Knowledge::FirecrawlClient
   end
 
   def start_batch_scrape(urls:, max_age: nil)
-    normalized_urls = Array(urls).map { |url| canonical_url(url) }.uniq
+    normalized_urls = Array(urls).map { |url| canonical_url(url, preserve_query: true) }.uniq
     raise ConfigurationError, 'urls must contain at least one URL' if normalized_urls.empty?
 
     bounded_limit(normalized_urls.length)
@@ -105,14 +105,18 @@ class ChatRing::Knowledge::FirecrawlClient
     request_json(:get, "/v2/batch/scrape/#{escape_segment(batch_id)}/errors")
   end
 
-  def self.canonical_url(value)
+  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
+  def self.canonical_url(value, preserve_query: false)
     raw = value.to_s.strip
     raw = "https://#{raw}" unless raw.match?(%r{\Ahttps?://}i)
     uri = URI.parse(raw)
     raise ConfigurationError, 'URL must use http or https' unless uri.is_a?(URI::HTTP) && uri.host.present?
+    unless ChatRing::Knowledge::MarkdownStructure.safe_public_http_url?(uri.to_s)
+      raise ConfigurationError, 'URL must be a safe public http or https URL'
+    end
 
     uri.fragment = nil
-    uri.query = nil
+    uri.query = nil unless preserve_query
     uri.host = uri.host.downcase
     uri.path = '/' if uri.path.blank?
     uri.path = uri.path.delete_suffix('/') unless uri.path == '/'
@@ -120,6 +124,7 @@ class ChatRing::Knowledge::FirecrawlClient
   rescue URI::InvalidURIError
     raise ConfigurationError, 'URL is invalid'
   end
+  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
 
   private
 
@@ -152,14 +157,14 @@ class ChatRing::Knowledge::FirecrawlClient
     return if value.blank?
 
     {
-      'url' => canonical_url(value),
+      'url' => canonical_url(value, preserve_query: false),
       'title' => entry.is_a?(Hash) ? entry['title'].to_s.presence : nil,
       'description' => entry.is_a?(Hash) ? entry['description'].to_s.presence : nil
     }.compact
   end
 
-  def canonical_url(value)
-    self.class.canonical_url(value)
+  def canonical_url(value, preserve_query: false)
+    self.class.canonical_url(value, preserve_query: preserve_query)
   end
 
   def validated_base_uri(value)

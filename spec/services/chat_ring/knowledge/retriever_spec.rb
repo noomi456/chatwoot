@@ -9,10 +9,22 @@ RSpec.describe ChatRing::Knowledge::Retriever do
   it 'uses the same account Knowledge Base from two different inbox contexts' do
     index, = active_index
     allow(described_class).to receive(:provider).with(index).and_return(provider)
-    allow(provider).to receive(:retrieve).and_return(:evidence_set)
+    evidence_set = ChatRing::Knowledge::EvidenceSet.new(
+      knowledge_index_id: index.id.to_s,
+      provider: 'docs_gpt',
+      provider_release: index.provider_release,
+      query: 'Question',
+      status: 'accepted',
+      error_code: nil,
+      latency_ms: 1,
+      retrieval_strategy: 'classic_cosine',
+      retrieval_configuration: {},
+      items: [].freeze
+    )
+    allow(provider).to receive(:retrieve).and_return(evidence_set)
 
-    expect(described_class.retrieve(inbox: first_inbox, query: 'Question')).to eq(:evidence_set)
-    expect(described_class.retrieve(inbox: second_inbox, query: 'Question')).to eq(:evidence_set)
+    expect(described_class.retrieve(inbox: first_inbox, query: 'Question')).to have_attributes(status: 'insufficient_evidence')
+    expect(described_class.retrieve(inbox: second_inbox, query: 'Question')).to have_attributes(status: 'insufficient_evidence')
     expect(provider).to have_received(:retrieve).twice
   end
 
@@ -44,7 +56,7 @@ RSpec.describe ChatRing::Knowledge::Retriever do
     expect(result).to have_attributes(status: 'insufficient_evidence', items: [])
   end
 
-  def active_index
+  def active_index # rubocop:disable Metrics/MethodLength
     knowledge_base = ChatRing::KnowledgeBase.for_account!(account)
     source = knowledge_base.website_sources.create!(root_url: 'https://example.com/', status: 'available')
     markdown = '# Example\n\nShared business knowledge for every Assistant in this account.'
@@ -62,7 +74,10 @@ RSpec.describe ChatRing::Knowledge::Retriever do
       source_url: material.public_url, public_url: material.public_url, title: material.title,
       markdown: markdown, content_hash: material.content_hash, provider_file_name: 'example.md',
       provider_source_id: 'source-1', provider_source_reference: '/inputs/example.md', provider_status: 'ready',
-      metadata: { 'authority_class' => 'product_documentation', 'headings' => [], 'cta_candidates' => [] }
+      metadata: {
+        'authority_class' => 'product_documentation', 'headings' => [], 'cta_candidates' => [],
+        'material_key' => material.material_key
+      }
     )
     index.update!(status: 'active', activated_at: Time.current)
     knowledge_base.update!(active_knowledge_index: index)

@@ -10,7 +10,7 @@ RSpec.describe ChatRing::Workspace do
   end
 
   it 'rejects a material rule that crosses Workspace ownership' do
-    first_workspace = ChatRing::Workspace.for_account!(create(:account))
+    first_workspace = described_class.for_account!(create(:account))
     second_base = ChatRing::KnowledgeBase.for_account!(create(:account))
     source = second_base.website_sources.create!(root_url: 'https://other.example/', status: 'available')
     material = second_base.materials.create!(

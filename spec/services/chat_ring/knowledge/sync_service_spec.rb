@@ -46,9 +46,10 @@ RSpec.describe ChatRing::Knowledge::SyncService do
 
   it 'uploads the catalog once and marks the hidden index ready after provenance validation' do
     document = index.documents.first
+    allow(docs_gpt).to receive(:expected_source_id).with(index).and_return('source-1')
     allow(docs_gpt).to receive(:upload_index).with(index).and_return(task_id: 'task-1', source_id: 'source-1')
-    allow(docs_gpt).to receive(:task_status).with('task-1').and_return('status' => 'SUCCESS')
-    allow(docs_gpt).to receive(:chunks).with('source-1').and_return([])
+    allow(docs_gpt).to receive(:task_status).with(index, 'task-1', 'source-1').and_return('status' => 'SUCCESS')
+    allow(docs_gpt).to receive(:chunks).with(index, 'source-1').and_return([])
     allow(ChatRing::Knowledge::ProviderChunkValidator).to receive(:validate!)
       .and_return(document => '/inputs/example.md')
 
@@ -64,10 +65,11 @@ RSpec.describe ChatRing::Knowledge::SyncService do
   end
 
   it 'does not call Firecrawl while indexing already extracted Training Materials' do
+    allow(docs_gpt).to receive(:expected_source_id).with(index).and_return('source-1')
     allow(docs_gpt).to receive(:upload_index).and_return(task_id: 'task-1', source_id: 'source-1')
-    allow(docs_gpt).to receive(:task_status).and_return('status' => 'PENDING')
+    allow(docs_gpt).to receive(:task_status).with(index, 'task-1', 'source-1').and_return('status' => 'PENDING')
 
     expect(described_class.new(index, docs_gpt: docs_gpt).tick).to eq(:retry)
-    expect(WebMock).not_to have_requested(:post, %r{api\.firecrawl\.dev})
+    expect(WebMock).not_to have_requested(:post, /api\.firecrawl\.dev/)
   end
 end

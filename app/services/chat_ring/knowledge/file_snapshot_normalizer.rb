@@ -57,6 +57,7 @@ class ChatRing::Knowledge::FileSnapshotNormalizer
     if markdown.bytesize > ChatRing::KnowledgeDocument::MAX_MARKDOWN_LENGTH
       raise Error, "Parsed file exceeds #{ChatRing::KnowledgeDocument::MAX_MARKDOWN_LENGTH / 1.megabyte} MB of Markdown"
     end
+
     markdown
   end
 end

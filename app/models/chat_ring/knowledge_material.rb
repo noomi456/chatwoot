@@ -35,7 +35,7 @@ class ChatRing::KnowledgeMaterial < ApplicationRecord
   validate :available_snapshot_is_complete
 
   scope :active, -> { where(deleted_at: nil) }
-  scope :retrievable, -> { active.where.not(markdown: nil, content_hash: nil, extracted_at: nil) }
+  scope :retrievable, -> { active.where('markdown IS NOT NULL AND content_hash IS NOT NULL AND extracted_at IS NOT NULL') }
 
   def active?
     deleted_at.nil?

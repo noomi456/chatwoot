@@ -11,7 +11,9 @@ class ChatRing::Knowledge::ActivationJob < ApplicationJob
   end
 
   def perform(index_id)
-    index = ChatRing::KnowledgeIndex.find(index_id)
+    index = ChatRing::KnowledgeIndex.find_by(id: index_id)
+    return if index.nil?
+
     ChatRing::Knowledge::IndexActivationService.activate!(index)
   end
 end

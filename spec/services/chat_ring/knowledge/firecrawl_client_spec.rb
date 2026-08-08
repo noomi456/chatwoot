@@ -57,7 +57,7 @@ RSpec.describe ChatRing::Knowledge::FirecrawlClient do
     result = client.scrape(url: 'https://example.com/features', max_age: 0)
 
     expect(result).to include('markdown' => '# Features')
-    expect(WebMock).to have_requested(:post, 'https://api.firecrawl.dev/v2/scrape').with do |request|
+    request_matcher = have_requested(:post, 'https://api.firecrawl.dev/v2/scrape').with do |request|
       body = JSON.parse(request.body)
       body == {
         'url' => 'https://example.com/features',
@@ -66,6 +66,7 @@ RSpec.describe ChatRing::Knowledge::FirecrawlClient do
         'maxAge' => 0
       }
     end.once
+    expect(WebMock).to request_matcher
     expect(WebMock).not_to have_requested(:post, 'https://api.firecrawl.dev/v2/map')
     expect(WebMock).not_to have_requested(:post, 'https://api.firecrawl.dev/v2/batch/scrape')
   end

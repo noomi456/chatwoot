@@ -104,15 +104,12 @@ Rails.application.routes.draw do
           end
           namespace :chat_ring do
             namespace :knowledge do
-              resources :websites, only: [:index, :show, :create] do
-                post :extract, on: :member
-              end
+              resources :websites, only: [:create]
               resources :webpages, only: [:create]
               resources :file_sources, only: [:create]
               resources :materials, only: [:index, :show, :destroy] do
                 post :rerun, on: :member
               end
-              resources :retrieval_tests, only: [:create]
             end
           end
           resource :saml_settings, only: [:show, :create, :update, :destroy]

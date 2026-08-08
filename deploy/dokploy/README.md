@@ -46,7 +46,9 @@ This trust rule is valid only while the Tunnel-to-Traefik source is `172.17.0.1`
 3. Deploy the full immutable `sha-<40-character-commit>` GHCR tag.
 4. Generate all secrets outside Git and save them in Dokploy.
 5. Deploy and wait for `prepare` to exit successfully, then require healthy Rails/PostgreSQL/Redis and running Sidekiq.
-6. Verify `/health`, login, dashboard, widget, handoff, persistence, restart, and backup/restore behavior.
+6. After the Workspace Knowledge cutover, run `bundle exec rails chatring:knowledge:cleanup_resume` once to enqueue the
+   legacy provider-index cleanup rows created by the migration.
+7. Verify `/health`, login, dashboard, widget, handoff, persistence, restart, and backup/restore behavior.
 
 Phase 2A does not run a scheduled Firecrawl crawl/Monitor or hourly knowledge lifecycle reconciler. A user Add/Re-run/Delete
 command enqueues the bounded extraction and hidden DocsGPT index replacement needed to finish that command. Retired provider
@@ -54,7 +56,14 @@ indexes are deleted by a delayed, idempotent Sidekiq job after the one-hour in-f
 
 ## Rollback
 
-Set `CHATRING_IMAGE` to the previous verified full-commit tag and redeploy. Do not roll back PostgreSQL after a migration unless the release explicitly documents a compatible database rollback. Preserve the three named volumes.
+The Workspace Knowledge cutover migration is forward-only: it removes the old per-Inbox publication schema. Before deploying
+that migration, stop old workers, take and restore-test a database backup, and record the current immutable Rails and DocsGPT
+images. After the cutover, do not deploy an older application image against the migrated database. Recover by fixing forward or
+restoring the verified pre-cutover database backup together with the matching old application image. Preserve the three named
+volumes.
+
+For later schema-compatible releases, set `CHATRING_IMAGE` to the previous verified full-commit tag and redeploy. Do not roll
+back PostgreSQL unless the release explicitly documents a compatible database rollback.
 
 ## Backup and restore
 

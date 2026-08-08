@@ -294,6 +294,11 @@ def _chatring_markdown_chunk(self: MarkdownChunker, documents: list[Document]):
 
             previous_path, previous_piece = coalesced[-1]
             combined = previous_piece.rstrip() + "\n\n" + piece.lstrip()
+            common_path = []
+            for left, right in zip(previous_path, heading_path):
+                if left != right:
+                    break
+                common_path.append(left)
             if (
                 minimum > 0
                 and (
@@ -301,12 +306,8 @@ def _chatring_markdown_chunk(self: MarkdownChunker, documents: list[Document]):
                     or self._token_count(piece) < minimum
                 )
                 and self._token_count(combined) <= self.max_tokens
+                and (previous_path == heading_path or common_path)
             ):
-                common_path = []
-                for left, right in zip(previous_path, heading_path):
-                    if left != right:
-                        break
-                    common_path.append(left)
                 coalesced[-1] = (common_path, combined)
             else:
                 coalesced.append((heading_path, piece))
@@ -425,6 +426,87 @@ def _retrieve(source_id: str, query: str, limit: int, threshold: float):
 
 def register_chat_ring_routes(blueprint):
     """Register ChatRing routes on DocsGPT's existing internal blueprint."""
+
+    @blueprint.route("/api/internal/chatring/upload", methods=["POST"])
+    def chatring_upload():
+        source_name = request.headers.get("X-ChatRing-Provider-Source", "").strip()
+        try:
+            account_id, index_id, binding_digest = _verify_scope(
+                "upload_index", source_name
+            )
+            _verify_source_binding(
+                {"name": source_name}, account_id, index_id, binding_digest
+            )
+        except PermissionError:
+            return jsonify({"status": "forbidden"}), 403
+        except ChatRingProviderError:
+            return jsonify({"status": "provider_error"}), 503
+        if not source_name or request.form.get("name") != source_name:
+            return jsonify({"status": "invalid_request"}), 400
+        try:
+            from application.api.user.sources.upload import UploadFile
+
+            request.decoded_token = {"sub": "local"}
+            return UploadFile().post()
+        except Exception:
+            logger.exception("ChatRing DocsGPT upload failed")
+            return jsonify({"status": "provider_error"}), 503
+
+    @blueprint.route("/api/internal/chatring/task-status", methods=["GET"])
+    def chatring_task_status():
+        source_id = str(request.args.get("source_id") or "").strip()
+        try:
+            account_id, index_id, binding_digest = _verify_scope(
+                "task_status", source_id
+            )
+        except PermissionError:
+            return jsonify({"status": "forbidden"}), 403
+        except ChatRingProviderError:
+            return jsonify({"status": "provider_error"}), 503
+        if not source_id or not request.args.get("task_id"):
+            return jsonify({"status": "invalid_request"}), 400
+        source = _source(source_id)
+        if source is not None:
+            try:
+                _verify_source_binding(source, account_id, index_id, binding_digest)
+            except PermissionError:
+                return jsonify({"status": "forbidden"}), 403
+        try:
+            from application.api.user.sources.upload import TaskStatus
+
+            request.decoded_token = {"sub": "local"}
+            return TaskStatus().get()
+        except Exception:
+            logger.exception("ChatRing DocsGPT task-status inspection failed")
+            return jsonify({"status": "provider_error"}), 503
+
+    @blueprint.route("/api/internal/chatring/chunks", methods=["GET"])
+    def chatring_chunks():
+        source_id = str(request.args.get("source_id") or "").strip()
+        try:
+            account_id, index_id, binding_digest = _verify_scope(
+                "inspect_chunks", source_id
+            )
+        except PermissionError:
+            return jsonify({"status": "forbidden"}), 403
+        except ChatRingProviderError:
+            return jsonify({"status": "provider_error"}), 503
+        if not source_id or str(request.args.get("id") or "").strip() != source_id:
+            return jsonify({"status": "invalid_request"}), 400
+        source = _source(source_id)
+        if source is None:
+            return jsonify({"status": "not_found"}), 404
+        try:
+            _verify_source_binding(source, account_id, index_id, binding_digest)
+            from application.api.user.sources.chunks import GetChunks
+
+            request.decoded_token = {"sub": "local"}
+            return GetChunks().get()
+        except PermissionError:
+            return jsonify({"status": "forbidden"}), 403
+        except Exception:
+            logger.exception("ChatRing DocsGPT chunk inspection failed")
+            return jsonify({"status": "provider_error"}), 503
 
     @blueprint.route("/api/internal/chatring/retrieve", methods=["POST"])
     def chatring_retrieve():

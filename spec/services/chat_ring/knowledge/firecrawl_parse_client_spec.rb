@@ -29,8 +29,7 @@ RSpec.describe ChatRing::Knowledge::FirecrawlParseClient do
       http_request.headers['Authorization'] == 'Bearer firecrawl-secret' &&
         http_request.headers['Content-Type'].start_with?('multipart/form-data;') &&
         http_request.body.include?('Guide.pdf') &&
-        http_request.body.include?('zeroDataRetention') &&
-        http_request.body.include?('maxPages')
+        http_request.body.include?('zeroDataRetention')
     end
     expect(WebMock).to expectation
   end
@@ -48,6 +47,12 @@ RSpec.describe ChatRing::Knowledge::FirecrawlParseClient do
       expect(described_class.profile_digest('pdf')).not_to eq(without_zdr_digest)
     end
     expect(without_zdr).to include('zeroDataRetention' => false)
+  end
+
+  it 'keeps Zero Data Retention opt-in because unsupported Firecrawl plans reject it' do
+    with_modified_env(FIRECRAWL_ZERO_DATA_RETENTION: nil) do
+      expect(described_class.profile_for('pdf')).to include('zeroDataRetention' => false)
+    end
   end
 
   it 'marks server failures as indeterminate because Parse has no request idempotency key' do

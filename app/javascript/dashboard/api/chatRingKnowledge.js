@@ -6,18 +6,8 @@ class ChatRingKnowledgeAPI extends ApiClient {
     super('chat_ring/knowledge', { accountScoped: true });
   }
 
-  websites() {
-    return axios.get(`${this.url}/websites`);
-  }
-
-  mapWebsite(rootUrl) {
+  addWebsite(rootUrl) {
     return axios.post(`${this.url}/websites`, { root_url: rootUrl });
-  }
-
-  addWebsitePages(sourceId, selectedUrls) {
-    return axios.post(`${this.url}/websites/${sourceId}/extract`, {
-      selected_urls: selectedUrls,
-    });
   }
 
   addWebpage(url) {
@@ -46,10 +36,6 @@ class ChatRingKnowledgeAPI extends ApiClient {
 
   deleteMaterial(id) {
     return axios.delete(`${this.url}/materials/${id}`);
-  }
-
-  testRetrieval(query) {
-    return axios.post(`${this.url}/retrieval_tests`, { query });
   }
 }
 

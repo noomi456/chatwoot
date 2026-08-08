@@ -4,10 +4,11 @@ class Api::V1::Accounts::ChatRing::Knowledge::MaterialsController < Api::V1::Acc
   def index
     authorize(ChatRing::KnowledgeMaterial, :index?)
     materials = knowledge_base.materials.active.includes(:website_source, :file_source).order(updated_at: :desc)
-    active_material_ids = knowledge_base.active_knowledge_index&.documents&.pluck(:knowledge_material_id).to_set || Set.new
-    render json: materials.map do |item|
-      serialize_material(item, available_to_ai: active_material_ids.include?(item.id))
+    active_documents = knowledge_base.active_knowledge_index&.documents&.index_by(&:knowledge_material_id) || {}
+    payload = materials.map do |item|
+      serialize_material(item, active_document: active_documents[item.id])
     end
+    render json: payload
   end
 
   def show

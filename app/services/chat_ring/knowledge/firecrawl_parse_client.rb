@@ -7,8 +7,7 @@ require 'uri'
 class ChatRing::Knowledge::FirecrawlParseClient
   DEFAULT_BASE_URL = 'https://api.firecrawl.dev'.freeze
   MAX_TIMEOUT_MS = 300_000
-  MAX_PDF_PAGES = 200
-  PROFILE_VERSION = 1
+  PROFILE_VERSION = 2
 
   class Error < StandardError; end
   class ConfigurationError < Error; end
@@ -28,7 +27,7 @@ class ChatRing::Knowledge::FirecrawlParseClient
     end
   end
 
-  def self.profile_for(source_kind)
+  def self.profile_for(_source_kind)
     profile = {
       'profile_version' => PROFILE_VERSION,
       'formats' => ['markdown'],
@@ -37,7 +36,6 @@ class ChatRing::Knowledge::FirecrawlParseClient
       'zeroDataRetention' => zero_data_retention?,
       'timeout' => MAX_TIMEOUT_MS
     }
-    profile['parsers'] = [{ 'type' => 'pdf', 'mode' => 'auto', 'maxPages' => MAX_PDF_PAGES }] if source_kind.to_s == 'pdf'
     profile.freeze
   end
 
@@ -46,7 +44,7 @@ class ChatRing::Knowledge::FirecrawlParseClient
   end
 
   def self.zero_data_retention?
-    ENV.fetch('FIRECRAWL_ZERO_DATA_RETENTION', 'true').casecmp?('true')
+    ENV.fetch('FIRECRAWL_ZERO_DATA_RETENTION', 'false').casecmp?('true')
   end
 
   def initialize(api_key:, base_url: DEFAULT_BASE_URL, timeout_seconds: 310)

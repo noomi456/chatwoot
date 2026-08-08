@@ -12,10 +12,6 @@ class ChatRing::Knowledge::DocsGptProvider
   DEFAULT_EVIDENCE_LIMIT = 8
   MAX_RESULTS = 20
   MAX_QUERY_LENGTH = 2000
-  HIGH_RISK_PATTERN = /\b(hipaa|soc\s*2|iso\s*27001|data\s+residen(?:cy|t)|end[- ]to[- ]end encrypt|gdpr (?:compliant|compliance))\b/i
-  HIGH_RISK_AUTHORITIES = %w[approved_compliance].freeze
-  LEGAL_POLICY_PATTERN = /\b(refunds?|returns?|cancell?ation|money[- ]back|privacy policy|cookie policy|data (?:collection|retention|deletion))\b/i
-  LEGAL_POLICY_AUTHORITIES = %w[approved_legal_policy].freeze
 
   class Error < StandardError; end
   class ConfigurationError < Error; end
@@ -74,12 +70,14 @@ class ChatRing::Knowledge::DocsGptProvider
     body = {
       query: resolved_query,
       source_id: @provider_source_id,
-      limit: result_limit,
+      # Fetch a bounded superset so a newly tombstoned or Assistant-scoped
+      # top hit cannot hide still-valid evidence ranked just below it.
+      limit: MAX_RESULTS,
       score_threshold: @score_threshold
     }.to_json
     payload = fetch_payload(body, index_id)
     status = required_status(payload)
-    items = status == 'accepted' ? build_items(payload, index_id, manifest, resolved_query) : []
+    items = status == 'accepted' ? build_items(payload, index_id, manifest, resolved_query).first(result_limit) : []
     status = 'insufficient_evidence' if status == 'accepted' && items.empty?
     build_evidence_set(index_id, resolved_query, result_limit, payload, status, items)
   rescue RequestError, ResponseError => e
@@ -164,7 +162,7 @@ class ChatRing::Knowledge::DocsGptProvider
   end
 
   # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
-  def build_evidence(hit, rank, knowledge_index_id, manifest, query)
+  def build_evidence(hit, rank, knowledge_index_id, manifest, _query)
     raise ResponseError, "DocsGPT result #{rank} must be an object" unless hit.is_a?(Hash)
 
     excerpt = required_response_text(hit['text'], rank)
@@ -173,7 +171,6 @@ class ChatRing::Knowledge::DocsGptProvider
     return unless source.fetch('active')
 
     authority = source.fetch('authority_class')
-    return unless authority_allowed?(query, authority)
 
     provider_chunk_id = required_response_string(hit['chunk_id'], rank, 'chunk_id')
     score = numeric_score(hit['score'], rank)
@@ -200,9 +197,10 @@ class ChatRing::Knowledge::DocsGptProvider
       cta_candidates: contextual_cta_candidates(source.fetch('cta_candidates'), heading_path),
       locator: heading_path || source['locator'].presence || source.fetch('source_reference'),
       authority_class: authority,
+      risk_flags: source.fetch('risk_flags'),
       excerpt: excerpt,
       source_content_hash: source.fetch('content_hash'),
-      rank: Integer(hit['rank'] || rank),
+      rank: numeric_rank(hit['rank'] || rank, rank),
       score: score,
       score_kind: required_response_string(hit['score_kind'], rank, 'score_kind'),
       retrieval_strategy: RETRIEVAL_STRATEGY
@@ -263,7 +261,7 @@ class ChatRing::Knowledge::DocsGptProvider
     end
   end
 
-  def normalize_manifest_entry(entry)
+  def normalize_manifest_entry(entry) # rubocop:disable Metrics/AbcSize
     {
       'active' => ActiveModel::Type::Boolean.new.cast(entry.fetch('active', true)),
       'content_hash' => required_string(entry['content_hash'], 'source content_hash'),
@@ -274,6 +272,7 @@ class ChatRing::Knowledge::DocsGptProvider
       'locator' => entry['locator'].to_s.presence,
       'page_locator' => entry['page_locator'].to_s.presence,
       'authority_class' => required_string(entry['authority_class'], 'source authority_class'),
+      'risk_flags' => Array(entry['risk_flags']).map(&:to_s).reject(&:blank?).uniq.freeze,
       'headings' => normalize_headings(entry['headings']),
       'cta_candidates' => normalize_cta_candidates(entry['cta_candidates'])
     }
@@ -308,22 +307,14 @@ class ChatRing::Knowledge::DocsGptProvider
   end
 
   def contextual_cta_candidates(candidates, heading_path)
-    candidates.sort_by { |candidate| candidate.heading_path == heading_path ? 0 : 1 }.freeze
+    exact = candidates.select { |candidate| candidate.heading_path == heading_path }
+    return exact.freeze if exact.any? || heading_path.blank?
+
+    candidates.select { |candidate| candidate.heading_path.blank? }.freeze
   end
 
   def evidence_id(knowledge_index_id, provider_chunk_id)
     Digest::SHA256.hexdigest([knowledge_index_id, @provider_release, @provider_source_id, provider_chunk_id].join("\0"))
-  end
-
-  def high_risk_query?(query)
-    HIGH_RISK_PATTERN.match?(query)
-  end
-
-  def authority_allowed?(query, authority)
-    return false if high_risk_query?(query) && HIGH_RISK_AUTHORITIES.exclude?(authority)
-    return false if LEGAL_POLICY_PATTERN.match?(query) && LEGAL_POLICY_AUTHORITIES.exclude?(authority)
-
-    true
   end
 
   def numeric_score(value, rank)
@@ -333,6 +324,15 @@ class ChatRing::Knowledge::DocsGptProvider
     score
   rescue ArgumentError, TypeError
     raise ResponseError, "DocsGPT result #{rank} is missing numeric score"
+  end
+
+  def numeric_rank(value, fallback_rank)
+    result = Integer(value)
+    raise ResponseError, "DocsGPT result #{fallback_rank} has invalid rank" unless result.positive?
+
+    result
+  rescue ArgumentError, TypeError
+    raise ResponseError, "DocsGPT result #{fallback_rank} has invalid rank"
   end
 
   def verify_chunk_content_hash!(metadata, excerpt, rank)

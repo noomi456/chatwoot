@@ -121,11 +121,11 @@ class ChatRing::Knowledge::FilePreflight
     return false unless prefix.start_with?(ZIP_SIGNATURE)
 
     archive = File.binread(@io.path)
-    required_entries = case source_kind
-                       when 'docx' then ['[Content_Types].xml', 'word/document.xml']
-                       when 'xlsx' then ['[Content_Types].xml', 'xl/workbook.xml']
-                       when 'odt' then ['mimetype', 'content.xml']
-                       end
+    required_entries = {
+      'docx' => ['[Content_Types].xml', 'word/document.xml'],
+      'xlsx' => ['[Content_Types].xml', 'xl/workbook.xml'],
+      'odt' => ['mimetype', 'content.xml']
+    }.fetch(source_kind)
     required_entries.all? { |entry| archive.include?(entry.b) }
   end
 end

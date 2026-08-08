@@ -82,6 +82,83 @@ class ChatRingExtensionImageTest(unittest.TestCase):
             "name": f"chatring-a{self.ACCOUNT_ID}-i{self.INDEX_ID}-{self.DIGEST}",
         }
 
+    def test_signed_ingestion_routes_preserve_the_same_source_scope(self):
+        source_name = self.bound_source()["name"]
+        boundary = "ChatRingTestBoundary"
+        body = (
+            f"--{boundary}\r\n"
+            'Content-Disposition: form-data; name="name"\r\n\r\n'
+            f"{source_name}\r\n"
+            f"--{boundary}--\r\n"
+        ).encode()
+        headers = self.signed_headers(
+            body, "upload_index", source_id=source_name
+        )
+        headers["Content-Type"] = f"multipart/form-data; boundary={boundary}"
+        headers["X-ChatRing-Provider-Source"] = source_name
+        with patch(
+            "application.api.user.sources.upload.UploadFile.post",
+            return_value=({"task_id": "task-1", "source_id": self.SOURCE_ID}, 200),
+        ):
+            response = self.client.post(
+                "/api/internal/chatring/upload", data=body, headers=headers
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["task_id"], "task-1")
+
+        headers = self.signed_headers(
+            b"", "task_status", source_id=self.SOURCE_ID
+        )
+        with patch.object(
+            extension, "_source", return_value=self.bound_source()
+        ), patch(
+            "application.api.user.sources.upload.TaskStatus.get",
+            return_value=({"status": "SUCCESS"}, 200),
+        ):
+            response = self.client.get(
+                f"/api/internal/chatring/task-status?task_id=task-1&source_id={self.SOURCE_ID}",
+                headers=headers,
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["status"], "SUCCESS")
+
+        headers = self.signed_headers(
+            b"", "inspect_chunks", source_id=self.SOURCE_ID
+        )
+        with patch.object(
+            extension, "_source", return_value=self.bound_source()
+        ), patch(
+            "application.api.user.sources.chunks.GetChunks.get",
+            return_value=({"chunks": [], "total": 0}, 200),
+        ):
+            response = self.client.get(
+                f"/api/internal/chatring/chunks?source_id={self.SOURCE_ID}&id={self.SOURCE_ID}&page=1&per_page=100",
+                headers=headers,
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), {"chunks": [], "total": 0})
+
+    def test_signed_upload_rejects_a_scope_that_does_not_match_the_source_name(self):
+        source_name = self.bound_source()["name"]
+        boundary = "ChatRingTestBoundary"
+        body = (
+            f"--{boundary}\r\n"
+            'Content-Disposition: form-data; name="name"\r\n\r\n'
+            f"{source_name}\r\n"
+            f"--{boundary}--\r\n"
+        ).encode()
+        headers = self.signed_headers(
+            body, "upload_index", source_id=source_name, account_id="99"
+        )
+        headers["Content-Type"] = f"multipart/form-data; boundary={boundary}"
+        headers["X-ChatRing-Provider-Source"] = source_name
+
+        response = self.client.post(
+            "/api/internal/chatring/upload", data=body, headers=headers
+        )
+
+        self.assertEqual(response.status_code, 403)
+
     def test_source_binding_accepts_current_indexes_and_legacy_versions_during_cutover(self):
         extension._verify_source_binding(
             self.bound_source(), self.ACCOUNT_ID, self.INDEX_ID, self.DIGEST
@@ -219,7 +296,7 @@ class ChatRingExtensionImageTest(unittest.TestCase):
     def test_markdown_chunking_preserves_content_and_heading_paths(self):
         chunker = MagicMock()
         chunker.max_tokens = 1000
-        chunker.min_tokens = 4
+        chunker.min_tokens = 6
         chunker._token_count.side_effect = lambda text: len(text.split())
         document = Document(
             "# Product\nOne body line.\n## Details\nSecond body line.\n",
@@ -234,6 +311,22 @@ class ChatRingExtensionImageTest(unittest.TestCase):
         self.assertEqual(
             chunks[0].extra_info["chatring_heading_path"], "Product"
         )
+
+    def test_markdown_chunking_does_not_merge_unheaded_preamble_into_a_heading(self):
+        chunker = MagicMock()
+        chunker.max_tokens = 1000
+        chunker.min_tokens = 20
+        chunker._token_count.side_effect = lambda text: len(text.split())
+        document = Document(
+            "Short preamble.\n# Operations\nRotate keys every week.\n",
+            extra_info={"source": "/app/inputs/operations.md"},
+        )
+
+        chunks = extension._chatring_markdown_chunk(chunker, [document])
+
+        self.assertEqual(len(chunks), 2)
+        self.assertEqual(chunks[0].extra_info["chatring_heading_path"], "")
+        self.assertEqual(chunks[1].extra_info["chatring_heading_path"], "Operations")
 
 
 if __name__ == "__main__":

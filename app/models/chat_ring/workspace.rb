@@ -19,6 +19,6 @@ class ChatRing::Workspace < ApplicationRecord
   validates :status, inclusion: { in: STATUSES }
 
   def self.for_account!(account)
-    create_or_find_by!(chatwoot_account_id: account.id)
+    find_or_create_by!(chatwoot_account_id: account.id)
   end
 end
