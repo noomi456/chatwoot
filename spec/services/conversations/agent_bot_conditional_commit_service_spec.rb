@@ -49,12 +49,12 @@ RSpec.describe Conversations::AgentBotConditionalCommitService do
     )
   end
 
-  def service(agent_bot: connection.agent_bot)
+  def service(agent_bot: connection.agent_bot, responding_to_message_id: trigger_message.id)
     described_class.new(
       conversation: conversation,
       agent_bot: agent_bot,
       expected_agent_bot_id: connection.agent_bot.id,
-      responding_to_message_id: trigger_message.id,
+      responding_to_message_id: responding_to_message_id,
       idempotency_key: outbound_commit.idempotency_key,
       message: { content: 'Widgets are supported.', content_type: 'text' }
     )
@@ -109,7 +109,63 @@ RSpec.describe Conversations::AgentBotConditionalCommitService do
 
   it 'rejects a system or wrong-account AgentBot principal' do
     global_bot = create(:agent_bot, account: nil, bot_type: :chatring_assistant)
+    other_account_bot = create(:agent_bot, account: create(:account), bot_type: :chatring_assistant)
+    wrong_bot = create(:agent_bot, account: account, bot_type: :chatring_assistant)
 
     expect { service(agent_bot: global_bot).perform }.to raise_error(described_class::Unauthorized)
+    expect { service(agent_bot: other_account_bot).perform }.to raise_error(described_class::Unauthorized)
+    expect { service(agent_bot: wrong_bot).perform }.to raise_error(described_class::Unauthorized)
+  end
+
+  it 'rejects a responding message other than the turn trigger' do
+    outbound_commit
+    other_message = create(:message, account: account, inbox: inbox, conversation: conversation,
+                                     sender: conversation.contact, message_type: :incoming, private: false)
+
+    expect { service(responding_to_message_id: other_message.id).perform }
+      .to raise_error(described_class::PreconditionFailed, 'invalid_trigger_message')
+    expect(outbound_commit.reload).to be_status_rejected
+  end
+
+  it 'rejects a trigger that is no longer an incoming customer message' do
+    outbound_commit
+    trigger_message.update!(message_type: :outgoing)
+
+    expect { service.perform }
+      .to raise_error(described_class::PreconditionFailed, 'invalid_trigger_message')
+  end
+
+  it 'rejects a human-owned conversation' do
+    outbound_commit
+    conversation.update!(status: :pending, assignee: create(:user, account: account), assignee_agent_bot: nil)
+
+    expect { service.perform }
+      .to raise_error(described_class::PreconditionFailed, 'unexpected_agent_bot')
+  end
+
+  %w[open resolved snoozed].each do |status|
+    it "rejects a #{status} conversation" do
+      outbound_commit
+      conversation.update!(status: status)
+
+      expect { service.perform }
+        .to raise_error(described_class::PreconditionFailed, 'conversation_not_pending')
+    end
+  end
+
+  it 'rejects an Assistant binding change committed before the conditional reply' do
+    outbound_commit
+    binding.update!(status: :inactive)
+
+    expect { service.perform }
+      .to raise_error(described_class::PreconditionFailed, 'binding_inactive')
+  end
+
+  it 'rejects an Assistant version change committed before the conditional reply' do
+    outbound_commit
+    ChatRing::AssistantVersions::Publisher.new(assistant: assistant, knowledge_scope: scope).call
+
+    expect { service.perform }
+      .to raise_error(described_class::PreconditionFailed, 'assistant_version_changed')
   end
 end

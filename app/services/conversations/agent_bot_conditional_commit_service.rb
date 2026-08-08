@@ -65,7 +65,6 @@ class Conversations::AgentBotConditionalCommitService
     turn = outbound_commit.ai_turn
     raise Unauthorized unless turn.chatwoot_conversation_id == conversation.id
     raise Unauthorized unless turn.expected_agent_bot_id == agent_bot.id
-    raise Unauthorized unless turn.trigger_message_id == responding_to_message_id
   end
 
   def commit_or_reject(outbound_commit)
@@ -86,17 +85,22 @@ class Conversations::AgentBotConditionalCommitService
   def precondition_failure(turn)
     return outbound_failure(outbound_commit: turn.outbound_commit) if turn.outbound_commit.status_rejected?
     return 'invalid_message' unless valid_message_payload?
+    return 'invalid_trigger_message' unless valid_trigger_message?(turn)
 
     eligibility = ChatRing::Brain::Eligibility.check(turn.reload)
     return eligibility.reason unless eligibility.eligible
-    return 'invalid_trigger_message' unless valid_trigger_message?(turn.trigger_message)
   end
 
   def outbound_failure(outbound_commit:)
     outbound_commit.failure_code.presence || 'commit_rejected'
   end
 
-  def valid_trigger_message?(message)
+  def valid_trigger_message?(turn)
+    return false unless turn.trigger_message_id == responding_to_message_id
+
+    message = Message.find_by(id: responding_to_message_id)
+    return false unless message
+
     message.conversation_id == conversation.id && message.incoming? && !message.private? && message.sender_type == 'Contact'
   end
 
