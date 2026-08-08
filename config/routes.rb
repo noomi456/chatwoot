@@ -162,6 +162,7 @@ Rails.application.routes.draw do
             end
             scope module: :conversations do
               resources :messages, only: [:index, :create, :destroy, :update] do
+                post :conditional_create, on: :collection
                 member do
                   post :translate
                   post :retry

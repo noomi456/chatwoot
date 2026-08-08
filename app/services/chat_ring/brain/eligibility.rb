@@ -38,10 +38,14 @@ class ChatRing::Brain::Eligibility
   end
 
   def freshness_failure
-    newest = turn.conversation.messages
-                 .where(message_type: :incoming, private: false, sender_type: 'Contact')
-                 .reorder(id: :desc)
-                 .first
-    'newer_customer_message' unless newest&.id == turn.trigger_message_id
+    messages = turn.conversation.messages
+    newest = messages
+             .where(message_type: :incoming, private: false, sender_type: 'Contact')
+             .reorder(id: :desc)
+             .first
+    return 'newer_customer_message' unless newest&.id == turn.trigger_message_id
+
+    newer_human_reply = messages.where('id > ?', turn.trigger_message_id).any?(&:public_human_reply?)
+    'newer_human_reply' if newer_human_reply
   end
 end

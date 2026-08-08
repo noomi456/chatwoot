@@ -13,6 +13,24 @@ class Api::V1::Accounts::Conversations::MessagesController < Api::V1::Accounts::
     render_could_not_create_error(e.message)
   end
 
+  def conditional_create
+    return head :not_found unless ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY
+
+    result = Conversations::AgentBotConditionalCommitService.new(
+      conversation: @conversation,
+      agent_bot: @resource,
+      expected_agent_bot_id: conditional_params[:expected_agent_bot_id],
+      responding_to_message_id: conditional_params[:responding_to_message_id],
+      idempotency_key: conditional_params[:idempotency_key],
+      message: conditional_params.require(:message)
+    ).perform
+    render json: conditional_response(result), status: :ok
+  rescue Conversations::AgentBotConditionalCommitService::Unauthorized
+    head :forbidden
+  rescue Conversations::AgentBotConditionalCommitService::PreconditionFailed => e
+    render json: { error: e.code }, status: :conflict
+  end
+
   def update
     Messages::StatusUpdateService.new(message, permitted_params[:status], permitted_params[:external_error]).perform
     @message = message
@@ -69,6 +87,19 @@ class Api::V1::Accounts::Conversations::MessagesController < Api::V1::Accounts::
 
   def permitted_params
     params.permit(:id, :target_language, :status, :external_error)
+  end
+
+  def conditional_params
+    params.permit(:expected_agent_bot_id, :responding_to_message_id, :idempotency_key, message: [:content, :content_type])
+  end
+
+  def conditional_response(result)
+    {
+      message_id: result.message.id,
+      idempotent: result.idempotent,
+      conversation_status: @conversation.reload.status,
+      assignee_agent_bot_id: @conversation.assignee_agent_bot_id
+    }
   end
 
   def already_translated_content_available?

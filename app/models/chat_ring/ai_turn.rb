@@ -34,6 +34,10 @@ class ChatRing::AiTurn < ApplicationRecord
            class_name: 'ChatRing::AiTurnEvidence',
            inverse_of: :ai_turn,
            dependent: :destroy
+  has_one :outbound_commit,
+          class_name: 'ChatRing::OutboundCommit',
+          inverse_of: :ai_turn,
+          dependent: :destroy
 
   validates :binding_version, numericality: { only_integer: true, greater_than: 0 }
   validates :context_digest, format: { with: /\A[0-9a-f]{64}\z/ }, allow_nil: true

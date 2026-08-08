@@ -178,6 +178,54 @@ RSpec.describe 'Conversation Messages API', type: :request do
         expect(conversation.messages.count).to eq(1)
         expect(conversation.messages.first.content_type).to eq(params[:content_type])
       end
+
+      it 'keeps the conditional managed-Assistant endpoint closed behind the compile-time release gate' do
+        create(:agent_bot_inbox, inbox: inbox, agent_bot: agent_bot)
+
+        post "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/messages/conditional_create",
+             params: {},
+             headers: { api_access_token: agent_bot.access_token.token },
+             as: :json
+
+        expect(response).to have_http_status(:not_found)
+      end
+
+      it 'conditionally commits through an authenticated account-owned managed AgentBot' do
+        stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', true)
+        workspace = account.chat_ring_workspace
+        assistant = ChatRing::Assistant.create!(workspace: workspace, name: 'Support')
+        scope = workspace.knowledge_scopes.find_by!(business_wide: true)
+        version = ChatRing::AssistantVersions::Publisher.new(assistant: assistant, knowledge_scope: scope).call
+        connection = ChatRing::AssistantProvisioning::AgentBotProvisioner.new(assistant: assistant).call
+        binding = ChatRing::AssistantProvisioning::InboxBindingActivator.new(assistant: assistant, inbox: inbox).call
+        conversation.update!(status: :pending, assignee_agent_bot: connection.agent_bot)
+        trigger = create(:message, account: account, inbox: inbox, conversation: conversation,
+                                   sender: conversation.contact, message_type: :incoming, private: false)
+        turn = ChatRing::AiTurn.create!(workspace: workspace, conversation: conversation, trigger_message: trigger,
+                                        inbox_assistant_binding: binding, binding_version: binding.binding_version,
+                                        assistant: assistant, assistant_version: version,
+                                        expected_agent_bot: connection.agent_bot, status: :ready_to_commit,
+                                        decision_type: 'reply',
+                                        decision_payload: { 'decision_type' => 'reply', 'response_text' => 'Grounded answer',
+                                                            'reason_code' => 'answered', 'evidence_ids' => ['evidence-1'] })
+        commit = ChatRing::OutboundCommit.create!(
+          ai_turn: turn,
+          idempotency_key: Digest::SHA256.hexdigest("chatring:reply:#{workspace.id}:#{turn.id}")
+        )
+
+        post "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/messages/conditional_create",
+             params: {
+               expected_agent_bot_id: connection.agent_bot.id,
+               responding_to_message_id: trigger.id,
+               idempotency_key: commit.idempotency_key,
+               message: { content: 'Grounded answer', content_type: 'text' }
+             },
+             headers: { api_access_token: connection.agent_bot.access_token.token },
+             as: :json
+
+        expect(response).to have_http_status(:ok)
+        expect(response.parsed_body).to include('message_id' => commit.reload.chatwoot_message_id, 'idempotent' => false)
+      end
     end
   end
 

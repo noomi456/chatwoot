@@ -172,10 +172,15 @@ class Conversation < ApplicationRecord
   end
 
   def bot_handoff!
-    update(waiting_since: Time.current) if waiting_since.blank?
-    self.assignee_agent_bot = nil
-    open!
-    dispatcher_dispatch(CONVERSATION_BOT_HANDOFF)
+    self.class.transaction do
+      locked_conversation = self.class.lock.find(id)
+      locked_conversation.waiting_since ||= Time.current
+      locked_conversation.assignee_agent_bot = nil
+      locked_conversation.status = :open
+      locked_conversation.save!
+      locked_conversation.send(:dispatcher_dispatch, CONVERSATION_BOT_HANDOFF)
+    end
+    reload
   end
 
   def unread_messages
