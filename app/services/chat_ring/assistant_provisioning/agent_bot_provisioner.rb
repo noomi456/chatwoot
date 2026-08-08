@@ -1,9 +1,8 @@
 class ChatRing::AssistantProvisioning::AgentBotProvisioner
   BOT_CONFIG_KEY = 'chatring_assistant_id'.freeze
 
-  def initialize(assistant:, outgoing_url:)
+  def initialize(assistant:)
     @assistant = assistant
-    @outgoing_url = outgoing_url
   end
 
   def call
@@ -22,17 +21,12 @@ class ChatRing::AssistantProvisioning::AgentBotProvisioner
 
   private
 
-  attr_reader :assistant, :outgoing_url
+  attr_reader :assistant
 
   def validate_assistant!
-    unless assistant.current_version.present? && !assistant.archived?
-      assistant.errors.add(:base, 'publish an Assistant version before provisioning its AgentBot')
-      raise ActiveRecord::RecordInvalid, assistant
-    end
+    return if assistant.current_version.present? && !assistant.archived?
 
-    return if outgoing_url.present?
-
-    assistant.errors.add(:base, 'AgentBot webhook URL is required')
+    assistant.errors.add(:base, 'publish an Assistant version before provisioning its AgentBot')
     raise ActiveRecord::RecordInvalid, assistant
   end
 
@@ -40,14 +34,14 @@ class ChatRing::AssistantProvisioning::AgentBotProvisioner
     assistant.workspace.chatwoot_account.agent_bots.create!(
       name: assistant.name,
       description: "Managed identity for ChatRing Assistant #{assistant.id}",
-      outgoing_url: outgoing_url,
+      outgoing_url: nil,
       bot_type: :chatring_assistant,
       bot_config: { BOT_CONFIG_KEY => assistant.id }
     )
   end
 
   def create_connection!(agent_bot)
-    assistant.create_agent_bot_connection!(
+    connection = assistant.create_agent_bot_connection!(
       workspace: assistant.workspace,
       agent_bot: agent_bot,
       status: :active,
@@ -55,14 +49,23 @@ class ChatRing::AssistantProvisioning::AgentBotProvisioner
       webhook_secret_ref: "agent_bots/#{agent_bot.id}/secret",
       last_verified_at: Time.current
     )
+    agent_bot.update!(outgoing_url: connection.webhook_url)
+    connection
   end
 
   def verify_existing_connection!
     connection = assistant.agent_bot_connection
     connection.validate!
+    update_webhook_url!(connection)
     return connection if connection.active?
 
     connection.update!(status: :active, last_verified_at: Time.current)
     connection
+  end
+
+  def update_webhook_url!(connection)
+    return if connection.agent_bot.outgoing_url == connection.webhook_url
+
+    connection.agent_bot.update!(outgoing_url: connection.webhook_url)
   end
 end

@@ -6,6 +6,10 @@ class ChatRing::AssistantVersion < ApplicationRecord
 
   belongs_to :assistant, class_name: 'ChatRing::Assistant', inverse_of: :versions
   belongs_to :knowledge_scope, class_name: 'ChatRing::KnowledgeScope'
+  has_many :ai_turns,
+           class_name: 'ChatRing::AiTurn',
+           inverse_of: :assistant_version,
+           dependent: :restrict_with_exception
 
   validates :version, numericality: { only_integer: true, greater_than: 0 }, uniqueness: { scope: :assistant_id }
   validates :published_at, presence: true

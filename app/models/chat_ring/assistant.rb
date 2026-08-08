@@ -17,6 +17,10 @@ class ChatRing::Assistant < ApplicationRecord
            class_name: 'ChatRing::InboxAssistantBinding',
            inverse_of: :assistant,
            dependent: :destroy
+  has_many :ai_turns,
+           class_name: 'ChatRing::AiTurn',
+           inverse_of: :assistant,
+           dependent: :restrict_with_exception
 
   validates :name, presence: true, uniqueness: { scope: :workspace_id }
   validate :current_version_belongs_to_assistant

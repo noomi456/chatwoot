@@ -44,10 +44,7 @@ RSpec.describe 'Integration Hooks API', type: :request do
         assistant = ChatRing::Assistant.create!(workspace: workspace, name: 'Support')
         scope = workspace.knowledge_scopes.find_by!(business_wide: true)
         ChatRing::AssistantVersions::Publisher.new(assistant: assistant, knowledge_scope: scope).call
-        ChatRing::AssistantProvisioning::AgentBotProvisioner.new(
-          assistant: assistant,
-          outgoing_url: 'https://chatring.example/webhooks/chatwoot'
-        ).call
+        ChatRing::AssistantProvisioning::AgentBotProvisioner.new(assistant: assistant).call
         ChatRing::AssistantProvisioning::InboxBindingActivator.new(assistant: assistant, inbox: inbox).call
 
         post api_v1_account_integrations_hooks_url(account_id: account.id),
@@ -114,10 +111,7 @@ RSpec.describe 'Integration Hooks API', type: :request do
         assistant = ChatRing::Assistant.create!(workspace: workspace, name: 'Support')
         scope = workspace.knowledge_scopes.find_by!(business_wide: true)
         ChatRing::AssistantVersions::Publisher.new(assistant: assistant, knowledge_scope: scope).call
-        ChatRing::AssistantProvisioning::AgentBotProvisioner.new(
-          assistant: assistant,
-          outgoing_url: 'https://chatring.example/webhooks/chatwoot'
-        ).call
+        ChatRing::AssistantProvisioning::AgentBotProvisioner.new(assistant: assistant).call
         ChatRing::AssistantProvisioning::InboxBindingActivator.new(assistant: assistant, inbox: inbox).call
 
         patch api_v1_account_integrations_hook_url(account_id: account.id, id: hook.id),

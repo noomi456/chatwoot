@@ -1267,10 +1267,7 @@ RSpec.describe 'Inboxes API', type: :request do
         assistant = ChatRing::Assistant.create!(workspace: workspace, name: 'Support')
         scope = workspace.knowledge_scopes.find_by!(business_wide: true)
         ChatRing::AssistantVersions::Publisher.new(assistant: assistant, knowledge_scope: scope).call
-        ChatRing::AssistantProvisioning::AgentBotProvisioner.new(
-          assistant: assistant,
-          outgoing_url: 'https://chatring.example/webhooks/chatwoot'
-        ).call
+        ChatRing::AssistantProvisioning::AgentBotProvisioner.new(assistant: assistant).call
         ChatRing::AssistantProvisioning::InboxBindingActivator.new(assistant: assistant, inbox: inbox).call
         managed_bot = inbox.reload.agent_bot
 
