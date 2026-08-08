@@ -21,7 +21,7 @@ Own the reproducible Phase 1 deployment of ChatRing Conversation Core through Do
 - Database preparation must complete successfully before Rails or Sidekiq starts.
 - Keep Phase 2 services out of this Compose project.
 - Keep `CHATRING_ASSISTANT_SPIKE_ENABLED` false by default. It may be true only during the bounded staging proof and must be returned to false after evidence capture.
-- Keep `CHATRING_KNOWLEDGE_LIFECYCLE_RECONCILIATION_ENABLED` false during the first coordinated Rails/DocsGPT rollout. Review the read-only cleanup report before enabling the hourly lifecycle repair and daily narrow provider housekeeping jobs.
+- Phase 2A has no scheduled Firecrawl crawl/Monitor and no hourly knowledge lifecycle reconciler. User Add/Re-run/Delete commands may enqueue only the extraction, index-build, and delayed obsolete-index cleanup needed to finish that command.
 - A rollback changes only the immutable application image reference; persistent volumes remain attached.
 
 ## Verification

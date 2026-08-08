@@ -16,6 +16,9 @@ Own ChatRing presentation across the dashboard, widget, survey, and frontend ent
 - Apply branding at display boundaries; preserve SDK globals, event names, package names, routes, storage keys, and API payload fields unless a migration specification approves a change.
 - Do not introduce independent AI, retrieval, Playbook, Skill, Voice, or microsite authority in frontend components.
 - Keep i18n source changes limited to English source files; community translations remain upstream-managed.
+- `AI → Knowledge` exposes two source inputs, `Webpages` and `Files`, followed by one combined Training Materials list. Website pages and files share Preview, Re-run, and Delete behavior.
+- Do not expose provider indexes, versions, publish/rollback/evaluation controls, Update Knowledge, scheduled retraining, or separate Website/Webpage material categories.
+- Reserve Q&A and Images as later separate knowledge views; do not fake or partially expose them before their own contracts exist.
 
 ## Work Guidance
 

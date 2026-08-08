@@ -2,175 +2,72 @@ require 'rails_helper'
 
 RSpec.describe ChatRing::Knowledge::SyncService do
   let(:account) { create(:account) }
-  let(:inbox) { create(:inbox, account: account) }
-  let(:version) do
-    ChatRing::KnowledgeVersion.create!(
-      account: account,
-      inbox: inbox,
-      root_url: 'https://example.com/',
-      provider_release: '616e6fe9c435bbc6bb472636db6b3ee2b9bcaf66',
-      config_snapshot: { 'firecrawl_map_limit' => 5000 }
-    )
-  end
-  let(:firecrawl) { instance_double(ChatRing::Knowledge::FirecrawlClient) }
-  let(:docs_gpt) { instance_double(ChatRing::Knowledge::DocsGptClient) }
-
-  it 'filters useless and redundant mapped routes before the paid batch scrape' do
-    allow(firecrawl).to receive(:map).and_return(
-      [
-        { 'url' => 'https://example.com/' },
-        { 'url' => 'https://example.com/docs' },
-        { 'url' => 'https://example.com/help' },
-        { 'url' => 'https://example.com/privacy' },
-        { 'url' => 'https://example.com/cookie-policy' },
-        { 'url' => 'https://example.com/legal/terms-of-service' },
-        { 'url' => 'https://example.com/company/privacy-statement', 'title' => 'Privacy Policy | Example' },
-        { 'url' => 'https://example.com/blog/update' },
-        { 'url' => 'https://example.com/careers' },
-        { 'url' => 'https://example.com/sitemap.xml' },
-        { 'url' => 'https://example.com/login' }
-      ]
-    )
-    expect(firecrawl).to receive(:start_batch_scrape).with(
-      urls: ['https://example.com/', 'https://example.com/docs']
-    ).and_return('batch-1')
-
-    outcome = described_class.new(version, firecrawl: firecrawl, docs_gpt: docs_gpt).tick
-
-    expect(outcome).to eq(:retry)
-    expect(version.reload.status).to eq('crawling')
-    expect(version.mapped_manifest.count { |entry| entry['included'] }).to eq(2)
-    expect(version.mapped_manifest.count { |entry| !entry['included'] }).to eq(9)
-  end
-
-  it 'does not start a second build while another worker holds the version lease' do
-    version.update!(processing_lease_token: SecureRandom.uuid, processing_lease_expires_at: 5.minutes.from_now)
-    expect(firecrawl).not_to receive(:map)
-
-    outcome = described_class.new(version, firecrawl: firecrawl, docs_gpt: docs_gpt).tick
-
-    expect(outcome).to eq(:retry)
-    expect(version.reload.status).to eq('pending')
-  end
-
-  it 'treats an abandoned version as terminal when a delayed sync job arrives' do
-    version.update!(status: 'ready')
-    version.update!(status: 'abandoned', abandoned_at: Time.current, abandon_reason: 'administrator rejected candidate')
-    expect(firecrawl).not_to receive(:map)
-    expect(docs_gpt).not_to receive(:task_status)
-
-    outcome = described_class.new(version, firecrawl: firecrawl, docs_gpt: docs_gpt).tick
-
-    expect(outcome).to eq(:complete)
-    expect(version.reload.status).to eq('abandoned')
-  end
-
-  it 'fails an active build that remains nonterminal beyond the bounded deadline' do
-    version.update_column(:created_at, described_class::MAX_BUILD_AGE.ago - 1.minute) # rubocop:disable Rails/SkipsModelValidations
-    expect(firecrawl).not_to receive(:map)
-
-    expect do
-      described_class.new(version, firecrawl: firecrawl, docs_gpt: docs_gpt).tick
-    end.to raise_error(described_class::BuildDeadlineExceeded, /build deadline/)
-
-    expect(version.reload).to have_attributes(
-      status: 'failed',
-      failure_code: 'ChatRing::Knowledge::SyncService::BuildDeadlineExceeded'
-    )
-  end
-
-  it 'refuses automatic publication before the retrieval evaluation gate' do
-    expect do
-      described_class.start!(account: account, inbox: inbox, root_url: 'https://example.com', publish_on_ready: true)
-    end.to raise_error(ArgumentError, /publish_on_ready is disabled/)
-  end
-
-  it 'rebuilds an isolated provider version from the stored snapshot without calling Firecrawl' do
-    markdown = "# Pricing\nUseful pricing information for customers.\n[Start Trial](/signup)"
-    manifest = [{ 'url' => 'https://example.com/pricing', 'included' => true }]
-    version.update!(mapped_manifest: manifest, manifest_digest: Digest::SHA256.hexdigest(manifest.to_json))
-    version.documents.create!(
-      source_url: 'https://example.com/pricing',
-      title: 'Pricing',
+  let(:knowledge_base) { ChatRing::KnowledgeBase.for_account!(account) }
+  let(:source) { knowledge_base.website_sources.create!(root_url: 'https://example.com/', status: 'available') }
+  let(:markdown) { "# Example\n\nUseful product knowledge for customers." }
+  let(:material) do
+    knowledge_base.materials.create!(
+      website_source: source,
+      source_kind: 'website',
+      source_reference: 'https://example.com/',
+      public_url: 'https://example.com/',
+      title: 'Example',
+      status: 'processing',
       markdown: markdown,
       content_hash: Digest::SHA256.hexdigest(markdown),
-      provider_file_name: 'pricing.md',
-      provider_source_id: 'old-source',
-      provider_source_reference: '/inputs/pricing.md',
+      extracted_at: Time.current
+    )
+  end
+  let(:index) do
+    knowledge_base.knowledge_indexes.create!(
+      workspace: knowledge_base.workspace,
+      status: 'building',
+      provider: 'docs_gpt',
+      provider_release: 'provider-release',
+      mapped_manifest: [],
+      manifest_digest: Digest::SHA256.hexdigest([].to_json),
+      config_snapshot: {}
+    ).tap do |record|
+      record.documents.create!(
+        knowledge_material: material,
+        source_kind: 'website',
+        source_reference: material.source_reference,
+        source_url: material.public_url,
+        public_url: material.public_url,
+        title: material.title,
+        markdown: material.markdown,
+        content_hash: material.content_hash,
+        provider_file_name: 'example.md',
+        provider_status: 'pending'
+      )
+    end
+  end
+  let(:docs_gpt) { instance_double(ChatRing::Knowledge::DocsGptClient) }
+
+  it 'uploads the catalog once and marks the hidden index ready after provenance validation' do
+    document = index.documents.first
+    allow(docs_gpt).to receive(:upload_index).with(index).and_return(task_id: 'task-1', source_id: 'source-1')
+    allow(docs_gpt).to receive(:task_status).with('task-1').and_return('status' => 'SUCCESS')
+    allow(docs_gpt).to receive(:chunks).with('source-1').and_return([])
+    allow(ChatRing::Knowledge::ProviderChunkValidator).to receive(:validate!)
+      .and_return(document => '/inputs/example.md')
+
+    expect(described_class.new(index, docs_gpt: docs_gpt).tick).to eq(:complete)
+
+    expect(index.reload.status).to eq('ready')
+    expect(document.reload).to have_attributes(
       provider_status: 'ready',
-      metadata: { 'authority_class' => 'structured_commercial' }
+      provider_source_id: 'source-1',
+      provider_source_reference: '/inputs/example.md'
     )
-    version.update!(status: 'published')
-    allow(ChatRing::Knowledge::SyncJob).to receive(:perform_later)
-
-    with_modified_env DOCSGPT_SCORE_THRESHOLD: '0.62' do
-      rebuilt = described_class.rebuild_from!(version)
-
-      expect(rebuilt).to have_attributes(status: 'ingesting', account: account, inbox: inbox)
-      expect(rebuilt.config_snapshot['source_policy_version']).to eq(ChatRing::Knowledge::SourcePolicy::VERSION)
-      expect(rebuilt.config_snapshot).to include(
-        'build_mode' => 'stored_snapshot_rebuild',
-        'source_knowledge_version_id' => version.id
-      )
-      expect(rebuilt.documents.first).to have_attributes(provider_status: 'pending', provider_source_id: nil)
-      expect(rebuilt.documents.first.metadata.fetch('headings')).to include(
-        'level' => 1,
-        'text' => 'Pricing',
-        'path' => 'Pricing'
-      )
-      expect(rebuilt.documents.first.metadata.fetch('cta_candidates')).to contain_exactly(
-        {
-          'label' => 'Start Trial',
-          'url' => 'https://example.com/signup',
-          'heading_path' => 'Pricing',
-          'external' => false
-        }
-      )
-      expect(ChatRing::Knowledge::SyncJob).to have_received(:perform_later).with(rebuilt.id)
-    end
+    expect(docs_gpt).to have_received(:upload_index).once
   end
 
-  it 'rejects a stored snapshot whose content no longer matches its hash' do
-    version.update!(manifest_digest: Digest::SHA256.hexdigest(version.mapped_manifest.to_json))
-    version.documents.create!(
-      source_url: 'https://example.com/',
-      title: 'Example',
-      markdown: '# Tampered snapshot',
-      content_hash: 'a' * 64,
-      provider_file_name: 'example.md',
-      provider_status: 'ready'
-    )
-    version.update!(status: 'ready')
+  it 'does not call Firecrawl while indexing already extracted Training Materials' do
+    allow(docs_gpt).to receive(:upload_index).and_return(task_id: 'task-1', source_id: 'source-1')
+    allow(docs_gpt).to receive(:task_status).and_return('status' => 'PENDING')
 
-    with_modified_env DOCSGPT_SCORE_THRESHOLD: '0.62' do
-      expect { described_class.rebuild_from!(version) }.to raise_error(
-        described_class::IncompleteCrawlError,
-        /does not match its content hash/
-      )
-    end
-  end
-
-  it 'rejects an uploaded provider source containing an unexpected document reference before marking documents ready' do
-    document = version.documents.create!(
-      source_url: 'https://example.com/pricing',
-      title: 'Pricing',
-      markdown: '# Pricing',
-      content_hash: Digest::SHA256.hexdigest('# Pricing'),
-      provider_file_name: 'pricing.md'
-    )
-    version.update!(status: 'ingesting')
-    allow(docs_gpt).to receive(:chunks).and_return(
-      [
-        { 'metadata' => { 'source' => '/inputs/pricing.md' } },
-        { 'metadata' => { 'source' => '/inputs/unexpected.md' } }
-      ]
-    )
-
-    service = described_class.new(version, firecrawl: firecrawl, docs_gpt: docs_gpt)
-    expect { service.send(:finalize_version, [document]) }.to raise_error(
-      described_class::ProviderIngestionError,
-      /outside the knowledge-version manifest/
-    )
-    expect(document.reload).to have_attributes(provider_status: 'pending', provider_source_reference: nil)
+    expect(described_class.new(index, docs_gpt: docs_gpt).tick).to eq(:retry)
+    expect(WebMock).not_to have_requested(:post, %r{api\.firecrawl\.dev})
   end
 end

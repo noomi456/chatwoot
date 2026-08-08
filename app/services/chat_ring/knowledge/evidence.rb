@@ -1,7 +1,7 @@
 module ChatRing::Knowledge
   Evidence = Data.define(
     :id,
-    :knowledge_version_id,
+    :knowledge_index_id,
     :provider,
     :provider_release,
     :provider_source_id,

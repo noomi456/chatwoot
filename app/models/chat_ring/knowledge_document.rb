@@ -2,15 +2,19 @@ class ChatRing::KnowledgeDocument < ApplicationRecord
   self.table_name = 'chat_ring_knowledge_documents'
 
   PROVIDER_STATUSES = %w[pending processing ready failed].freeze
-  SOURCE_KINDS = %w[website pdf docx].freeze
+  SOURCE_KINDS = %w[website pdf docx doc odt rtf xlsx xls html].freeze
   MAX_MARKDOWN_LENGTH = 2.megabytes
   IMMUTABLE_SNAPSHOT_ATTRIBUTES = %w[
-    source_kind source_reference source_url public_url file_source_id title markdown content_hash provider_file_name metadata
+    knowledge_material_id source_kind source_reference source_url public_url file_source_id title markdown content_hash
+    provider_file_name metadata
   ].freeze
 
-  belongs_to :knowledge_version,
-             class_name: 'ChatRing::KnowledgeVersion',
+  belongs_to :knowledge_index,
+             class_name: 'ChatRing::KnowledgeIndex',
              inverse_of: :documents
+  belongs_to :knowledge_material,
+             class_name: 'ChatRing::KnowledgeMaterial',
+             inverse_of: :knowledge_documents
   belongs_to :file_source,
              class_name: 'ChatRing::KnowledgeFileSource',
              inverse_of: :knowledge_documents,
@@ -23,7 +27,8 @@ class ChatRing::KnowledgeDocument < ApplicationRecord
   validates :markdown, length: { maximum: MAX_MARKDOWN_LENGTH }
   validates :provider_status, inclusion: { in: PROVIDER_STATUSES }
   validate :source_locator_matches_kind
-  validate :completed_version_snapshot_is_immutable
+  validate :material_matches_snapshot
+  validate :completed_index_snapshot_is_immutable
 
   private
 
@@ -43,9 +48,17 @@ class ChatRing::KnowledgeDocument < ApplicationRecord
     end
   end
 
-  def completed_version_snapshot_is_immutable
-    return if knowledge_version.blank?
-    return unless ChatRing::KnowledgeVersion::IMMUTABLE_BUILD_STATUSES.include?(knowledge_version.status)
+  def material_matches_snapshot
+    return if knowledge_material.blank? || knowledge_index.blank?
+    return if knowledge_material.knowledge_base_id == knowledge_index.knowledge_base_id &&
+              knowledge_material.source_reference == source_reference
+
+    errors.add(:knowledge_material, 'must match the generation and source reference')
+  end
+
+  def completed_index_snapshot_is_immutable
+    return if knowledge_index.blank?
+    return unless ChatRing::KnowledgeIndex::IMMUTABLE_STATUSES.include?(knowledge_index.status)
 
     snapshot_changed = IMMUTABLE_SNAPSHOT_ATTRIBUTES.any? { |attribute| will_save_change_to_attribute?(attribute) }
     return unless new_record? || snapshot_changed

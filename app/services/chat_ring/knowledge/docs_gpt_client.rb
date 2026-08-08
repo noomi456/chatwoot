@@ -23,8 +23,6 @@ class ChatRing::Knowledge::DocsGptClient
       rephrase_query: false
     }
   }.freeze
-  MAINTENANCE_SOURCE_ID = 'global-idempotency'.freeze
-  MAINTENANCE_BINDING_DIGEST = Digest::SHA256.hexdigest('chatring-docsgpt-maintenance-v1').freeze
 
   class Error < StandardError; end
   class ConfigurationError < Error; end
@@ -41,16 +39,16 @@ class ChatRing::Knowledge::DocsGptClient
     )
   end
 
-  def upload_version(version) # rubocop:disable Metrics/AbcSize
-    documents = version.documents.order(:id).to_a
+  def upload_index(index) # rubocop:disable Metrics/AbcSize
+    documents = index.documents.order(:id).to_a
     raise ResponseError, 'DocsGPT upload requires at least one document' if documents.empty?
 
     boundary = "----ChatRingKnowledge#{SecureRandom.hex(16)}"
     response = json_connection.post('/api/upload') do |request|
       request.headers.update(@auth.user_headers)
       request.headers['Content-Type'] = "multipart/form-data; boundary=#{boundary}"
-      request.headers['Idempotency-Key'] = "chatring-knowledge-version-#{version.id}-#{version.evaluation_binding_digest}"
-      request.body = multipart_body(boundary, version, documents)
+      request.headers['Idempotency-Key'] = "chatring-knowledge-index-#{index.id}-#{index.provider_binding_digest}"
+      request.body = multipart_body(boundary, index, documents)
     end
     parsed = parse_response(response, expected_statuses: [200])
     {
@@ -105,7 +103,7 @@ class ChatRing::Knowledge::DocsGptClient
     false
   end
 
-  def delete_source(account_id:, knowledge_version_id:, binding_digest:, source_id:) # rubocop:disable Metrics/MethodLength
+  def delete_source(account_id:, knowledge_index_id:, binding_digest:, source_id:) # rubocop:disable Metrics/MethodLength
     body = { source_id: source_id.to_s }.to_json
     response = json_connection.post('/api/internal/chatring/delete-source') do |request|
       request.headers.update(
@@ -115,7 +113,7 @@ class ChatRing::Knowledge::DocsGptClient
           source_id: source_id,
           scope: {
             account_id: account_id,
-            knowledge_version_id: knowledge_version_id,
+            knowledge_index_id: knowledge_index_id,
             binding_digest: binding_digest
           }
         )
@@ -133,43 +131,7 @@ class ChatRing::Knowledge::DocsGptClient
     raise RequestError, "DocsGPT request failed: #{e.class.name}"
   end
 
-  def cleanup_expired_idempotency
-    body = {}.to_json
-    response = json_connection.post('/api/internal/chatring/maintenance/idempotency') do |request|
-      request.headers.update(maintenance_headers(body))
-      request.headers['Content-Type'] = 'application/json'
-      request.body = body
-    end
-    validate_maintenance_response(response)
-  rescue KeyError, ArgumentError, TypeError
-    raise ResponseError, 'DocsGPT maintenance response is invalid'
-  rescue Faraday::Error => e
-    raise RequestError, "DocsGPT request failed: #{e.class.name}"
-  end
-
   private
-
-  def maintenance_headers(body)
-    @auth.internal_headers(
-      body: body,
-      operation: 'cleanup_expired_idempotency',
-      source_id: MAINTENANCE_SOURCE_ID,
-      scope: {
-        account_id: 0,
-        knowledge_version_id: 0,
-        binding_digest: MAINTENANCE_BINDING_DIGEST
-      }
-    )
-  end
-
-  def validate_maintenance_response(response)
-    parsed = parse_response(response, expected_statuses: [200])
-    counts = %w[task_dedup_deleted webhook_dedup_deleted].map { |key| Integer(parsed.fetch(key)) }
-    raise ResponseError, 'DocsGPT maintenance response is invalid' unless
-      parsed['status'] == 'completed' && counts.all? { |count| count >= 0 }
-
-    parsed
-  end
 
   def json_connection
     @json_connection ||= Faraday.new(url: @base_url) do |connection|
@@ -179,17 +141,17 @@ class ChatRing::Knowledge::DocsGptClient
     end
   end
 
-  def multipart_body(boundary, version, documents)
+  def multipart_body(boundary, index, documents)
     body = String.new(encoding: Encoding::BINARY)
     append_form_part(body, boundary, 'user', USER_ID)
-    append_form_part(body, boundary, 'name', source_binding_name(version))
+    append_form_part(body, boundary, 'name', source_binding_name(index))
     append_form_part(body, boundary, 'config', SOURCE_CONFIG.to_json)
     documents.each { |document| append_file_part(body, boundary, document) }
     body << "--#{boundary}--\r\n"
   end
 
-  def source_binding_name(version)
-    "chatring-a#{version.account_id}-v#{version.id}-#{version.evaluation_binding_digest}"
+  def source_binding_name(index)
+    "chatring-a#{index.account_id}-i#{index.id}-#{index.provider_binding_digest}"
   end
 
   def append_form_part(body, boundary, name, value)

@@ -36,9 +36,38 @@ RSpec.describe ChatRing::Knowledge::FirecrawlClient do
     request_matcher = have_requested(:post, 'https://api.firecrawl.dev/v2/batch/scrape').with do |request|
       body = JSON.parse(request.body)
       body['urls'] == ['https://example.com/', 'https://example.com/docs'] &&
-        body['formats'] == ['markdown'] && body['onlyMainContent'] == true && body['ignoreInvalidURLs'] == false
+        body['formats'] == ['markdown'] && body['onlyMainContent'] == true && body['ignoreInvalidURLs'] == true
     end
     expect(WebMock).to request_matcher
+  end
+
+  it 'scrapes one explicit webpage directly without Map or batch scrape' do
+    stub_request(:post, 'https://api.firecrawl.dev/v2/scrape').to_return(
+      status: 200,
+      headers: { 'Content-Type' => 'application/json' },
+      body: {
+        success: true,
+        data: {
+          markdown: '# Features',
+          metadata: { sourceURL: 'https://example.com/features', statusCode: 200 }
+        }
+      }.to_json
+    )
+
+    result = client.scrape(url: 'https://example.com/features', max_age: 0)
+
+    expect(result).to include('markdown' => '# Features')
+    expect(WebMock).to have_requested(:post, 'https://api.firecrawl.dev/v2/scrape').with do |request|
+      body = JSON.parse(request.body)
+      body == {
+        'url' => 'https://example.com/features',
+        'formats' => ['markdown'],
+        'onlyMainContent' => true,
+        'maxAge' => 0
+      }
+    end.once
+    expect(WebMock).not_to have_requested(:post, 'https://api.firecrawl.dev/v2/map')
+    expect(WebMock).not_to have_requested(:post, 'https://api.firecrawl.dev/v2/batch/scrape')
   end
 
   it 'fails rather than publishing a potentially truncated map' do

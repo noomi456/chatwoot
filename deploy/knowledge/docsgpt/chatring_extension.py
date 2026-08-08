@@ -27,7 +27,6 @@ from application.parser.schema.base import Document
 from application.retriever import classic_rag as classic_rag_module
 from application.retriever.dispatcher import Dispatcher
 from application.storage.db.repositories.sources import SourcesRepository
-from application.storage.db.repositories.idempotency import IdempotencyRepository
 from application.storage.db.repositories.ingest_chunk_progress import (
     IngestChunkProgressRepository,
 )
@@ -45,13 +44,12 @@ MAX_CLOCK_SKEW_SECONDS = 90
 DOC_TOKEN_LIMIT = 50000
 _HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 _SOURCE_BINDING = re.compile(
-    r"^chatring-a(?P<account>\d+)-v(?P<version>\d+)-(?P<digest>[0-9a-f]{64})$"
+    # ``v`` is accepted only for provider sources created before the hidden
+    # KnowledgeIndex rename. New uploads use ``i``. Both bind the same
+    # immutable database id and digest during the coordinated cutover.
+    r"^chatring-a(?P<account>\d+)-(?:i|v)(?P<index>\d+)-(?P<digest>[0-9a-f]{64})$"
 )
 logger = logging.getLogger(__name__)
-MAINTENANCE_SOURCE_ID = "global-idempotency"
-MAINTENANCE_BINDING_DIGEST = hashlib.sha256(
-    b"chatring-docsgpt-maintenance-v1"
-).hexdigest()
 
 
 class ChatRingProviderError(RuntimeError):
@@ -75,7 +73,7 @@ def _internal_key() -> str:
 def _signature_payload(
     timestamp: str,
     account_id: str,
-    knowledge_version_id: str,
+    knowledge_index_id: str,
     binding_digest: str,
     operation: str,
     source_id: str,
@@ -86,7 +84,7 @@ def _signature_payload(
         [
             timestamp,
             account_id,
-            knowledge_version_id,
+            knowledge_index_id,
             binding_digest,
             operation,
             source_id,
@@ -99,14 +97,14 @@ def _verify_scope(operation: str, source_id: str) -> tuple[str, str, str]:
     provided_internal_key = request.headers.get("X-Internal-Key", "")
     timestamp = request.headers.get("X-ChatRing-Timestamp", "")
     account_id = request.headers.get("X-ChatRing-Account", "")
-    version_id = request.headers.get("X-ChatRing-Knowledge-Version", "")
+    index_id = request.headers.get("X-ChatRing-Knowledge-Index", "")
     binding_digest = request.headers.get("X-ChatRing-Binding-Digest", "")
     provided = request.headers.get("X-ChatRing-Signature", "")
     if not provided_internal_key or not hmac.compare_digest(
         _internal_key(), provided_internal_key
     ):
         raise PermissionError("invalid internal credential")
-    if not all((timestamp, account_id, version_id, binding_digest, provided)):
+    if not all((timestamp, account_id, index_id, binding_digest, provided)):
         raise PermissionError("missing scoped credential")
     if not binding_digest.isascii() or not re.fullmatch(r"[0-9a-f]{64}", binding_digest):
         raise PermissionError("invalid scoped credential")
@@ -122,7 +120,7 @@ def _verify_scope(operation: str, source_id: str) -> tuple[str, str, str]:
         _signature_payload(
             timestamp,
             account_id,
-            version_id,
+            index_id,
             binding_digest,
             operation,
             source_id,
@@ -132,7 +130,7 @@ def _verify_scope(operation: str, source_id: str) -> tuple[str, str, str]:
     ).hexdigest()
     if not hmac.compare_digest(expected, provided):
         raise PermissionError("invalid scoped credential")
-    return account_id, version_id, binding_digest
+    return account_id, index_id, binding_digest
 
 
 def _source(source_id: str) -> dict[str, Any] | None:
@@ -141,12 +139,12 @@ def _source(source_id: str) -> dict[str, Any] | None:
 
 
 def _verify_source_binding(
-    source: dict[str, Any], account_id: str, version_id: str, binding_digest: str
+    source: dict[str, Any], account_id: str, index_id: str, binding_digest: str
 ) -> None:
     match = _SOURCE_BINDING.fullmatch(str(source.get("name") or ""))
     if match is None or match.groupdict() != {
         "account": account_id,
-        "version": version_id,
+        "index": index_id,
         "digest": binding_digest,
     }:
         raise PermissionError("source is outside the signed ChatRing scope")
@@ -177,11 +175,6 @@ def _delete_source(source: dict[str, Any]) -> None:
 def _delete_ingest_progress(source_id: str) -> None:
     with db_session() as connection:
         IngestChunkProgressRepository(connection).delete(source_id)
-
-
-def _cleanup_expired_idempotency() -> dict[str, int]:
-    with db_session() as connection:
-        return IdempotencyRepository(connection).cleanup_expired()
 
 
 def _strict_pgvector_search(self, question, k=2, *args, score_threshold=None, **kwargs):
@@ -280,7 +273,7 @@ def _chatring_markdown_chunk(self: MarkdownChunker, documents: list[Document]):
         if "".join(current).strip():
             sections.append((current_path, "".join(current)))
 
-        index = 0
+        raw_pieces: list[tuple[list[str], str]] = []
         for heading_path, section in sections:
             pieces = (
                 [section]
@@ -290,10 +283,38 @@ def _chatring_markdown_chunk(self: MarkdownChunker, documents: list[Document]):
             for piece in pieces:
                 if not piece.strip():
                     continue
-                processed.append(
-                    _emit_markdown_chunk(self, document, index, piece, heading_path)
+                raw_pieces.append((heading_path, piece))
+
+        minimum = max(0, int(getattr(self, "min_tokens", 0) or 0))
+        coalesced: list[tuple[list[str], str]] = []
+        for heading_path, piece in raw_pieces:
+            if not coalesced:
+                coalesced.append((heading_path, piece))
+                continue
+
+            previous_path, previous_piece = coalesced[-1]
+            combined = previous_piece.rstrip() + "\n\n" + piece.lstrip()
+            if (
+                minimum > 0
+                and (
+                    self._token_count(previous_piece) < minimum
+                    or self._token_count(piece) < minimum
                 )
-                index += 1
+                and self._token_count(combined) <= self.max_tokens
+            ):
+                common_path = []
+                for left, right in zip(previous_path, heading_path):
+                    if left != right:
+                        break
+                    common_path.append(left)
+                coalesced[-1] = (common_path, combined)
+            else:
+                coalesced.append((heading_path, piece))
+
+        for index, (heading_path, piece) in enumerate(coalesced):
+            processed.append(
+                _emit_markdown_chunk(self, document, index, piece, heading_path)
+            )
     return processed
 
 
@@ -413,7 +434,7 @@ def register_chat_ring_routes(blueprint):
         source_id = str(body.get("source_id") or "").strip()
         query = str(body.get("query") or "").strip()
         try:
-            account_id, version_id, binding_digest = _verify_scope(
+            account_id, index_id, binding_digest = _verify_scope(
                 "retrieve", source_id
             )
         except PermissionError:
@@ -433,7 +454,7 @@ def register_chat_ring_routes(blueprint):
         if source is None:
             return jsonify({"status": "not_found"}), 404
         try:
-            _verify_source_binding(source, account_id, version_id, binding_digest)
+            _verify_source_binding(source, account_id, index_id, binding_digest)
         except PermissionError:
             return jsonify({"status": "forbidden"}), 403
         try:
@@ -462,7 +483,7 @@ def register_chat_ring_routes(blueprint):
             return jsonify({"status": "invalid_request"}), 400
         source_id = str(body.get("source_id") or "").strip()
         try:
-            account_id, version_id, binding_digest = _verify_scope(
+            account_id, index_id, binding_digest = _verify_scope(
                 "delete_source", source_id
             )
         except PermissionError:
@@ -480,7 +501,7 @@ def register_chat_ring_routes(blueprint):
                 return jsonify({"status": "provider_error"}), 503
             return jsonify({"status": "already_absent", "source_id": source_id}), 200
         try:
-            _verify_source_binding(source, account_id, version_id, binding_digest)
+            _verify_source_binding(source, account_id, index_id, binding_digest)
             _delete_source(source)
         except PermissionError:
             return jsonify({"status": "forbidden"}), 403
@@ -488,30 +509,6 @@ def register_chat_ring_routes(blueprint):
             logger.exception("ChatRing DocsGPT source cleanup failed")
             return jsonify({"status": "provider_error"}), 503
         return jsonify({"status": "deleted", "source_id": source_id}), 200
-
-    @blueprint.route("/api/internal/chatring/maintenance/idempotency", methods=["POST"])
-    def chatring_cleanup_expired_idempotency():
-        try:
-            account_id, version_id, binding_digest = _verify_scope(
-                "cleanup_expired_idempotency", MAINTENANCE_SOURCE_ID
-            )
-            if (account_id, version_id, binding_digest) != (
-                "0",
-                "0",
-                MAINTENANCE_BINDING_DIGEST,
-            ):
-                raise PermissionError("invalid maintenance scope")
-        except PermissionError:
-            return jsonify({"status": "forbidden"}), 403
-        except ChatRingProviderError:
-            return jsonify({"status": "provider_error"}), 503
-        try:
-            counts = _cleanup_expired_idempotency()
-        except Exception:
-            logger.exception("ChatRing DocsGPT idempotency cleanup failed")
-            return jsonify({"status": "provider_error"}), 503
-        return jsonify({"status": "completed", **counts}), 200
-
 
 PGVectorStore.search_with_scores = _strict_pgvector_search
 classic_rag_module.labels_from_metadata = _chatring_labels_from_metadata

@@ -1,0 +1,24 @@
+class ChatRing::Workspace < ApplicationRecord
+  self.table_name = 'chat_ring_workspaces'
+
+  STATUSES = %w[active suspended disabled].freeze
+
+  belongs_to :chatwoot_account,
+             class_name: 'Account',
+             inverse_of: :chat_ring_workspace
+  has_one :knowledge_base,
+          class_name: 'ChatRing::KnowledgeBase',
+          inverse_of: :workspace,
+          dependent: :destroy
+  has_many :knowledge_scopes,
+           class_name: 'ChatRing::KnowledgeScope',
+           inverse_of: :workspace,
+           dependent: :destroy
+
+  validates :chatwoot_account_id, uniqueness: true
+  validates :status, inclusion: { in: STATUSES }
+
+  def self.for_account!(account)
+    create_or_find_by!(chatwoot_account_id: account.id)
+  end
+end

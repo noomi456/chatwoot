@@ -4,130 +4,73 @@ RSpec.describe ChatRing::Knowledge::ProviderCleanupScheduler do
   include ActiveJob::TestHelper
 
   let(:account) { create(:account) }
-  let(:inbox) { create(:inbox, account: account) }
-
-  it 'durably schedules only an unreferenced retired provider version' do
-    version = ChatRing::KnowledgeVersion.create!(
-      account: account,
-      inbox: inbox,
-      status: 'ingesting',
+  let(:knowledge_base) { ChatRing::KnowledgeBase.for_account!(account) }
+  let(:source) { knowledge_base.website_sources.create!(root_url: 'https://example.com/', status: 'available') }
+  let(:markdown) { "# Example\n\nUseful knowledge content." }
+  let(:material) do
+    knowledge_base.materials.create!(
+      website_source: source,
+      source_kind: 'website',
+      source_reference: 'https://example.com/',
+      public_url: 'https://example.com/',
+      status: 'available',
+      markdown: markdown,
+      content_hash: Digest::SHA256.hexdigest(markdown),
+      extracted_at: Time.current
+    )
+  end
+  let(:index) do
+    knowledge_base.knowledge_indexes.create!(
+      workspace: knowledge_base.workspace,
+      status: 'building',
+      provider: 'docs_gpt',
       provider_release: 'provider-release',
-      root_url: 'https://example.com/'
-    )
-    version.documents.create!(
-      source_url: 'https://example.com/',
-      markdown: '# Example',
-      content_hash: 'a' * 64,
-      provider_file_name: 'example.md',
-      provider_source_id: 'source-1',
-      provider_status: 'ready'
-    )
-    version.update!(status: 'retired')
+      mapped_manifest: [],
+      manifest_digest: Digest::SHA256.hexdigest([].to_json),
+      config_snapshot: {}
+    ).tap do |record|
+      record.documents.create!(
+        knowledge_material: material,
+        source_kind: 'website',
+        source_reference: material.source_reference,
+        source_url: material.public_url,
+        public_url: material.public_url,
+        markdown: material.markdown,
+        content_hash: material.content_hash,
+        provider_file_name: 'example.md',
+        provider_source_id: 'source-1',
+        provider_status: 'ready'
+      )
+      record.update!(status: 'retired')
+    end
+  end
 
+  it 'schedules one idempotent cleanup for an inactive provider index' do
     expect do
-      described_class.schedule_eligible!(account: account, inbox: inbox)
+      described_class.schedule_eligible!(knowledge_base: knowledge_base)
     end.to have_enqueued_job(ChatRing::Knowledge::ProviderCleanupJob)
 
-    cleanup = ChatRing::KnowledgeProviderCleanup.find_by!(knowledge_version: version)
+    cleanup = index.reload.provider_cleanup
     expect(cleanup).to have_attributes(
       provider_source_id: 'source-1',
-      binding_digest: version.evaluation_binding_digest,
+      binding_digest: index.provider_binding_digest,
       status: 'pending',
       attempts: 0
     )
-    expect(cleanup.eligible_at).to be > Time.current
 
     clear_enqueued_jobs
     expect do
-      described_class.schedule_eligible!(account: account, inbox: inbox)
+      described_class.schedule_eligible!(knowledge_base: knowledge_base)
     end.not_to have_enqueued_job(ChatRing::Knowledge::ProviderCleanupJob)
-    expect(cleanup.reload).to have_attributes(status: 'pending', attempts: 0)
   end
 
-  it 'does not schedule a retained rollback target' do
-    version = ChatRing::KnowledgeVersion.create!(
-      account: account,
-      inbox: inbox,
-      status: 'ingesting',
-      provider_release: 'provider-release',
-      root_url: 'https://example.com/'
-    )
-    version.documents.create!(
-      source_url: 'https://example.com/',
-      markdown: '# Example',
-      content_hash: 'a' * 64,
-      provider_file_name: 'example.md',
-      provider_source_id: 'source-retained',
-      provider_status: 'ready'
-    )
-    version.update!(status: 'retired')
-    current = ChatRing::KnowledgeVersion.create!(
-      account: account,
-      inbox: inbox,
-      status: 'published',
-      provider_release: 'provider-release',
-      root_url: 'https://example.com/'
-    )
-    ChatRing::KnowledgePublication.create!(
-      account: account,
-      inbox: inbox,
-      knowledge_version: current,
-      previous_knowledge_version: version,
-      published_at: Time.current
-    )
+  it 'never schedules the active index' do
+    index.update!(status: 'active')
+    knowledge_base.update!(active_knowledge_index: index)
 
     expect do
-      described_class.schedule_eligible!(account: account, inbox: inbox)
+      described_class.schedule_eligible!(knowledge_base: knowledge_base)
     end.not_to have_enqueued_job(ChatRing::Knowledge::ProviderCleanupJob)
-    expect(version.provider_cleanup).to be_nil
-  end
-
-  it 'immediately cancels pending deletion when a version becomes protected' do
-    version = ChatRing::KnowledgeVersion.create!(
-      account: account,
-      inbox: inbox,
-      status: 'ingesting',
-      provider_release: 'provider-release',
-      root_url: 'https://example.com/'
-    )
-    version.documents.create!(
-      source_url: 'https://example.com/',
-      markdown: '# Example',
-      content_hash: 'a' * 64,
-      provider_file_name: 'example.md',
-      provider_source_id: 'source-retained',
-      provider_status: 'ready'
-    )
-    version.update!(status: 'retired')
-    cleanup = ChatRing::KnowledgeProviderCleanup.create!(
-      knowledge_version: version,
-      account_id: account.id,
-      inbox_id: inbox.id,
-      provider_source_id: 'source-retained',
-      binding_digest: version.evaluation_binding_digest,
-      eligible_at: 1.day.from_now
-    )
-    current = ChatRing::KnowledgeVersion.create!(
-      account: account,
-      inbox: inbox,
-      status: 'published',
-      provider_release: 'provider-release',
-      root_url: 'https://example.com/'
-    )
-    ChatRing::KnowledgePublication.create!(
-      account: account,
-      inbox: inbox,
-      knowledge_version: current,
-      previous_knowledge_version: version,
-      published_at: Time.current
-    )
-
-    expect do
-      described_class.schedule_eligible!(account: account, inbox: inbox)
-    end.not_to have_enqueued_job(ChatRing::Knowledge::ProviderCleanupJob)
-    expect(cleanup.reload).to have_attributes(
-      status: 'cancelled',
-      last_error: 'knowledge version is retained by a publication pointer'
-    )
+    expect(index.provider_cleanup).to be_nil
   end
 end

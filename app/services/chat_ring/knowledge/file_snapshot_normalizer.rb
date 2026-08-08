@@ -35,6 +35,7 @@ class ChatRing::Knowledge::FileSnapshotNormalizer
       metadata: metadata.merge(
         @preflight.metadata,
         'authority_class' => @source.authority_class,
+        'risk_flags' => PROMPT_INJECTION.match?(markdown) ? ['possible_prompt_injection'] : [],
         'headings' => structure.fetch('headings'),
         'cta_candidates' => structure.fetch('cta_candidates'),
         'table_count' => markdown.each_line.count { |line| TABLE_SEPARATOR.match?(line) }
@@ -56,8 +57,6 @@ class ChatRing::Knowledge::FileSnapshotNormalizer
     if markdown.bytesize > ChatRing::KnowledgeDocument::MAX_MARKDOWN_LENGTH
       raise Error, "Parsed file exceeds #{ChatRing::KnowledgeDocument::MAX_MARKDOWN_LENGTH / 1.megabyte} MB of Markdown"
     end
-    raise Error, 'Parsed file contains prompt-injection text' if PROMPT_INJECTION.match?(markdown)
-
     markdown
   end
 end

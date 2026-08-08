@@ -17,7 +17,7 @@ from application.parser.schema.base import Document
 
 class ChatRingExtensionImageTest(unittest.TestCase):
     ACCOUNT_ID = "42"
-    VERSION_ID = "17"
+    INDEX_ID = "17"
     DIGEST = "a" * 64
     SOURCE_ID = "11111111-1111-4111-8111-111111111111"
     INTERNAL_KEY = "ci-internal-key"
@@ -40,19 +40,19 @@ class ChatRingExtensionImageTest(unittest.TestCase):
         operation: str,
         source_id: str | None = None,
         account_id: str | None = None,
-        version_id: str | None = None,
+        index_id: str | None = None,
         binding_digest: str | None = None,
         timestamp: str | None = None,
     ) -> dict[str, str]:
         timestamp = timestamp or str(int(time.time()))
         source_id = source_id or self.SOURCE_ID
         account_id = account_id or self.ACCOUNT_ID
-        version_id = version_id or self.VERSION_ID
+        index_id = index_id or self.INDEX_ID
         binding_digest = binding_digest or self.DIGEST
         payload = extension._signature_payload(
             timestamp,
             account_id,
-            version_id,
+            index_id,
             binding_digest,
             operation,
             source_id,
@@ -65,7 +65,7 @@ class ChatRingExtensionImageTest(unittest.TestCase):
             "X-Internal-Key": self.INTERNAL_KEY,
             "X-ChatRing-Timestamp": timestamp,
             "X-ChatRing-Account": account_id,
-            "X-ChatRing-Knowledge-Version": version_id,
+            "X-ChatRing-Knowledge-Index": index_id,
             "X-ChatRing-Binding-Digest": binding_digest,
             "X-ChatRing-Signature": signature,
             "Content-Type": "application/json",
@@ -79,8 +79,33 @@ class ChatRingExtensionImageTest(unittest.TestCase):
     def bound_source(self):
         return {
             "id": self.SOURCE_ID,
-            "name": f"chatring-a{self.ACCOUNT_ID}-v{self.VERSION_ID}-{self.DIGEST}",
+            "name": f"chatring-a{self.ACCOUNT_ID}-i{self.INDEX_ID}-{self.DIGEST}",
         }
+
+    def test_source_binding_accepts_current_indexes_and_legacy_versions_during_cutover(self):
+        extension._verify_source_binding(
+            self.bound_source(), self.ACCOUNT_ID, self.INDEX_ID, self.DIGEST
+        )
+        extension._verify_source_binding(
+            {
+                "id": self.SOURCE_ID,
+                "name": f"chatring-a{self.ACCOUNT_ID}-v{self.INDEX_ID}-{self.DIGEST}",
+            },
+            self.ACCOUNT_ID,
+            self.INDEX_ID,
+            self.DIGEST,
+        )
+
+        with self.assertRaises(PermissionError):
+            extension._verify_source_binding(
+                {
+                    "id": self.SOURCE_ID,
+                    "name": f"chatring-a99-i{self.INDEX_ID}-{self.DIGEST}",
+                },
+                self.ACCOUNT_ID,
+                self.INDEX_ID,
+                self.DIGEST,
+            )
 
     def test_scoped_scored_retrieval_and_abstention(self):
         body = {
@@ -191,48 +216,10 @@ class ChatRingExtensionImageTest(unittest.TestCase):
         progress.delete.assert_called_once_with(self.SOURCE_ID)
         sources.delete.assert_called_once_with(self.SOURCE_ID, "local")
 
-    def test_maintenance_is_fixed_scope_and_uses_upstream_housekeeping(self):
-        body = b"{}"
-        headers = self.signed_headers(
-            body,
-            "cleanup_expired_idempotency",
-            source_id=extension.MAINTENANCE_SOURCE_ID,
-            account_id="0",
-            version_id="0",
-            binding_digest=extension.MAINTENANCE_BINDING_DIGEST,
-        )
-        with patch.object(
-            extension,
-            "_cleanup_expired_idempotency",
-            return_value={"task_dedup_deleted": 4, "webhook_dedup_deleted": 1},
-        ) as cleanup:
-            response = self.client.post(
-                "/api/internal/chatring/maintenance/idempotency",
-                data=body,
-                headers=headers,
-            )
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.get_json()["task_dedup_deleted"], 4)
-        cleanup.assert_called_once()
-
-        bad_headers = self.signed_headers(
-            body,
-            "cleanup_expired_idempotency",
-            source_id=extension.MAINTENANCE_SOURCE_ID,
-            account_id="42",
-            version_id="0",
-            binding_digest=extension.MAINTENANCE_BINDING_DIGEST,
-        )
-        response = self.client.post(
-            "/api/internal/chatring/maintenance/idempotency",
-            data=body,
-            headers=bad_headers,
-        )
-        self.assertEqual(response.status_code, 403)
-
     def test_markdown_chunking_preserves_content_and_heading_paths(self):
         chunker = MagicMock()
         chunker.max_tokens = 1000
+        chunker.min_tokens = 4
         chunker._token_count.side_effect = lambda text: len(text.split())
         document = Document(
             "# Product\nOne body line.\n## Details\nSecond body line.\n",
@@ -241,11 +228,11 @@ class ChatRingExtensionImageTest(unittest.TestCase):
 
         chunks = extension._chatring_markdown_chunk(chunker, [document])
 
-        self.assertEqual(len(chunks), 2)
+        self.assertEqual(len(chunks), 1)
         self.assertEqual(chunks[0].text.count("One body line."), 1)
-        self.assertEqual(chunks[1].text.count("Second body line."), 1)
+        self.assertEqual(chunks[0].text.count("Second body line."), 1)
         self.assertEqual(
-            chunks[1].extra_info["chatring_heading_path"], "Product > Details"
+            chunks[0].extra_info["chatring_heading_path"], "Product"
         )
 
 

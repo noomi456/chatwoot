@@ -36,8 +36,12 @@ RSpec.describe ChatRing::Knowledge::FirecrawlParseClient do
   end
 
   it 'binds the ZDR entitlement setting into the stored parse profile and digest' do
-    without_zdr = described_class.profile_for('pdf')
-    without_zdr_digest = described_class.profile_digest('pdf')
+    without_zdr = nil
+    without_zdr_digest = nil
+    with_modified_env(FIRECRAWL_ZERO_DATA_RETENTION: 'false') do
+      without_zdr = described_class.profile_for('pdf')
+      without_zdr_digest = described_class.profile_digest('pdf')
+    end
 
     with_modified_env(FIRECRAWL_ZERO_DATA_RETENTION: 'true') do
       expect(described_class.profile_for('pdf')).to include('zeroDataRetention' => true)

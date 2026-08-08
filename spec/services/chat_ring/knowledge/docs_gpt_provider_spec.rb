@@ -62,7 +62,7 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
     }
   end
 
-  it 'returns scored, version-bound source evidence through the private Dispatcher endpoint' do # rubocop:disable RSpec/ExampleLength
+  it 'returns scored, index-bound source evidence through the private Dispatcher endpoint' do # rubocop:disable RSpec/ExampleLength
     stub_request(:post, retrieval_url).to_return(
       status: 200,
       headers: { 'Content-Type' => 'application/json' },
@@ -71,13 +71,13 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
 
     evidence_set = provider.retrieve(
       query: 'How much is Pro?',
-      knowledge_version_id: 'knowledge-v1',
+      knowledge_index_id: 'knowledge-v1',
       source_manifest: source_manifest,
       limit: 4
     )
 
     expect(evidence_set.to_h).to include(
-      knowledge_version_id: 'knowledge-v1',
+      knowledge_index_id: 'knowledge-v1',
       status: 'accepted',
       error_code: nil,
       latency_ms: 17,
@@ -112,7 +112,7 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
       headers = request.headers.transform_keys(&:downcase)
       headers['x-internal-key'] == 'internal-secret' &&
         headers['x-chatring-account'] == '42' &&
-        headers['x-chatring-knowledge-version'] == 'knowledge-v1' &&
+        headers['x-chatring-knowledge-index'] == 'knowledge-v1' &&
         headers['x-chatring-binding-digest'] == 'a' * 64 &&
         headers['x-chatring-signature'].match?(/\A[0-9a-f]{64}\z/) &&
         body == { 'query' => 'How much is Pro?', 'source_id' => 'source-uuid', 'limit' => 4, 'score_threshold' => 0.62 }
@@ -129,7 +129,7 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
 
     result = provider.retrieve(
       query: 'What is the capital of France?',
-      knowledge_version_id: 'knowledge-v1',
+      knowledge_index_id: 'knowledge-v1',
       source_manifest: source_manifest
     )
 
@@ -148,7 +148,7 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
 
     result = provider.retrieve(
       query: 'Is ChatRing SOC2 compliant?',
-      knowledge_version_id: 'knowledge-v1',
+      knowledge_index_id: 'knowledge-v1',
       source_manifest: marketing_manifest
     )
 
@@ -165,7 +165,7 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
 
     result = provider.retrieve(
       query: 'What is the refund policy?',
-      knowledge_version_id: 'knowledge-v1',
+      knowledge_index_id: 'knowledge-v1',
       source_manifest: source_manifest
     )
 
@@ -180,7 +180,7 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
       body: accepted_payload(score: nil).to_json
     )
 
-    result = provider.retrieve(query: 'Question', knowledge_version_id: 'knowledge-v1', source_manifest: source_manifest)
+    result = provider.retrieve(query: 'Question', knowledge_index_id: 'knowledge-v1', source_manifest: source_manifest)
 
     expect(result).to have_attributes(status: 'provider_error', error_code: 'provider_invalid_response', items: [])
   end
@@ -193,7 +193,7 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
       body: body
     )
 
-    result = provider.retrieve(query: 'Question', knowledge_version_id: 'knowledge-v1', source_manifest: source_manifest)
+    result = provider.retrieve(query: 'Question', knowledge_index_id: 'knowledge-v1', source_manifest: source_manifest)
 
     expect(result).to have_attributes(status: 'provider_error', error_code: 'provider_invalid_response', items: [])
   end
@@ -207,7 +207,7 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
       body: payload.to_json
     )
 
-    result = provider.retrieve(query: 'Question', knowledge_version_id: 'knowledge-v1', source_manifest: source_manifest)
+    result = provider.retrieve(query: 'Question', knowledge_index_id: 'knowledge-v1', source_manifest: source_manifest)
 
     expect(result).to have_attributes(status: 'provider_error', error_code: 'provider_integrity_error', items: [])
   end
@@ -222,14 +222,14 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
 
     result = provider.retrieve(
       query: 'How much is Pro?',
-      knowledge_version_id: 'knowledge-v1',
+      knowledge_index_id: 'knowledge-v1',
       source_manifest: source_manifest
     )
 
     expect(result.items.first.excerpt).to eq(authority_text)
   end
 
-  it 'normalizes evidence outside the selected version manifest as a typed integrity failure' do
+  it 'normalizes evidence outside the active index manifest as a typed integrity failure' do
     payload = accepted_payload
     payload[:chunks][0][:source] = 'unpublished-source'
     stub_request(:post, retrieval_url).to_return(
@@ -238,7 +238,7 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
       body: payload.to_json
     )
 
-    result = provider.retrieve(query: 'Question', knowledge_version_id: 'knowledge-v1', source_manifest: source_manifest)
+    result = provider.retrieve(query: 'Question', knowledge_index_id: 'knowledge-v1', source_manifest: source_manifest)
 
     expect(result).to have_attributes(status: 'provider_error', error_code: 'provider_integrity_error', items: [])
   end
@@ -250,7 +250,7 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
       body: { status: 'provider_error' }.to_json
     )
 
-    result = provider.retrieve(query: 'Question', knowledge_version_id: 'knowledge-v1', source_manifest: source_manifest)
+    result = provider.retrieve(query: 'Question', knowledge_index_id: 'knowledge-v1', source_manifest: source_manifest)
     expect(result.status).to eq('provider_error')
     expect(result.error_code).to eq('provider_unavailable')
   end
@@ -262,7 +262,7 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
       body: accepted_payload.to_json
     )
 
-    result = provider.retrieve(query: 'Question', knowledge_version_id: 'knowledge-v1', source_manifest: source_manifest)
+    result = provider.retrieve(query: 'Question', knowledge_index_id: 'knowledge-v1', source_manifest: source_manifest)
 
     expect(result).to have_attributes(status: 'provider_error', error_code: 'provider_unavailable', items: [])
   end
@@ -279,7 +279,7 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
 
       result = provider.retrieve(
         query: 'Question',
-        knowledge_version_id: 'knowledge-v1',
+        knowledge_index_id: 'knowledge-v1',
         source_manifest: source_manifest
       )
 
@@ -290,7 +290,7 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
   it 'keeps transport timeouts distinct from insufficient evidence' do
     stub_request(:post, retrieval_url).to_timeout
 
-    result = provider.retrieve(query: 'Question', knowledge_version_id: 'knowledge-v1', source_manifest: source_manifest)
+    result = provider.retrieve(query: 'Question', knowledge_index_id: 'knowledge-v1', source_manifest: source_manifest)
 
     expect(result).to have_attributes(status: 'provider_error', error_code: 'provider_timeout', items: [])
   end
@@ -301,7 +301,7 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
 
       result = provider.retrieve(
         query: 'Question',
-        knowledge_version_id: 'knowledge-v1',
+        knowledge_index_id: 'knowledge-v1',
         source_manifest: source_manifest
       )
 
@@ -312,11 +312,11 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
   it 'normalizes malformed successful responses without hiding local configuration errors' do
     stub_request(:post, retrieval_url).to_return(status: 200, body: 'not-json')
 
-    result = provider.retrieve(query: 'Question', knowledge_version_id: 'knowledge-v1', source_manifest: source_manifest)
+    result = provider.retrieve(query: 'Question', knowledge_index_id: 'knowledge-v1', source_manifest: source_manifest)
     expect(result).to have_attributes(status: 'provider_error', error_code: 'provider_invalid_response', items: [])
 
     expect do
-      provider.retrieve(query: '', knowledge_version_id: 'knowledge-v1', source_manifest: source_manifest)
+      provider.retrieve(query: '', knowledge_index_id: 'knowledge-v1', source_manifest: source_manifest)
     end.to raise_error(described_class::ConfigurationError, /query is required/)
   end
 
@@ -335,14 +335,14 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
     end.to raise_error(described_class::ConfigurationError, /binding_digest must be a SHA-256 digest/)
   end
 
-  it 'rejects an unsafe CTA URL from the version manifest' do
+  it 'rejects an unsafe CTA URL from the active index manifest' do
     unsafe_manifest = source_manifest.deep_dup
     unsafe_manifest[provider_source_reference][:cta_candidates][0][:url] = 'javascript:alert(1)'
 
     expect do
       provider.retrieve(
         query: 'Question',
-        knowledge_version_id: 'knowledge-v1',
+        knowledge_index_id: 'knowledge-v1',
         source_manifest: unsafe_manifest
       )
     end.to raise_error(described_class::ConfigurationError, /CTA url must be a safe public http or https URL/)
@@ -351,7 +351,7 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
     expect do
       provider.retrieve(
         query: 'Question',
-        knowledge_version_id: 'knowledge-v1',
+        knowledge_index_id: 'knowledge-v1',
         source_manifest: unsafe_manifest
       )
     end.to raise_error(described_class::ConfigurationError, /CTA url must be a safe public http or https URL/)

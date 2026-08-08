@@ -5,8 +5,8 @@ class Api::V1::Accounts::ChatRing::Knowledge::BaseController < Api::V1::Accounts
 
   private
 
-  def inbox
-    @inbox ||= Current.account.inboxes.find(params.require(:inbox_id))
+  def knowledge_base
+    @knowledge_base ||= ChatRing::KnowledgeBase.for_account!(Current.account)
   end
 
   def render_unprocessable(error)

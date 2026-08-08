@@ -25,49 +25,61 @@ RSpec.describe ChatRing::AssistantSpike::ResponseJob, type: :job do
     clear_enqueued_jobs
   end
 
-  it 'schedules one response job for an eligible committed customer message' do
+  it 'keeps public AI responses disabled even when the legacy environment flag is true' do
     expect do
       create(:message, account: account, inbox: inbox, conversation: conversation, content: 'TEST-123')
-    end.to have_enqueued_job(described_class).exactly(:once)
+    end.not_to have_enqueued_job(described_class)
   end
 
-  it 'creates one ordinary outgoing Chatwoot message when the job is retried' do
-    triggering_message = create(:message, account: account, inbox: inbox, conversation: conversation, content: 'TEST-123')
-    clear_enqueued_jobs
+  context 'with the compile-time gate opened only inside the architecture proof spec' do
+    before do
+      stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', true)
+    end
 
-    2.times { described_class.perform_now(triggering_message.id) }
+    it 'schedules one response job for an eligible committed customer message' do
+      expect do
+        create(:message, account: account, inbox: inbox, conversation: conversation, content: 'TEST-123')
+      end.to have_enqueued_job(described_class).exactly(:once)
+    end
 
-    response = conversation.messages.find_by(source_id: ChatRing::AssistantSpike.response_source_id(triggering_message))
-    expect(response).to have_attributes(
-      content: 'RECEIVED TEST-123',
-      message_type: 'outgoing',
-      sender: agent_bot
-    )
-    expect(conversation.messages.where(source_id: response.source_id).count).to eq(1)
-    expect(SendReplyJob).to have_been_enqueued.with(response.id)
-  end
+    it 'creates one ordinary outgoing Chatwoot message when the job is retried' do
+      triggering_message = create(:message, account: account, inbox: inbox, conversation: conversation, content: 'TEST-123')
+      clear_enqueued_jobs
 
-  it 'discards the older job and answers only the newest rapid customer message' do
-    first_message = create(:message, account: account, inbox: inbox, conversation: conversation, content: 'M1')
-    second_message = create(:message, account: account, inbox: inbox, conversation: conversation, content: 'M2')
-    clear_enqueued_jobs
+      2.times { described_class.perform_now(triggering_message.id) }
 
-    described_class.perform_now(first_message.id)
-    described_class.perform_now(second_message.id)
+      response = conversation.messages.find_by(source_id: ChatRing::AssistantSpike.response_source_id(triggering_message))
+      expect(response).to have_attributes(
+        content: 'RECEIVED TEST-123',
+        message_type: 'outgoing',
+        sender: agent_bot
+      )
+      expect(conversation.messages.where(source_id: response.source_id).count).to eq(1)
+      expect(SendReplyJob).to have_been_enqueued.with(response.id)
+    end
 
-    responses = conversation.messages.where(sender: agent_bot, message_type: :outgoing)
-    expect(responses.pluck(:content)).to eq(['RECEIVED M2'])
-  end
+    it 'discards the older job and answers only the newest rapid customer message' do
+      first_message = create(:message, account: account, inbox: inbox, conversation: conversation, content: 'M1')
+      second_message = create(:message, account: account, inbox: inbox, conversation: conversation, content: 'M2')
+      clear_enqueued_jobs
 
-  it 'opens the pending conversation on human reply and suppresses the late bot response' do
-    triggering_message = create(:message, account: account, inbox: inbox, conversation: conversation, content: 'WAIT')
-    human = create(:user, account: account)
-    clear_enqueued_jobs
+      described_class.perform_now(first_message.id)
+      described_class.perform_now(second_message.id)
 
-    create(:message, account: account, inbox: inbox, conversation: conversation, sender: human, message_type: :outgoing)
-    described_class.perform_now(triggering_message.id)
+      responses = conversation.messages.where(sender: agent_bot, message_type: :outgoing)
+      expect(responses.pluck(:content)).to eq(['RECEIVED M2'])
+    end
 
-    expect(conversation.reload).to be_open
-    expect(conversation.messages.where(sender: agent_bot, message_type: :outgoing)).to be_empty
+    it 'opens the pending conversation on human reply and suppresses the late bot response' do
+      triggering_message = create(:message, account: account, inbox: inbox, conversation: conversation, content: 'WAIT')
+      human = create(:user, account: account)
+      clear_enqueued_jobs
+
+      create(:message, account: account, inbox: inbox, conversation: conversation, sender: human, message_type: :outgoing)
+      described_class.perform_now(triggering_message.id)
+
+      expect(conversation.reload).to be_open
+      expect(conversation.messages.where(sender: agent_bot, message_type: :outgoing)).to be_empty
+    end
   end
 end

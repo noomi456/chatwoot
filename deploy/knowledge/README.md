@@ -1,34 +1,16 @@
-# ChatRing Phase 2A Knowledge Execution
+# Private DocsGPT execution
 
-This Compose project runs only the pinned DocsGPT API and ingestion worker. Firecrawl remains a cloud extraction dependency. ChatRing Rails owns source manifests, publication pointers, rollback, and the evidence boundary.
+This Compose project runs only the pinned DocsGPT API and ingestion worker. Firecrawl remains the extraction dependency. ChatRing Rails owns the account Workspace, canonical Training Materials catalog, active hidden-index pointer, and evidence boundary.
 
-The one-shot `docs-gpt-volume-init` service gives the pinned image's non-root `appuser` ownership of its three named volumes before the API starts. This is required for upload ingestion on a fresh volume; the long-running API and worker continue to run as `appuser`.
+Required secrets and endpoints:
 
-## Required private deployment values
+- `DOCSGPT_IMAGE` — immutable ChatRing-derived image digest.
+- `DOCSGPT_POSTGRES_URI` and `DOCSGPT_PGVECTOR_CONNECTION_STRING` — dedicated DocsGPT database credentials.
+- `DOCSGPT_CELERY_BROKER_URL`, `DOCSGPT_CELERY_RESULT_BACKEND`, and `DOCSGPT_CACHE_REDIS_URL` — isolated Redis databases.
+- `DOCSGPT_INTERNAL_KEY` — shared high-entropy API/worker credential.
+- `DOCSGPT_JWT_SECRET` — user-authentication secret used only for DocsGPT ingestion APIs.
+- `DOCSGPT_SERVICE_SECRET` — independent HMAC key scoping private retrieval and deletion to an account, hidden index, binding digest, operation, and provider source.
 
-- `DOCSGPT_IMAGE` — immutable ChatRing-derived image built on DocsGPT commit `616e6fe9c435bbc6bb472636db6b3ee2b9bcaf66` with the private scored retrieval extension.
-- `CHATRING_CORE_NETWORK` — the private Conversation Core Compose network.
-- `DOCSGPT_POSTGRES_URI` — SQLAlchemy URI for a dedicated DocsGPT database and role.
-- `DOCSGPT_PGVECTOR_CONNECTION_STRING` — libpq URI for the same dedicated database.
-- `DOCSGPT_CELERY_BROKER_URL` — existing private Redis, dedicated logical database.
-- `DOCSGPT_CELERY_RESULT_BACKEND` — existing private Redis, different logical database.
-- `DOCSGPT_CACHE_REDIS_URL` — existing private Redis, different logical database.
-- `DOCSGPT_INTERNAL_KEY` — a high-entropy secret shared only by the DocsGPT API and worker for pinned upstream internal endpoints.
-- `DOCSGPT_JWT_SECRET` — a high-entropy JWT signing key shared only by Rails and DocsGPT for authenticated ingestion APIs.
-- `DOCSGPT_SERVICE_SECRET` — an independent high-entropy HMAC key used to scope private retrieval to an account and knowledge version.
+No service publishes a host port. Do not deploy the DocsGPT frontend, final-answer Agent path, broad Celery Beat scheduler, or legacy `/api/search` route as ChatRing's evidence seam.
 
-Before starting this project, create the `vector` extension in the dedicated DocsGPT database using the PostgreSQL administrative role:
-
-```sql
-CREATE EXTENSION IF NOT EXISTS vector;
-```
-
-This must be checked in the dedicated DocsGPT database itself; having the pgvector-enabled PostgreSQL image does not automatically install the extension in every database.
-
-No service declares `ports`. Rails reaches `http://docs-gpt-backend:7091` on the shared private network.
-
-## Render and verify
-
-Supply all required values through the deployment platform, then run `docker compose config`. Reject the deployment if any required-variable guard fails or if the rendered configuration contains a host port.
-
-After startup, verify the `vector` extension exists in the dedicated database, the volume initializer exited successfully, the backend health endpoint responds from the Rails container, and the worker is consuming `docsgpt` and `parsing`. Then run the ChatRing tasks for one real map, policy-filtered exact batch scrape, ingest, scored retrieval/abstention, publish, and validated rollback proof.
+After startup, verify the private health endpoint, ingestion worker, one account-level mixed website/file index, scored supported retrieval, zero-result abstention, wrong-scope rejection, and idempotent obsolete-source deletion. Public AI responses remain disabled until Architecture v2.1 Sections 15 and 21.7 pass.

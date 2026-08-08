@@ -104,19 +104,13 @@ Rails.application.routes.draw do
           end
           namespace :chat_ring do
             namespace :knowledge do
-              resources :websites, only: [:create]
-              resources :website_materials, only: [:destroy]
-              resources :file_sources, only: [:index, :show, :create, :update, :destroy] do
-                post :retry_parse, on: :member
-                post :enable, on: :member
-                delete :purge, on: :member
+              resources :websites, only: [:index, :show, :create] do
+                post :extract, on: :member
               end
-              resources :versions, only: [:index, :show, :create] do
-                post :evaluate, on: :member
-                post :publish, on: :member
-              end
-              resource :publication, only: [:show] do
-                post :rollback
+              resources :webpages, only: [:create]
+              resources :file_sources, only: [:create]
+              resources :materials, only: [:index, :show, :destroy] do
+                post :rerun, on: :member
               end
               resources :retrieval_tests, only: [:create]
             end

@@ -18,11 +18,11 @@ RSpec.describe ChatRing::Knowledge::DocsGptClient do
     relation = instance_double(ActiveRecord::Relation, to_a: documents)
     document_scope = instance_double(ActiveRecord::Associations::CollectionProxy)
     allow(document_scope).to receive(:order).with(:id).and_return(relation)
-    version = instance_double(
-      ChatRing::KnowledgeVersion,
+    index = instance_double(
+      ChatRing::KnowledgeIndex,
       id: 17,
       account_id: 42,
-      evaluation_binding_digest: 'a' * 64,
+      provider_binding_digest: 'a' * 64,
       documents: document_scope
     )
     stub_request(:post, 'http://docsgpt.internal:7091/api/upload').to_return(
@@ -31,12 +31,12 @@ RSpec.describe ChatRing::Knowledge::DocsGptClient do
       body: { task_id: 'task-1', source_id: 'source-1' }.to_json
     )
 
-    expect(client.upload_version(version)).to eq(task_id: 'task-1', source_id: 'source-1')
+    expect(client.upload_index(index)).to eq(task_id: 'task-1', source_id: 'source-1')
     request_matcher = have_requested(:post, 'http://docsgpt.internal:7091/api/upload').with do |request|
-      expect(request.headers['Idempotency-Key']).to eq("chatring-knowledge-version-17-#{'a' * 64}")
+      expect(request.headers['Idempotency-Key']).to eq("chatring-knowledge-index-17-#{'a' * 64}")
       expect(request.headers['Authorization']).to match(/\ABearer /)
       expect(request.body.scan('name="file"').length).to eq(2)
-      expect(request.body).to include("chatring-a42-v17-#{'a' * 64}")
+      expect(request.body).to include("chatring-a42-i17-#{'a' * 64}")
       expect(request.body).to include('filename="home.md"', 'filename="pricing.md"', '# Home', '# Pricing')
     end
     expect(WebMock).to request_matcher
@@ -52,7 +52,7 @@ RSpec.describe ChatRing::Knowledge::DocsGptClient do
 
     response = client.delete_source(
       account_id: 42,
-      knowledge_version_id: 17,
+      knowledge_index_id: 17,
       binding_digest: 'a' * 64,
       source_id: 'source-1'
     )
@@ -62,7 +62,7 @@ RSpec.describe ChatRing::Knowledge::DocsGptClient do
       headers = request.headers.transform_keys(&:downcase)
       JSON.parse(request.body) == { 'source_id' => 'source-1' } &&
         headers['x-chatring-account'] == '42' &&
-        headers['x-chatring-knowledge-version'] == '17' &&
+        headers['x-chatring-knowledge-index'] == '17' &&
         headers['x-chatring-binding-digest'] == 'a' * 64 &&
         headers['x-chatring-signature'].match?(/\A[0-9a-f]{64}\z/)
     end
@@ -79,28 +79,6 @@ RSpec.describe ChatRing::Knowledge::DocsGptClient do
     expect(client.task_status('task-1')).to eq('status' => 'processing', 'progress' => 50)
   end
 
-  it 'runs only the narrowly signed expired-idempotency maintenance operation' do
-    endpoint = 'http://docsgpt.internal:7091/api/internal/chatring/maintenance/idempotency'
-    stub_request(:post, endpoint).to_return(
-      status: 200,
-      headers: { 'Content-Type' => 'application/json' },
-      body: { status: 'completed', task_dedup_deleted: 4, webhook_dedup_deleted: 0 }.to_json
-    )
-
-    response = client.cleanup_expired_idempotency
-
-    expect(response).to include('status' => 'completed', 'task_dedup_deleted' => 4)
-    request_matcher = have_requested(:post, endpoint).with do |request|
-      headers = request.headers.transform_keys(&:downcase)
-      JSON.parse(request.body) == {} &&
-        headers['x-chatring-account'] == '0' &&
-        headers['x-chatring-knowledge-version'] == '0' &&
-        headers['x-chatring-binding-digest'] == described_class::MAINTENANCE_BINDING_DIGEST &&
-        headers['x-chatring-signature'].match?(/\A[0-9a-f]{64}\z/)
-    end
-    expect(WebMock).to request_matcher
-  end
-
   it 'rejects malformed success responses from private mutation endpoints' do
     stub_request(:post, 'http://docsgpt.internal:7091/api/internal/chatring/delete-source').to_return(
       status: 200,
@@ -111,20 +89,11 @@ RSpec.describe ChatRing::Knowledge::DocsGptClient do
     expect do
       client.delete_source(
         account_id: 42,
-        knowledge_version_id: 17,
+        knowledge_index_id: 17,
         binding_digest: 'a' * 64,
         source_id: 'source-1'
       )
     end.to raise_error(described_class::ResponseError, /deletion response is invalid/)
 
-    stub_request(:post, 'http://docsgpt.internal:7091/api/internal/chatring/maintenance/idempotency').to_return(
-      status: 200,
-      headers: { 'Content-Type' => 'application/json' },
-      body: { status: 'completed', task_dedup_deleted: -1 }.to_json
-    )
-    expect { client.cleanup_expired_idempotency }.to raise_error(
-      described_class::ResponseError,
-      /maintenance response is invalid/
-    )
   end
 end

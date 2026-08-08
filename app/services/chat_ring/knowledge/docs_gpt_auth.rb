@@ -30,7 +30,7 @@ class ChatRing::Knowledge::DocsGptAuth
       'X-Internal-Key' => @internal_key,
       'X-ChatRing-Timestamp' => timestamp,
       'X-ChatRing-Account' => values.fetch(:account_id).to_s,
-      'X-ChatRing-Knowledge-Version' => values.fetch(:knowledge_version_id).to_s,
+      'X-ChatRing-Knowledge-Index' => values.fetch(:knowledge_index_id).to_s,
       'X-ChatRing-Binding-Digest' => values.fetch(:binding_digest).to_s,
       'X-ChatRing-Signature' => signature
     }
@@ -42,7 +42,7 @@ class ChatRing::Knowledge::DocsGptAuth
     values = [
       timestamp,
       scope.fetch(:account_id),
-      scope.fetch(:knowledge_version_id),
+      scope.fetch(:knowledge_index_id),
       scope.fetch(:binding_digest),
       operation,
       source_id,

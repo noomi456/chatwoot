@@ -19,7 +19,7 @@ class ChatRing::Knowledge::ProviderChunkValidator
     references = @chunks.map { |chunk| source_reference(chunk) }.uniq
     matches = match_references!(references)
     unexpected = references - matches.values
-    failure!("DocsGPT contains #{unexpected.length} source reference(s) outside the knowledge-version manifest") if unexpected.any?
+    failure!("DocsGPT contains #{unexpected.length} source reference(s) outside the knowledge-index manifest") if unexpected.any?
 
     matches.each { |document, reference| validate_document_chunks!(document, reference) }
     matches

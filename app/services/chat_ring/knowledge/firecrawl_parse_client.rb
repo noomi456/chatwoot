@@ -46,7 +46,7 @@ class ChatRing::Knowledge::FirecrawlParseClient
   end
 
   def self.zero_data_retention?
-    ENV.fetch('FIRECRAWL_ZERO_DATA_RETENTION', 'false').casecmp?('true')
+    ENV.fetch('FIRECRAWL_ZERO_DATA_RETENTION', 'true').casecmp?('true')
   end
 
   def initialize(api_key:, base_url: DEFAULT_BASE_URL, timeout_seconds: 310)

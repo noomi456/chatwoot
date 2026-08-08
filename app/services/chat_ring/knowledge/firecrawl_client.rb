@@ -44,20 +44,38 @@ class ChatRing::Knowledge::FirecrawlClient
     normalized.uniq { |entry| entry['url'] }.sort_by { |entry| entry['url'] }
   end
 
-  def start_batch_scrape(urls:)
+  def scrape(url:, max_age: nil)
+    body = {
+      url: canonical_url(url),
+      formats: ['markdown'],
+      onlyMainContent: true
+    }
+    body[:maxAge] = Integer(max_age) unless max_age.nil?
+    payload = request_json(:post, '/v2/scrape', body: body)
+    data = payload['data']
+    unless payload['success'] == true && data.is_a?(Hash) && data['markdown'].to_s.present?
+      raise ResponseError, 'Firecrawl scrape response is missing Markdown'
+    end
+
+    data
+  end
+
+  def start_batch_scrape(urls:, max_age: nil)
     normalized_urls = Array(urls).map { |url| canonical_url(url) }.uniq
     raise ConfigurationError, 'urls must contain at least one URL' if normalized_urls.empty?
 
     bounded_limit(normalized_urls.length)
+    body = {
+      urls: normalized_urls,
+      ignoreInvalidURLs: true,
+      formats: ['markdown'],
+      onlyMainContent: true
+    }
+    body[:maxAge] = Integer(max_age) unless max_age.nil?
     payload = request_json(
       :post,
       '/v2/batch/scrape',
-      body: {
-        urls: normalized_urls,
-        ignoreInvalidURLs: false,
-        formats: ['markdown'],
-        onlyMainContent: true
-      }
+      body: body
     )
     required_response_string(payload['id'], 'Firecrawl batch-scrape response is missing id')
   end
@@ -88,7 +106,9 @@ class ChatRing::Knowledge::FirecrawlClient
   end
 
   def self.canonical_url(value)
-    uri = URI.parse(value.to_s.strip)
+    raw = value.to_s.strip
+    raw = "https://#{raw}" unless raw.match?(%r{\Ahttps?://}i)
+    uri = URI.parse(raw)
     raise ConfigurationError, 'URL must use http or https' unless uri.is_a?(URI::HTTP) && uri.host.present?
 
     uri.fragment = nil

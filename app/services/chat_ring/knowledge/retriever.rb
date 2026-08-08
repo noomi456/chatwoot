@@ -1,68 +1,59 @@
 class ChatRing::Knowledge::Retriever
   class Error < StandardError; end
 
-  def self.published_version_id(inbox:)
-    current_version(inbox).id
+  def self.active_index_id(inbox:)
+    knowledge_base_for(inbox.account).active_knowledge_index_id
   end
 
   def self.retrieve(inbox:, query:, limit: ChatRing::Knowledge::DocsGptProvider::DEFAULT_EVIDENCE_LIMIT,
-                    knowledge_version_id: nil)
-    version = knowledge_version_id.present? ? pinned_version(inbox, knowledge_version_id) : current_version(inbox)
-    provider(version).retrieve(
+                    knowledge_scope: nil)
+    raise Error, 'Inbox must belong to an account' if inbox.account.blank?
+
+    knowledge_base = knowledge_base_for(inbox.account)
+    index = active_provider_index(knowledge_base)
+    return empty_set(query, limit) if index.blank? || knowledge_base.materials.retrievable.none?
+
+    provider(index).retrieve(
       query: query,
-      knowledge_version_id: version.id.to_s,
-      source_manifest: source_manifest(version),
+      knowledge_index_id: index.id.to_s,
+      source_manifest: source_manifest(index, knowledge_scope: knowledge_scope),
       limit: limit
     )
   end
 
-  def self.preview(version:, query:, limit: ChatRing::Knowledge::DocsGptProvider::DEFAULT_EVIDENCE_LIMIT)
-    raise Error, 'Knowledge preview requires a ready, published, or retired version' unless %w[ready published retired].include?(version.status)
+  def self.preview(account:, query:, limit: ChatRing::Knowledge::DocsGptProvider::DEFAULT_EVIDENCE_LIMIT,
+                   knowledge_scope: nil)
+    knowledge_base = knowledge_base_for(account)
+    index = active_provider_index(knowledge_base)
+    return empty_set(query, limit) if index.blank? || knowledge_base.materials.retrievable.none?
 
-    provider(version).retrieve(
+    provider(index).retrieve(
       query: query,
-      knowledge_version_id: version.id.to_s,
-      source_manifest: source_manifest(version),
+      knowledge_index_id: index.id.to_s,
+      source_manifest: source_manifest(index, knowledge_scope: knowledge_scope),
       limit: limit
     )
   end
 
-  def self.current_publication(inbox)
-    ChatRing::KnowledgePublication.includes(knowledge_version: :documents).find_by!(
-      account_id: inbox.account_id,
-      inbox_id: inbox.id
-    )
+  def self.knowledge_base_for(account)
+    ChatRing::KnowledgeBase.for_account!(account)
   end
-  private_class_method :current_publication
+  private_class_method :knowledge_base_for
 
-  def self.current_version(inbox)
-    version = current_publication(inbox).knowledge_version
-    raise Error, 'Published knowledge pointer does not reference a published version' unless version.status == 'published'
+  def self.active_provider_index(knowledge_base)
+    index = knowledge_base.active_knowledge_index
+    return if index.blank?
+    raise Error, 'Active knowledge index is not ready for retrieval' unless index.status == 'active'
 
-    version
+    index
   end
-  private_class_method :current_version
+  private_class_method :active_provider_index
 
-  def self.pinned_version(inbox, knowledge_version_id)
-    version = ChatRing::KnowledgeVersion.includes(:documents).find_by!(
-      id: knowledge_version_id,
-      account_id: inbox.account_id,
-      inbox_id: inbox.id
-    )
-    published_before = ChatRing::KnowledgePublicationEvent.exists?(
-      account_id: inbox.account_id,
-      inbox_id: inbox.id,
-      to_knowledge_version_id: version.id
-    )
-    raise Error, 'Pinned knowledge version was never published for this inbox' unless published_before
-
-    version
-  end
-  private_class_method :pinned_version
-
-  def self.source_manifest(version)
-    version.documents.index_by(&:provider_source_reference).transform_values do |document|
+  def self.source_manifest(index, knowledge_scope:)
+    index.documents.includes(:knowledge_material).index_by(&:provider_source_reference).transform_values do |document|
+      material = document.knowledge_material
       {
+        'active' => material.active? && scope_allows?(material, knowledge_scope),
         'content_hash' => document.content_hash,
         'source_kind' => document.source_kind,
         'source_reference' => document.source_reference,
@@ -70,28 +61,54 @@ class ChatRing::Knowledge::Retriever
         'public_url' => document.public_url,
         'locator' => document.public_url || document.title,
         'page_locator' => document.metadata['page_locator'],
-        'authority_class' => document.metadata['authority_class'].presence || 'unclassified_legacy',
+        'authority_class' => document.metadata['authority_class'].presence || material.authority_class,
         'headings' => document.metadata['headings'] || [],
         'cta_candidates' => document.metadata['cta_candidates'] || []
       }
     end
   end
 
-  def self.provider(version)
-    source_ids = version.documents.pluck(:provider_source_id).compact_blank.uniq
-    raise Error, 'Published knowledge version must reference exactly one DocsGPT source' unless source_ids.one?
+  def self.scope_allows?(material, scope)
+    return true if scope.blank?
+    raise Error, 'Knowledge scope belongs to another Workspace' unless scope.workspace_id == material.knowledge_base.workspace_id
+
+    rule = scope.material_rules.find_by(knowledge_material_id: material.id)
+    return rule.access == 'allow' if rule
+
+    scope.business_wide?
+  end
+  private_class_method :scope_allows?
+
+  def self.provider(index)
+    source_ids = index.documents.pluck(:provider_source_id).compact_blank.uniq
+    raise Error, 'Active knowledge index must reference exactly one DocsGPT source' unless source_ids.one?
 
     ChatRing::Knowledge::DocsGptProvider.new(
       base_url: ENV.fetch('DOCSGPT_BASE_URL'),
-      provider_release: version.provider_release,
+      provider_release: index.provider_release,
       provider_source_id: source_ids.first,
-      account_id: version.account_id,
-      binding_digest: version.evaluation_binding_digest,
+      account_id: index.account_id,
+      binding_digest: index.provider_binding_digest,
       internal_key: ENV.fetch('DOCSGPT_INTERNAL_KEY'),
       service_secret: ENV.fetch('DOCSGPT_SERVICE_SECRET'),
-      score_threshold: version.config_snapshot.dig('retrieval', 'score_threshold') || ENV.fetch('DOCSGPT_SCORE_THRESHOLD')
+      score_threshold: index.config_snapshot.dig('retrieval', 'score_threshold') || ENV.fetch('DOCSGPT_SCORE_THRESHOLD')
     )
   end
-
   private_class_method :provider
+
+  def self.empty_set(query, limit)
+    ChatRing::Knowledge::EvidenceSet.new(
+      knowledge_index_id: nil,
+      provider: ChatRing::Knowledge::DocsGptProvider::PROVIDER,
+      provider_release: ENV.fetch('DOCSGPT_RELEASE', '616e6fe9c435bbc6bb472636db6b3ee2b9bcaf66'),
+      query: query.to_s,
+      status: 'insufficient_evidence',
+      error_code: nil,
+      latency_ms: 0,
+      retrieval_strategy: ChatRing::Knowledge::DocsGptProvider::RETRIEVAL_STRATEGY,
+      retrieval_configuration: { 'limit' => Integer(limit) },
+      items: [].freeze
+    )
+  end
+  private_class_method :empty_set
 end

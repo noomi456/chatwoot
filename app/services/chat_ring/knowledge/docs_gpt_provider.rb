@@ -64,11 +64,11 @@ class ChatRing::Knowledge::DocsGptProvider
   end
   # rubocop:enable Metrics/ParameterLists
 
-  def retrieve(query:, knowledge_version_id:, source_manifest:, limit: DEFAULT_EVIDENCE_LIMIT) # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
+  def retrieve(query:, knowledge_index_id:, source_manifest:, limit: DEFAULT_EVIDENCE_LIMIT) # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
     resolved_query = required_string(query, 'query')
     raise ConfigurationError, "query must not exceed #{MAX_QUERY_LENGTH} characters" if resolved_query.length > MAX_QUERY_LENGTH
 
-    version_id = required_string(knowledge_version_id, 'knowledge_version_id')
+    index_id = required_string(knowledge_index_id, 'knowledge_index_id')
     result_limit = result_limit(limit)
     manifest = normalize_manifest(source_manifest)
     body = {
@@ -77,33 +77,33 @@ class ChatRing::Knowledge::DocsGptProvider
       limit: result_limit,
       score_threshold: @score_threshold
     }.to_json
-    payload = fetch_payload(body, version_id)
+    payload = fetch_payload(body, index_id)
     status = required_status(payload)
-    items = status == 'accepted' ? build_items(payload, version_id, manifest, resolved_query) : []
+    items = status == 'accepted' ? build_items(payload, index_id, manifest, resolved_query) : []
     status = 'insufficient_evidence' if status == 'accepted' && items.empty?
-    build_evidence_set(version_id, resolved_query, result_limit, payload, status, items)
+    build_evidence_set(index_id, resolved_query, result_limit, payload, status, items)
   rescue RequestError, ResponseError => e
     log_provider_failure(e.error_code, e)
-    failure_set(version_id, resolved_query, result_limit, 'provider_error', e.error_code)
+    failure_set(index_id, resolved_query, result_limit, 'provider_error', e.error_code)
   rescue Timeout::Error => e
     log_provider_failure('provider_timeout', e)
-    failure_set(version_id, resolved_query, result_limit, 'provider_error', 'provider_timeout')
+    failure_set(index_id, resolved_query, result_limit, 'provider_error', 'provider_timeout')
   rescue SocketError, EOFError, Errno::ECONNABORTED, Errno::ECONNREFUSED, Errno::ECONNRESET, Errno::EHOSTUNREACH,
          Errno::ENETUNREACH, Errno::EPIPE, Errno::ETIMEDOUT, OpenSSL::SSL::SSLError => e
     log_provider_failure('provider_connection_failed', e)
-    failure_set(version_id, resolved_query, result_limit, 'provider_error', 'provider_connection_failed')
+    failure_set(index_id, resolved_query, result_limit, 'provider_error', 'provider_connection_failed')
   rescue HTTParty::Error, JSON::ParserError, Net::HTTPBadResponse, Net::HTTPHeaderSyntaxError, Net::ProtocolError => e
     log_provider_failure('provider_invalid_response', e)
-    failure_set(version_id, resolved_query, result_limit, 'provider_error', 'provider_invalid_response')
+    failure_set(index_id, resolved_query, result_limit, 'provider_error', 'provider_invalid_response')
   end
 
   private
 
-  def fetch_payload(body, version_id)
+  def fetch_payload(body, index_id)
     headers = {
       'Content-Type' => 'application/json',
       'Accept' => 'application/json'
-    }.merge(auth_headers(body, version_id))
+    }.merge(auth_headers(body, index_id))
     response = HTTParty.post(retrieval_url, headers: headers, body: body, timeout: @timeout_seconds)
     raise request_error(response.code) unless response.success? || response.code == 503
 
@@ -133,14 +133,15 @@ class ChatRing::Knowledge::DocsGptProvider
     RequestError.new("DocsGPT retrieval failed with HTTP #{status}", error_code: error_code)
   end
 
-  def auth_headers(body, version_id)
+  def auth_headers(body, index_id)
     @auth.internal_headers(
       body: body,
       operation: 'retrieve',
       source_id: @provider_source_id,
       scope: {
         account_id: @account_id,
-        knowledge_version_id: version_id,
+        # The pinned DocsGPT extension still names this signed internal scope
+        knowledge_index_id: index_id,
         binding_digest: @binding_digest
       }
     )
@@ -153,22 +154,24 @@ class ChatRing::Knowledge::DocsGptProvider
     raise ResponseError, "DocsGPT retrieval returned invalid status #{status.inspect}"
   end
 
-  def build_items(payload, knowledge_version_id, manifest, query)
+  def build_items(payload, knowledge_index_id, manifest, query)
     chunks = payload['chunks']
     raise ResponseError, 'DocsGPT accepted response must contain chunks' unless chunks.is_a?(Array)
 
     chunks.each_with_index.filter_map do |chunk, index|
-      build_evidence(chunk, index + 1, knowledge_version_id, manifest, query)
+      build_evidence(chunk, index + 1, knowledge_index_id, manifest, query)
     end.uniq(&:id).freeze
   end
 
   # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
-  def build_evidence(hit, rank, knowledge_version_id, manifest, query)
+  def build_evidence(hit, rank, knowledge_index_id, manifest, query)
     raise ResponseError, "DocsGPT result #{rank} must be an object" unless hit.is_a?(Hash)
 
     excerpt = required_response_text(hit['text'], rank)
     provider_reference = required_response_string(hit['source'], rank, 'source')
     source = manifest_entry(manifest, provider_reference, rank)
+    return unless source.fetch('active')
+
     authority = source.fetch('authority_class')
     return unless authority_allowed?(query, authority)
 
@@ -181,8 +184,8 @@ class ChatRing::Knowledge::DocsGptProvider
     heading_path = metadata['chatring_heading_path'].to_s.presence
     title = source['source_title'].presence || hit['title'].to_s.strip.presence
     ChatRing::Knowledge::Evidence.new(
-      id: evidence_id(knowledge_version_id, provider_chunk_id),
-      knowledge_version_id: knowledge_version_id,
+      id: evidence_id(knowledge_index_id, provider_chunk_id),
+      knowledge_index_id: knowledge_index_id,
       provider: PROVIDER,
       provider_release: @provider_release,
       provider_source_id: @provider_source_id,
@@ -207,9 +210,9 @@ class ChatRing::Knowledge::DocsGptProvider
   end
   # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
 
-  def build_evidence_set(version_id, query, limit, payload, status, items) # rubocop:disable Metrics/ParameterLists
+  def build_evidence_set(index_id, query, limit, payload, status, items) # rubocop:disable Metrics/ParameterLists
     ChatRing::Knowledge::EvidenceSet.new(
-      knowledge_version_id: version_id,
+      knowledge_index_id: index_id,
       provider: PROVIDER,
       provider_release: @provider_release,
       query: query,
@@ -222,9 +225,9 @@ class ChatRing::Knowledge::DocsGptProvider
     )
   end
 
-  def failure_set(version_id, query, limit, status, error_code)
+  def failure_set(index_id, query, limit, status, error_code)
     ChatRing::Knowledge::EvidenceSet.new(
-      knowledge_version_id: version_id,
+      knowledge_index_id: index_id,
       provider: PROVIDER,
       provider_release: @provider_release,
       query: query,
@@ -251,7 +254,7 @@ class ChatRing::Knowledge::DocsGptProvider
     source = manifest[provider_reference]
     return source if source.present?
 
-    raise IntegrityError, "DocsGPT result #{rank} references a source outside the knowledge-version manifest"
+    raise IntegrityError, "DocsGPT result #{rank} references a source outside the active knowledge index"
   end
 
   def normalize_manifest(value)
@@ -262,6 +265,7 @@ class ChatRing::Knowledge::DocsGptProvider
 
   def normalize_manifest_entry(entry)
     {
+      'active' => ActiveModel::Type::Boolean.new.cast(entry.fetch('active', true)),
       'content_hash' => required_string(entry['content_hash'], 'source content_hash'),
       'source_kind' => entry['source_kind'].to_s.presence || 'website',
       'source_reference' => required_string(entry['source_reference'], 'source source_reference'),
@@ -307,8 +311,8 @@ class ChatRing::Knowledge::DocsGptProvider
     candidates.sort_by { |candidate| candidate.heading_path == heading_path ? 0 : 1 }.freeze
   end
 
-  def evidence_id(knowledge_version_id, provider_chunk_id)
-    Digest::SHA256.hexdigest([knowledge_version_id, @provider_release, @provider_source_id, provider_chunk_id].join("\0"))
+  def evidence_id(knowledge_index_id, provider_chunk_id)
+    Digest::SHA256.hexdigest([knowledge_index_id, @provider_release, @provider_source_id, provider_chunk_id].join("\0"))
   end
 
   def high_risk_query?(query)

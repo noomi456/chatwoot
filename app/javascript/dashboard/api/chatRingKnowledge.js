@@ -6,109 +6,50 @@ class ChatRingKnowledgeAPI extends ApiClient {
     super('chat_ring/knowledge', { accountScoped: true });
   }
 
-  website(inboxId, rootUrl) {
-    return axios.post(`${this.url}/websites`, {
-      inbox_id: inboxId,
-      root_url: rootUrl,
+  websites() {
+    return axios.get(`${this.url}/websites`);
+  }
+
+  mapWebsite(rootUrl) {
+    return axios.post(`${this.url}/websites`, { root_url: rootUrl });
+  }
+
+  addWebsitePages(sourceId, selectedUrls) {
+    return axios.post(`${this.url}/websites/${sourceId}/extract`, {
+      selected_urls: selectedUrls,
     });
   }
 
-  fileSources(inboxId) {
-    return axios.get(`${this.url}/file_sources`, {
-      params: { inbox_id: inboxId },
-    });
+  addWebpage(url) {
+    return axios.post(`${this.url}/webpages`, { url });
   }
 
-  fileSource(inboxId, id) {
-    return axios.get(`${this.url}/file_sources/${id}`, {
-      params: { inbox_id: inboxId },
-    });
+  materials() {
+    return axios.get(`${this.url}/materials`);
   }
 
-  uploadFile(inboxId, file, authorityClass) {
+  material(id) {
+    return axios.get(`${this.url}/materials/${id}`);
+  }
+
+  uploadFile(file) {
     const body = new FormData();
-    body.append('inbox_id', inboxId);
     body.append('file', file);
-    body.append('authority_class', authorityClass);
     return axios.post(`${this.url}/file_sources`, body, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
   }
 
-  updateFile(inboxId, id, authorityClass) {
-    return axios.patch(`${this.url}/file_sources/${id}`, {
-      inbox_id: inboxId,
-      authority_class: authorityClass,
-    });
+  rerunMaterial(id) {
+    return axios.post(`${this.url}/materials/${id}/rerun`);
   }
 
-  disableFile(inboxId, id) {
-    return axios.delete(`${this.url}/file_sources/${id}`, {
-      params: { inbox_id: inboxId },
-    });
+  deleteMaterial(id) {
+    return axios.delete(`${this.url}/materials/${id}`);
   }
 
-  enableFile(inboxId, id) {
-    return axios.post(`${this.url}/file_sources/${id}/enable`, {
-      inbox_id: inboxId,
-    });
-  }
-
-  purgeFile(inboxId, id) {
-    return axios.delete(`${this.url}/file_sources/${id}/purge`, {
-      params: { inbox_id: inboxId },
-    });
-  }
-
-  retryFile(inboxId, id) {
-    return axios.post(`${this.url}/file_sources/${id}/retry_parse`, {
-      inbox_id: inboxId,
-    });
-  }
-
-  versions(inboxId) {
-    return axios.get(`${this.url}/versions`, {
-      params: { inbox_id: inboxId },
-    });
-  }
-
-  version(inboxId, id) {
-    return axios.get(`${this.url}/versions/${id}`, {
-      params: { inbox_id: inboxId },
-    });
-  }
-
-  deleteWebsiteMaterial(inboxId, versionId, documentId) {
-    return axios.delete(`${this.url}/website_materials/${documentId}`, {
-      params: { inbox_id: inboxId, version_id: versionId },
-    });
-  }
-
-  buildVersion(inboxId, baseVersionId) {
-    return axios.post(`${this.url}/versions`, {
-      inbox_id: inboxId,
-      base_version_id: baseVersionId,
-    });
-  }
-
-  publishVersion(inboxId, versionId) {
-    return axios.post(`${this.url}/versions/${versionId}/publish`, {
-      inbox_id: inboxId,
-    });
-  }
-
-  rollback(inboxId) {
-    return axios.post(`${this.url}/publication/rollback`, {
-      inbox_id: inboxId,
-    });
-  }
-
-  testRetrieval(inboxId, knowledgeVersionId, query) {
-    return axios.post(`${this.url}/retrieval_tests`, {
-      inbox_id: inboxId,
-      knowledge_version_id: knowledgeVersionId,
-      query,
-    });
+  testRetrieval(query) {
+    return axios.post(`${this.url}/retrieval_tests`, { query });
   }
 }
 
