@@ -10,6 +10,7 @@ on:
       - codex/phase2a-lifecycle-hardening
       - codex/phase2a-file-ingestion
       - codex/phase2a-account-knowledge
+      - codex/chatring-layered-build
   workflow_dispatch:
 
 permissions:
@@ -18,8 +19,37 @@ permissions:
 
 env:
   IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/chatring-conversation-core
+  DEPENDENCY_IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/chatring-conversation-core-base
 
 jobs:
+  detect_changes:
+    runs-on: ubuntu-22.04
+    outputs:
+      knowledge_image: ${{ steps.changes.outputs.knowledge_image }}
+    steps:
+      - name: Checkout source history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect derived DocsGPT image changes
+        id: changes
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || \
+             [ -z "${{ github.event.before }}" ] || \
+             [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
+            changed=true
+          elif git diff --quiet "${{ github.event.before }}" "${{ github.sha }}" -- \
+            deploy/knowledge \
+            .github/workflows/chatring-ce-image.yml; then
+            changed=false
+          else
+            changed=true
+          fi
+
+          echo "knowledge_image=${changed}" >> "$GITHUB_OUTPUT"
+
   validate:
     runs-on: ubuntu-22.04
     steps:
@@ -183,8 +213,9 @@ jobs:
           ! grep -q '_row_lookup' deploy/knowledge/docsgpt/chatring_extension.py
           python -m py_compile deploy/knowledge/docsgpt/chatring_extension.py
 
-  validate-knowledge-image:
-    needs: [validate, validate-knowledge]
+  validate_knowledge_image:
+    needs: [detect_changes, validate, validate-knowledge]
+    if: needs.detect_changes.outputs.knowledge_image == 'true'
     runs-on: ubuntu-22.04
     env:
       DOCSGPT_SOURCE_COMMIT: 616e6fe9c435bbc6bb472636db6b3ee2b9bcaf66
@@ -259,8 +290,105 @@ jobs:
           docker tag "${DOCSGPT_DERIVED_IMAGE}" "${DOCSGPT_PUBLISHED_IMAGE}"
           docker push "${DOCSGPT_PUBLISHED_IMAGE}"
 
+  knowledge_image_gate:
+    needs: [detect_changes, validate_knowledge_image]
+    if: always()
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Require DocsGPT image validation only when its source changed
+        env:
+          DETECT_CHANGES_RESULT: ${{ needs.detect_changes.result }}
+          KNOWLEDGE_IMAGE_CHANGED: ${{ needs.detect_changes.outputs.knowledge_image }}
+          KNOWLEDGE_IMAGE_RESULT: ${{ needs.validate_knowledge_image.result }}
+        run: |
+          test "$DETECT_CHANGES_RESULT" = "success"
+          if [ "$KNOWLEDGE_IMAGE_CHANGED" = "true" ]; then
+            test "$KNOWLEDGE_IMAGE_RESULT" = "success"
+          else
+            test "$KNOWLEDGE_IMAGE_RESULT" = "skipped"
+          fi
+
+  dependency_base:
+    needs: [validate, validate-knowledge]
+    runs-on: ubuntu-22.04
+    outputs:
+      image: ${{ steps.immutable.outputs.image }}
+      cache_hit: ${{ steps.exists.outputs.cache_hit }}
+    steps:
+      - name: Checkout pinned ChatRing CE source
+        uses: actions/checkout@v4
+
+      - name: Strip proprietary Enterprise source
+        run: |
+          rm -rf enterprise
+          rm -rf spec/enterprise
+
+      - name: Compute dependency content identity
+        id: identity
+        shell: bash
+        run: |
+          dependency_key="$(
+            git ls-files \
+                Gemfile \
+                Gemfile.lock \
+                package.json \
+                pnpm-lock.yaml \
+                docker/Dockerfile.chatring-base |
+              sort |
+              while IFS= read -r file; do sha256sum "$file"; done |
+              sha256sum |
+              cut -c1-32
+          )"
+          echo "image=${DEPENDENCY_IMAGE_NAME}:deps-${dependency_key}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Sign in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check for reusable dependency image
+        id: exists
+        env:
+          DEPENDENCY_IMAGE: ${{ steps.identity.outputs.image }}
+        run: |
+          if docker buildx imagetools inspect "$DEPENDENCY_IMAGE" >/dev/null 2>&1; then
+            echo 'cache_hit=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'cache_hit=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and publish dependency image once
+        if: steps.exists.outputs.cache_hit != 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.chatring-base
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.identity.outputs.image }}
+          cache-from: type=gha,scope=chatring-dependencies
+          cache-to: type=gha,mode=max,scope=chatring-dependencies
+
+      - name: Resolve immutable dependency image
+        id: immutable
+        env:
+          DEPENDENCY_IMAGE: ${{ steps.identity.outputs.image }}
+        shell: bash
+        run: |
+          digest="$(docker buildx imagetools inspect "$DEPENDENCY_IMAGE" | awk '/^Digest:/ { print $2; exit }')"
+          case "$digest" in
+            sha256:????????????????????????????????????????????????????????????????) ;;
+            *) echo "Invalid dependency image digest: $digest" >&2; exit 1 ;;
+          esac
+          echo "image=${DEPENDENCY_IMAGE}@${digest}" >> "$GITHUB_OUTPUT"
+
   build:
-    needs: [validate, validate-knowledge, validate-knowledge-image]
+    needs: [validate, validate-knowledge, knowledge_image_gate, dependency_base]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout pinned ChatRing CE source
@@ -270,7 +398,6 @@ jobs:
         run: |
           rm -rf enterprise
           rm -rf spec/enterprise
-          printf '\nENV CW_EDITION="ce"\nENV DISABLE_ENTERPRISE="true"\n' >> docker/Dockerfile
 
       - name: Verify Community Edition source boundary
         run: |
@@ -292,9 +419,12 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: docker/Dockerfile
+          file: docker/Dockerfile.chatring
           platforms: linux/amd64
           push: true
           tags: ${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          build-args: |
+            CHATRING_DEPENDENCY_IMAGE=${{ needs.dependency_base.outputs.image }}
+            CHATRING_SOURCE_COMMIT=${{ github.sha }}
+          cache-from: type=gha,scope=chatring-application
+          cache-to: type=gha,mode=min,scope=chatring-application
