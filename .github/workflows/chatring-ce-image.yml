@@ -388,6 +388,7 @@ jobs:
 
   build:
     needs: [validate, validate-knowledge, knowledge_image_gate, dependency_base]
+    if: always() && needs.validate.result == 'success' && needs.validate-knowledge.result == 'success' && needs.knowledge_image_gate.result == 'success' && needs.dependency_base.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout pinned ChatRing CE source
