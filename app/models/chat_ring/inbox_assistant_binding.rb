@@ -9,6 +9,10 @@ class ChatRing::InboxAssistantBinding < ApplicationRecord
   belongs_to :assistant_agent_bot_connection,
              class_name: 'ChatRing::AssistantAgentBotConnection',
              inverse_of: :inbox_bindings
+  has_many :ai_turns,
+           class_name: 'ChatRing::AiTurn',
+           inverse_of: :inbox_assistant_binding,
+           dependent: :restrict_with_exception
 
   validates :binding_version, numericality: { only_integer: true, greater_than: 0 },
                               uniqueness: { scope: [:workspace_id, :chatwoot_inbox_id] }

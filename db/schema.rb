@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_08_08_003000) do
+ActiveRecord::Schema[7.1].define(version: 2026_08_08_004000) do
   # These extensions should be enabled to support this database
   enable_extension "pg_stat_statements"
   enable_extension "pg_trgm"
@@ -693,6 +693,29 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_08_003000) do
     t.index ["phone_number_health_checked_at"], name: "index_channel_whatsapp_on_phone_number_health_checked_at"
   end
 
+  create_table "chat_ring_ai_turns", force: :cascade do |t|
+    t.bigint "workspace_id", null: false
+    t.integer "chatwoot_conversation_id", null: false
+    t.integer "trigger_message_id", null: false
+    t.bigint "inbox_assistant_binding_id", null: false
+    t.bigint "binding_version", null: false
+    t.bigint "assistant_id", null: false
+    t.bigint "assistant_version_id", null: false
+    t.bigint "expected_agent_bot_id", null: false
+    t.integer "status", default: 0, null: false
+    t.datetime "started_at"
+    t.datetime "completed_at"
+    t.string "decision_type"
+    t.string "failure_code"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["assistant_id"], name: "index_chat_ring_ai_turns_on_assistant_id"
+    t.index ["assistant_version_id"], name: "index_chat_ring_ai_turns_on_assistant_version_id"
+    t.index ["inbox_assistant_binding_id"], name: "idx_chatring_turns_on_inbox_binding"
+    t.index ["workspace_id", "chatwoot_conversation_id", "trigger_message_id"], name: "idx_chatring_turns_one_per_trigger", unique: true
+    t.index ["workspace_id"], name: "index_chat_ring_ai_turns_on_workspace_id"
+  end
+
   create_table "chat_ring_assistant_agent_bot_connections", force: :cascade do |t|
     t.bigint "workspace_id", null: false
     t.bigint "assistant_id", null: false
@@ -703,8 +726,10 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_08_003000) do
     t.datetime "last_verified_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.uuid "webhook_key", default: -> { "gen_random_uuid()" }, null: false
     t.index ["agent_bot_id"], name: "idx_chatring_bot_connections_on_agent_bot", unique: true
     t.index ["assistant_id"], name: "idx_chatring_bot_connections_on_assistant", unique: true
+    t.index ["webhook_key"], name: "index_chat_ring_assistant_agent_bot_connections_on_webhook_key", unique: true
     t.index ["workspace_id"], name: "idx_on_workspace_id_49db119b3e"
   end
 
@@ -959,6 +984,28 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_08_003000) do
     t.index ["source_key"], name: "index_chat_ring_knowledge_website_sources_on_source_key", unique: true
     t.check_constraint "source_type::text = ANY (ARRAY['website'::character varying, 'webpage'::character varying]::text[])", name: "chatring_website_sources_type_check"
     t.check_constraint "status::text = ANY (ARRAY['mapping'::character varying, 'mapped'::character varying, 'extracting'::character varying, 'available'::character varying, 'refreshing'::character varying, 'refresh_failed'::character varying, 'failed'::character varying, 'deleted'::character varying]::text[])", name: "chatring_website_sources_status_check"
+  end
+
+  create_table "chat_ring_webhook_deliveries", force: :cascade do |t|
+    t.bigint "workspace_id", null: false
+    t.bigint "assistant_agent_bot_connection_id", null: false
+    t.string "delivery_id", null: false
+    t.string "event_type", null: false
+    t.integer "payload_account_id", null: false
+    t.integer "payload_inbox_id", null: false
+    t.integer "payload_conversation_id"
+    t.bigint "payload_message_id"
+    t.string "payload_hash", null: false
+    t.integer "verification_status", default: 0, null: false
+    t.integer "processing_status", default: 0, null: false
+    t.string "error_code"
+    t.datetime "received_at", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["assistant_agent_bot_connection_id"], name: "idx_chatring_deliveries_on_bot_connection"
+    t.index ["delivery_id"], name: "index_chat_ring_webhook_deliveries_on_delivery_id", unique: true
+    t.index ["workspace_id", "received_at"], name: "idx_chatring_deliveries_on_workspace_time"
+    t.index ["workspace_id"], name: "index_chat_ring_webhook_deliveries_on_workspace_id"
   end
 
   create_table "chat_ring_workspaces", force: :cascade do |t|
@@ -1784,6 +1831,13 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_08_003000) do
   add_foreign_key "agent_bot_inboxes", "accounts", on_delete: :cascade
   add_foreign_key "agent_bot_inboxes", "agent_bots", on_delete: :cascade
   add_foreign_key "agent_bot_inboxes", "inboxes", on_delete: :cascade
+  add_foreign_key "chat_ring_ai_turns", "agent_bots", column: "expected_agent_bot_id", on_delete: :restrict
+  add_foreign_key "chat_ring_ai_turns", "chat_ring_assistant_versions", column: "assistant_version_id", on_delete: :restrict
+  add_foreign_key "chat_ring_ai_turns", "chat_ring_assistants", column: "assistant_id", on_delete: :restrict
+  add_foreign_key "chat_ring_ai_turns", "chat_ring_inbox_assistant_bindings", column: "inbox_assistant_binding_id", on_delete: :restrict
+  add_foreign_key "chat_ring_ai_turns", "chat_ring_workspaces", column: "workspace_id", on_delete: :cascade
+  add_foreign_key "chat_ring_ai_turns", "conversations", column: "chatwoot_conversation_id", on_delete: :cascade
+  add_foreign_key "chat_ring_ai_turns", "messages", column: "trigger_message_id", on_delete: :cascade
   add_foreign_key "chat_ring_assistant_agent_bot_connections", "agent_bots", on_delete: :restrict
   add_foreign_key "chat_ring_assistant_agent_bot_connections", "chat_ring_assistants", column: "assistant_id", on_delete: :cascade
   add_foreign_key "chat_ring_assistant_agent_bot_connections", "chat_ring_workspaces", column: "workspace_id", on_delete: :cascade
@@ -1814,6 +1868,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_08_003000) do
   add_foreign_key "chat_ring_knowledge_scopes", "chat_ring_workspaces", column: "workspace_id", on_delete: :cascade
   add_foreign_key "chat_ring_knowledge_website_sources", "chat_ring_knowledge_bases", column: "knowledge_base_id", on_delete: :cascade
   add_foreign_key "chat_ring_knowledge_website_sources", "users", column: "created_by_id", on_delete: :nullify
+  add_foreign_key "chat_ring_webhook_deliveries", "chat_ring_assistant_agent_bot_connections", column: "assistant_agent_bot_connection_id", on_delete: :cascade
+  add_foreign_key "chat_ring_webhook_deliveries", "chat_ring_workspaces", column: "workspace_id", on_delete: :cascade
   add_foreign_key "chat_ring_workspaces", "accounts", column: "chatwoot_account_id", on_delete: :cascade
   add_foreign_key "inboxes", "portals"
   add_foreign_key "user_sessions", "users"

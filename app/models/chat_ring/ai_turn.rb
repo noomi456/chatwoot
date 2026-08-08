@@ -1,0 +1,77 @@
+class ChatRing::AiTurn < ApplicationRecord
+  self.table_name = 'chat_ring_ai_turns'
+
+  enum status: {
+    received: 0,
+    eligible: 1,
+    running: 2,
+    awaiting_tool: 3,
+    ready_to_commit: 4,
+    committed: 5,
+    ineligible: 6,
+    superseded: 7,
+    handed_off: 8,
+    failed: 9,
+    cancelled: 10
+  }, _prefix: true
+
+  belongs_to :workspace, class_name: 'ChatRing::Workspace', inverse_of: :ai_turns
+  belongs_to :conversation, class_name: 'Conversation', foreign_key: :chatwoot_conversation_id, inverse_of: false
+  belongs_to :trigger_message, class_name: 'Message', inverse_of: false
+  belongs_to :inbox_assistant_binding,
+             class_name: 'ChatRing::InboxAssistantBinding',
+             inverse_of: :ai_turns
+  belongs_to :assistant, class_name: 'ChatRing::Assistant', inverse_of: :ai_turns
+  belongs_to :assistant_version, class_name: 'ChatRing::AssistantVersion', inverse_of: :ai_turns
+  belongs_to :expected_agent_bot, class_name: 'AgentBot', inverse_of: false
+
+  validates :binding_version, numericality: { only_integer: true, greater_than: 0 }
+  validate :conversation_ownership_matches
+  validate :trigger_message_matches
+  validate :binding_ownership_matches
+  validate :assistant_snapshot_matches
+  validate :expected_agent_bot_matches
+
+  attr_readonly :workspace_id,
+                :chatwoot_conversation_id,
+                :trigger_message_id,
+                :inbox_assistant_binding_id,
+                :binding_version,
+                :assistant_id,
+                :assistant_version_id,
+                :expected_agent_bot_id
+
+  private
+
+  def conversation_ownership_matches
+    return if workspace.blank? || conversation.blank?
+
+    errors.add(:conversation, 'must belong to the selected Workspace Account') unless conversation.account_id == workspace.chatwoot_account_id
+  end
+
+  def trigger_message_matches
+    return if trigger_message.blank? || conversation.blank?
+
+    errors.add(:trigger_message, 'must belong to the selected Conversation') unless trigger_message.conversation_id == chatwoot_conversation_id
+  end
+
+  def binding_ownership_matches
+    return if workspace.blank? || inbox_assistant_binding.blank?
+
+    errors.add(:inbox_assistant_binding, 'must belong to the selected Workspace') unless inbox_assistant_binding.workspace_id == workspace_id
+  end
+
+  def assistant_snapshot_matches
+    return if assistant.blank? || assistant_version.blank? || inbox_assistant_binding.blank?
+
+    errors.add(:assistant, 'must match the Inbox binding') unless assistant_id == inbox_assistant_binding.assistant_id
+    errors.add(:assistant_version, 'must belong to the selected Assistant') unless assistant_version.assistant_id == assistant_id
+  end
+
+  def expected_agent_bot_matches
+    return if expected_agent_bot.blank? || workspace.blank?
+    return if expected_agent_bot.account_id == workspace.chatwoot_account_id
+
+    errors.add(:expected_agent_bot, 'must be account-owned by the selected Workspace Account')
+  end
+end

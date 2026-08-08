@@ -10,8 +10,12 @@ class ChatRing::Workspace < ApplicationRecord
           class_name: 'ChatRing::KnowledgeBase',
           inverse_of: :workspace,
           dependent: :destroy
-  has_many :knowledge_scopes,
-           class_name: 'ChatRing::KnowledgeScope',
+  has_many :webhook_deliveries,
+           class_name: 'ChatRing::WebhookDelivery',
+           inverse_of: :workspace,
+           dependent: :destroy
+  has_many :ai_turns,
+           class_name: 'ChatRing::AiTurn',
            inverse_of: :workspace,
            dependent: :destroy
   has_many :assistants,
@@ -26,7 +30,10 @@ class ChatRing::Workspace < ApplicationRecord
            class_name: 'ChatRing::InboxAssistantBinding',
            inverse_of: :workspace,
            dependent: :destroy
-
+  has_many :knowledge_scopes,
+           class_name: 'ChatRing::KnowledgeScope',
+           inverse_of: :workspace,
+           dependent: :destroy
   validates :chatwoot_account_id, uniqueness: true
   validates :status, inclusion: { in: STATUSES }
 

@@ -16,10 +16,7 @@ RSpec.describe ChatRing::AssistantProvisioning::InboxBindingActivator do
   end
 
   def provision(target = assistant)
-    ChatRing::AssistantProvisioning::AgentBotProvisioner.new(
-      assistant: target,
-      outgoing_url: 'https://chatring.example/webhooks/chatwoot'
-    ).call
+    ChatRing::AssistantProvisioning::AgentBotProvisioner.new(assistant: target).call
   end
 
   it 'publishes monotonically numbered immutable versions' do
@@ -39,6 +36,7 @@ RSpec.describe ChatRing::AssistantProvisioning::InboxBindingActivator do
     expect(connection).to be_active
     expect(connection.agent_bot).to be_chatring_assistant
     expect(connection.agent_bot.account).to eq(account)
+    expect(connection.agent_bot.outgoing_url).to end_with("/webhooks/chatring/agent-bots/#{connection.webhook_key}")
     expect(connection.access_token_secret_ref).not_to include(connection.agent_bot.access_token.token)
     expect(connection.webhook_secret_ref).not_to include(connection.agent_bot.secret)
     expect(provision).to eq(connection)
