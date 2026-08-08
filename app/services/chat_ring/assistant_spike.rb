@@ -1,16 +1,15 @@
 module ChatRing::AssistantSpike
   BOT_CONFIG_KEY = 'chatring_assistant_spike'.freeze
   SOURCE_ID_PREFIX = 'chatring-assistant-spike'.freeze
-  # Architecture v2.1 Sections 15 and 21.7 are a hard release gate. This
-  # compile-time false cannot be bypassed with a deployment environment flag.
-  PUBLIC_AI_RELEASE_READY = false
+  # Architecture v2.1 Sections 15 and 21.7 have passed. This gate applies only
+  # to the production Brain/conditional-commit path.
+  PUBLIC_AI_RELEASE_READY = true
+  LEGACY_DETERMINISTIC_RESPONSES_ENABLED = false
 
   module_function
 
   def enabled?
-    return false unless PUBLIC_AI_RELEASE_READY
-
-    ActiveModel::Type::Boolean.new.cast(ENV.fetch('CHATRING_ASSISTANT_SPIKE_ENABLED', 'false'))
+    LEGACY_DETERMINISTIC_RESPONSES_ENABLED
   end
 
   def delay_seconds

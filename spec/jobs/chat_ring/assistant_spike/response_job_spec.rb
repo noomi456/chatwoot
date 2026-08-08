@@ -25,15 +25,15 @@ RSpec.describe ChatRing::AssistantSpike::ResponseJob, type: :job do
     clear_enqueued_jobs
   end
 
-  it 'keeps public AI responses disabled even when the legacy environment flag is true' do
+  it 'keeps the retired deterministic spike disabled' do
     expect do
       create(:message, account: account, inbox: inbox, conversation: conversation, content: 'TEST-123')
     end.not_to have_enqueued_job(described_class)
   end
 
-  context 'with the compile-time gate opened only inside the architecture proof spec' do
+  context 'with the retired deterministic spike explicitly enabled in tests' do
     before do
-      stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', true)
+      stub_const('ChatRing::AssistantSpike::LEGACY_DETERMINISTIC_RESPONSES_ENABLED', true)
     end
 
     it 'schedules one response job for an eligible committed customer message' do

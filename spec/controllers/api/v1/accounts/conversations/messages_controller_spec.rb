@@ -189,19 +189,7 @@ RSpec.describe 'Conversation Messages API', type: :request do
         expect(conversation.messages.first.content_type).to eq(params[:content_type])
       end
 
-      it 'keeps the conditional managed-Assistant endpoint closed behind the compile-time release gate' do
-        create(:agent_bot_inbox, inbox: inbox, agent_bot: agent_bot)
-
-        post "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/messages/conditional_create",
-             params: {},
-             headers: { api_access_token: agent_bot.access_token.token },
-             as: :json
-
-        expect(response).to have_http_status(:not_found)
-      end
-
       it 'conditionally commits through an authenticated account-owned managed AgentBot' do
-        stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', true)
         workspace = account.chat_ring_workspace
         assistant = ChatRing::Assistant.create!(workspace: workspace, name: 'Support')
         scope = workspace.knowledge_scopes.find_by!(business_wide: true)
