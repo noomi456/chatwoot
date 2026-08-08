@@ -39,6 +39,26 @@ RSpec.describe 'Integration Hooks API', type: :request do
         expect(data['app_id']).to eq params[:app_id]
       end
 
+      it 'does not enable Dialogflow on an active ChatRing Assistant Inbox' do
+        workspace = account.chat_ring_workspace
+        assistant = ChatRing::Assistant.create!(workspace: workspace, name: 'Support')
+        scope = workspace.knowledge_scopes.find_by!(business_wide: true)
+        ChatRing::AssistantVersions::Publisher.new(assistant: assistant, knowledge_scope: scope).call
+        ChatRing::AssistantProvisioning::AgentBotProvisioner.new(
+          assistant: assistant,
+          outgoing_url: 'https://chatring.example/webhooks/chatwoot'
+        ).call
+        ChatRing::AssistantProvisioning::InboxBindingActivator.new(assistant: assistant, inbox: inbox).call
+
+        post api_v1_account_integrations_hooks_url(account_id: account.id),
+             params: params,
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(Integrations::Hook.where(app_id: 'dialogflow', inbox: inbox)).to be_empty
+      end
+
       it 'validates Cloudflare RealtimeKit credentials before creating the hook' do
         allow(Integrations::Cloudflare::RealtimeKitCredentialsValidator).to receive(:validate)
           .and_return(Integrations::Cloudflare::RealtimeKitCredentialsValidator::Result.new(false, :invalid_api_token))
@@ -86,6 +106,27 @@ RSpec.describe 'Integration Hooks API', type: :request do
         expect(response).to have_http_status(:success)
         data = response.parsed_body
         expect(data['app_id']).to eq 'slack'
+      end
+
+      it 'does not re-enable Dialogflow on an active ChatRing Assistant Inbox' do
+        hook = create(:integrations_hook, :dialogflow, account: account, inbox: inbox, status: :disabled)
+        workspace = account.chat_ring_workspace
+        assistant = ChatRing::Assistant.create!(workspace: workspace, name: 'Support')
+        scope = workspace.knowledge_scopes.find_by!(business_wide: true)
+        ChatRing::AssistantVersions::Publisher.new(assistant: assistant, knowledge_scope: scope).call
+        ChatRing::AssistantProvisioning::AgentBotProvisioner.new(
+          assistant: assistant,
+          outgoing_url: 'https://chatring.example/webhooks/chatwoot'
+        ).call
+        ChatRing::AssistantProvisioning::InboxBindingActivator.new(assistant: assistant, inbox: inbox).call
+
+        patch api_v1_account_integrations_hook_url(account_id: account.id, id: hook.id),
+              params: { hook: { status: 'enabled' } },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(hook.reload).to be_disabled
       end
     end
   end

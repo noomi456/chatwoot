@@ -66,13 +66,7 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   end
 
   def set_agent_bot
-    if @agent_bot
-      agent_bot_inbox = @inbox.agent_bot_inbox || AgentBotInbox.new(inbox: @inbox)
-      agent_bot_inbox.agent_bot = @agent_bot
-      agent_bot_inbox.save!
-    elsif @inbox.agent_bot_inbox.present?
-      @inbox.agent_bot_inbox.destroy!
-    end
+    ChatRing::AssistantProvisioning::ExternalAgentBotConnector.new(inbox: @inbox, agent_bot: @agent_bot).call
     head :ok
   end
 
@@ -95,7 +89,7 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   end
 
   def fetch_agent_bot
-    @agent_bot = AgentBot.accessible_to(Current.account).find(params[:agent_bot]) if params[:agent_bot]
+    @agent_bot = AgentBot.accessible_to(Current.account).externally_manageable.find(params[:agent_bot]) if params[:agent_bot]
   end
 
   def create_channel

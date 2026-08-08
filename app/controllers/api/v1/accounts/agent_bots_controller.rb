@@ -3,7 +3,7 @@ class Api::V1::Accounts::AgentBotsController < Api::V1::Accounts::BaseController
   before_action :agent_bot, except: [:index, :create]
 
   def index
-    @agent_bots = AgentBot.accessible_to(Current.account)
+    @agent_bots = AgentBot.accessible_to(Current.account).externally_manageable
   end
 
   def show; end
@@ -40,12 +40,12 @@ class Api::V1::Accounts::AgentBotsController < Api::V1::Accounts::BaseController
   private
 
   def agent_bot
-    @agent_bot = AgentBot.accessible_to(Current.account).find(params[:id]) if params[:action] == 'show'
-    @agent_bot ||= Current.account.agent_bots.find(params[:id])
+    @agent_bot = AgentBot.accessible_to(Current.account).externally_manageable.find(params[:id]) if params[:action] == 'show'
+    @agent_bot ||= Current.account.agent_bots.externally_manageable.find(params[:id])
   end
 
   def permitted_params
-    params.permit(:name, :description, :outgoing_url, :avatar, :avatar_url, :bot_type, bot_config: {})
+    params.permit(:name, :description, :outgoing_url, :avatar, :avatar_url, bot_config: {})
   end
 
   def process_avatar_from_url

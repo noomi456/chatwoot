@@ -1249,6 +1249,39 @@ RSpec.describe 'Inboxes API', type: :request do
         expect(response).to have_http_status(:not_found)
         expect(inbox.reload.agent_bot).to be_nil
       end
+
+      it 'does not expose managed ChatRing identities through the external binding API' do
+        managed_bot = create(:agent_bot, account: account, bot_type: :chatring_assistant)
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/set_agent_bot",
+             headers: admin.create_new_auth_token,
+             params: { agent_bot: managed_bot.id },
+             as: :json
+
+        expect(response).to have_http_status(:not_found)
+        expect(inbox.reload.agent_bot).to be_nil
+      end
+
+      it 'does not replace an active ChatRing Assistant binding' do
+        workspace = account.chat_ring_workspace
+        assistant = ChatRing::Assistant.create!(workspace: workspace, name: 'Support')
+        scope = workspace.knowledge_scopes.find_by!(business_wide: true)
+        ChatRing::AssistantVersions::Publisher.new(assistant: assistant, knowledge_scope: scope).call
+        ChatRing::AssistantProvisioning::AgentBotProvisioner.new(
+          assistant: assistant,
+          outgoing_url: 'https://chatring.example/webhooks/chatwoot'
+        ).call
+        ChatRing::AssistantProvisioning::InboxBindingActivator.new(assistant: assistant, inbox: inbox).call
+        managed_bot = inbox.reload.agent_bot
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/set_agent_bot",
+             headers: admin.create_new_auth_token,
+             params: valid_params,
+             as: :json
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(inbox.reload.agent_bot).to eq(managed_bot)
+      end
     end
   end
 

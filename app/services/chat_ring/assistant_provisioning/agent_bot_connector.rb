@@ -10,28 +10,32 @@ class ChatRing::AssistantProvisioning::AgentBotConnector
     end
   end
 
-  def initialize(workspace:, inbox:, agent_bot:)
+  def initialize(workspace:, inbox:, agent_bot:, replace_agent_bot_id: nil)
     @workspace = workspace
     @inbox = inbox
     @agent_bot = agent_bot
+    @replace_agent_bot_id = replace_agent_bot_id
   end
 
   def call
-    inbox.with_lock do
-      validate_ownership!
-      conflicts = conflict_detector.call
-      raise ConflictError, conflicts if conflicts.any?
+    inbox.with_lock { call_with_lock! }
+  end
 
-      connection = AgentBotInbox.find_or_initialize_by(inbox_id: inbox.id)
-      connection.assign_attributes(account_id: workspace.chatwoot_account_id, agent_bot: agent_bot, status: :active)
-      connection.save!
-      connection
-    end
+  # Used by the versioned binding activator while it owns the Inbox row lock.
+  def call_with_lock!
+    validate_ownership!
+    conflicts = blocking_conflicts
+    raise ConflictError, conflicts if conflicts.any?
+
+    connection = AgentBotInbox.find_or_initialize_by(inbox_id: inbox.id)
+    connection.assign_attributes(account_id: workspace.chatwoot_account_id, agent_bot: agent_bot, status: :active)
+    connection.save!
+    connection
   end
 
   private
 
-  attr_reader :workspace, :inbox, :agent_bot
+  attr_reader :workspace, :inbox, :agent_bot, :replace_agent_bot_id
 
   def validate_ownership!
     account_id = workspace.chatwoot_account_id
@@ -48,5 +52,13 @@ class ChatRing::AssistantProvisioning::AgentBotConnector
       inbox: inbox,
       expected_agent_bot_id: agent_bot.id
     )
+  end
+
+  def blocking_conflicts
+    conflict_detector.call.reject do |conflict|
+      next false unless conflict.kind == :agent_bot && replace_agent_bot_id.present?
+
+      AgentBotInbox.find_by(id: conflict.record_id)&.agent_bot_id == replace_agent_bot_id
+    end
   end
 end

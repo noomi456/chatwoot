@@ -14,6 +14,18 @@ class ChatRing::Workspace < ApplicationRecord
            class_name: 'ChatRing::KnowledgeScope',
            inverse_of: :workspace,
            dependent: :destroy
+  has_many :assistants,
+           class_name: 'ChatRing::Assistant',
+           inverse_of: :workspace,
+           dependent: :destroy
+  has_many :assistant_agent_bot_connections,
+           class_name: 'ChatRing::AssistantAgentBotConnection',
+           inverse_of: :workspace,
+           dependent: :destroy
+  has_many :inbox_assistant_bindings,
+           class_name: 'ChatRing::InboxAssistantBinding',
+           inverse_of: :workspace,
+           dependent: :destroy
 
   validates :chatwoot_account_id, uniqueness: true
   validates :status, inclusion: { in: STATUSES }

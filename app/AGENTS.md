@@ -25,6 +25,8 @@ Own ChatRing's customer- and agent-facing Community Edition application behavior
 - Delete tombstones the exact row immediately, so retrieval rejects it before provider cleanup. Re-run preserves the last active snapshot on extraction failure. Deleting the final row returns typed `insufficient_evidence`.
 - Hidden provider-index snapshots are immutable and atomically swapped only after ingestion/provenance validation. Keep only the active index and a short-lived retired index; cleanup is an idempotent delayed Sidekiq job, not an hourly lifecycle/lease system.
 - Account destruction must retain an independently executable provider tombstone before Workspace records cascade. Inbox destruction must not affect account knowledge.
+- A ChatRing Assistant is an immutable, versioned role and security configuration. It is separate from Chatwoot's managed AgentBot identity, and every active Assistant AgentBot must be account-owned by the same Workspace Account.
+- Inbox Assistant activation is versioned, serialized on the Chatwoot Inbox row, and fails closed when an external AgentBot, Dialogflow, Captain, or another ChatRing Assistant already owns the response path. Managed ChatRing AgentBots are not exposed through external AgentBot CRUD or binding APIs.
 - `ChatRing::AssistantSpike` is a non-production deterministic boundary proof only. It may reuse the CE AgentBot sender contract and normal Message/Conversation/Sidekiq delivery lifecycle, while remaining disabled unless its explicit spike configuration is active.
 - Do not import or mirror Enterprise implementations.
 - Use installation configuration or the frontend branding helper for product identity instead of scattered hard-coded replacements.
