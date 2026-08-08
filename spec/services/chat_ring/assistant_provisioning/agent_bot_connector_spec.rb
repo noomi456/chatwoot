@@ -4,7 +4,7 @@ RSpec.describe ChatRing::AssistantProvisioning::AgentBotConnector do
   subject(:connect) { described_class.new(workspace: workspace, inbox: inbox, agent_bot: agent_bot).call }
 
   let(:account) { create(:account) }
-  let(:workspace) { ChatRing::Workspace.create!(chatwoot_account: account) }
+  let(:workspace) { ChatRing::Workspace.for_account!(account) }
   let(:inbox) { create(:inbox, account: account) }
   let(:agent_bot) { create(:agent_bot, account: account) }
 
@@ -27,7 +27,7 @@ RSpec.describe ChatRing::AssistantProvisioning::AgentBotConnector do
   end
 
   it 'rejects a system AgentBot' do
-    agent_bot.update_column(:account_id, nil)
+    agent_bot.update!(account: nil)
 
     expect { connect }.to raise_error(described_class::OwnershipError, 'AgentBot must be account-owned')
   end
