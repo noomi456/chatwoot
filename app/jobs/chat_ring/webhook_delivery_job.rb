@@ -3,10 +3,16 @@ class ChatRing::WebhookDeliveryJob < ApplicationJob
 
   def perform(delivery_id)
     delivery = ChatRing::WebhookDelivery.find(delivery_id)
-    delivery.with_lock do
+    turn = delivery.with_lock do
       next unless delivery.received?
 
       process_delivery!(delivery)
+    end
+    return if turn.blank?
+
+    enqueue_turn!(turn)
+    delivery.with_lock do
+      delivery.update!(processing_status: :processed, error_code: nil) if delivery.received?
     end
   end
 
@@ -28,8 +34,16 @@ class ChatRing::WebhookDeliveryJob < ApplicationJob
     assistant_version = binding.assistant.current_version
     return ignore!(delivery, 'assistant_version_not_found') if assistant_version.blank?
 
-    create_turn!(delivery, message, binding, assistant_version)
+    dispatch_turn!(delivery, message, binding, assistant_version)
+  end
+
+  def dispatch_turn!(delivery, message, binding, assistant_version)
+    turn = create_turn!(delivery, message, binding, assistant_version)
+    return turn if turn.status_received?
+    return ignore!(delivery, turn.decision_type) if turn.status_ineligible? || turn.status_superseded?
+
     delivery.update!(processing_status: :processed, error_code: nil)
+    nil
   end
 
   def authoritative_message(delivery)
@@ -61,6 +75,17 @@ class ChatRing::WebhookDeliveryJob < ApplicationJob
       turn.decision_type = reason unless eligible
       turn.completed_at = Time.current unless eligible
     end
+  end
+
+  def enqueue_turn!(turn)
+    job = ChatRing::AiTurnJob.perform_later(turn.id)
+    raise 'ChatRing AI turn could not be queued' unless job_enqueued?(job)
+  end
+
+  def job_enqueued?(job)
+    return false if job.blank?
+
+    job.successfully_enqueued?
   end
 
   def base_eligibility(delivery, message, binding)

@@ -1,7 +1,7 @@
 class ChatRing::AssistantVersions::Publisher
   CONFIGURATION_ATTRIBUTES = %i[
     identity goals instructions response_guidelines guardrails audience_policy availability_policy handoff_policy tool_grants
-    conversation_policy
+    conversation_policy llm_provider llm_model
   ].freeze
 
   def initialize(assistant:, knowledge_scope:, configuration: {})

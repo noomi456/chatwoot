@@ -24,8 +24,20 @@ class ChatRing::AiTurn < ApplicationRecord
   belongs_to :assistant, class_name: 'ChatRing::Assistant', inverse_of: :ai_turns
   belongs_to :assistant_version, class_name: 'ChatRing::AssistantVersion', inverse_of: :ai_turns
   belongs_to :expected_agent_bot, class_name: 'AgentBot', inverse_of: false
+  belongs_to :knowledge_index, class_name: 'ChatRing::KnowledgeIndex', optional: true
+  has_many :attempts,
+           class_name: 'ChatRing::AiTurnAttempt',
+           inverse_of: :ai_turn,
+           dependent: :destroy
+  has_many :evidence,
+           -> { order(:position) },
+           class_name: 'ChatRing::AiTurnEvidence',
+           inverse_of: :ai_turn,
+           dependent: :destroy
 
   validates :binding_version, numericality: { only_integer: true, greater_than: 0 }
+  validates :context_digest, format: { with: /\A[0-9a-f]{64}\z/ }, allow_nil: true
+  validate :decision_payload_shape
   validate :conversation_ownership_matches
   validate :trigger_message_matches
   validate :binding_ownership_matches
@@ -73,5 +85,9 @@ class ChatRing::AiTurn < ApplicationRecord
     return if expected_agent_bot.account_id == workspace.chatwoot_account_id
 
     errors.add(:expected_agent_bot, 'must be account-owned by the selected Workspace Account')
+  end
+
+  def decision_payload_shape
+    errors.add(:decision_payload, 'must be an object') unless decision_payload.is_a?(Hash)
   end
 end

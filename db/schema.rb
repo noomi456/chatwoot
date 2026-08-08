@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_08_08_004000) do
+ActiveRecord::Schema[7.1].define(version: 2026_08_08_005000) do
   # These extensions should be enabled to support this database
   enable_extension "pg_stat_statements"
   enable_extension "pg_trgm"
@@ -693,6 +693,49 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_08_004000) do
     t.index ["phone_number_health_checked_at"], name: "index_channel_whatsapp_on_phone_number_health_checked_at"
   end
 
+  create_table "chat_ring_ai_turn_attempts", force: :cascade do |t|
+    t.bigint "ai_turn_id", null: false
+    t.integer "attempt_number", null: false
+    t.string "provider", null: false
+    t.string "model", null: false
+    t.integer "status", default: 0, null: false
+    t.string "request_digest", null: false
+    t.string "response_digest"
+    t.integer "input_tokens"
+    t.integer "output_tokens"
+    t.string "failure_code"
+    t.datetime "started_at", null: false
+    t.datetime "completed_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["ai_turn_id", "attempt_number"], name: "idx_chatring_turn_attempts_unique", unique: true
+    t.index ["ai_turn_id"], name: "index_chat_ring_ai_turn_attempts_on_ai_turn_id"
+  end
+
+  create_table "chat_ring_ai_turn_evidence", force: :cascade do |t|
+    t.bigint "ai_turn_id", null: false
+    t.integer "position", null: false
+    t.string "evidence_id", null: false
+    t.bigint "knowledge_index_id"
+    t.string "provider_source_id"
+    t.string "provider_chunk_id"
+    t.string "source_kind", null: false
+    t.string "source_reference", null: false
+    t.string "source_title", null: false
+    t.string "public_url"
+    t.jsonb "heading_path", default: [], null: false
+    t.text "excerpt", null: false
+    t.string "source_content_hash", null: false
+    t.integer "rank", null: false
+    t.decimal "score", precision: 12, scale: 8, null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["ai_turn_id", "position"], name: "idx_chatring_turn_evidence_position", unique: true
+    t.index ["ai_turn_id"], name: "index_chat_ring_ai_turn_evidence_on_ai_turn_id"
+    t.index ["evidence_id"], name: "index_chat_ring_ai_turn_evidence_on_evidence_id"
+  end
+
   create_table "chat_ring_ai_turns", force: :cascade do |t|
     t.bigint "workspace_id", null: false
     t.integer "chatwoot_conversation_id", null: false
@@ -709,9 +752,13 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_08_004000) do
     t.string "failure_code"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.bigint "knowledge_index_id"
+    t.string "context_digest"
+    t.jsonb "decision_payload", default: {}, null: false
     t.index ["assistant_id"], name: "index_chat_ring_ai_turns_on_assistant_id"
     t.index ["assistant_version_id"], name: "index_chat_ring_ai_turns_on_assistant_version_id"
     t.index ["inbox_assistant_binding_id"], name: "idx_chatring_turns_on_inbox_binding"
+    t.index ["knowledge_index_id"], name: "index_chat_ring_ai_turns_on_knowledge_index_id"
     t.index ["workspace_id", "chatwoot_conversation_id", "trigger_message_id"], name: "idx_chatring_turns_one_per_trigger", unique: true
     t.index ["workspace_id"], name: "index_chat_ring_ai_turns_on_workspace_id"
   end
@@ -750,6 +797,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_08_004000) do
     t.datetime "published_at", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "llm_provider", default: "openai", null: false
+    t.string "llm_model", default: "gpt-4.1-mini", null: false
     t.index ["assistant_id", "version"], name: "index_chat_ring_assistant_versions_on_assistant_id_and_version", unique: true
     t.index ["knowledge_scope_id"], name: "index_chat_ring_assistant_versions_on_knowledge_scope_id"
   end
@@ -1831,10 +1880,14 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_08_004000) do
   add_foreign_key "agent_bot_inboxes", "accounts", on_delete: :cascade
   add_foreign_key "agent_bot_inboxes", "agent_bots", on_delete: :cascade
   add_foreign_key "agent_bot_inboxes", "inboxes", on_delete: :cascade
+  add_foreign_key "chat_ring_ai_turn_attempts", "chat_ring_ai_turns", column: "ai_turn_id", on_delete: :cascade
+  add_foreign_key "chat_ring_ai_turn_evidence", "chat_ring_ai_turns", column: "ai_turn_id", on_delete: :cascade
+  add_foreign_key "chat_ring_ai_turn_evidence", "chat_ring_knowledge_indexes", column: "knowledge_index_id", on_delete: :restrict
   add_foreign_key "chat_ring_ai_turns", "agent_bots", column: "expected_agent_bot_id", on_delete: :restrict
   add_foreign_key "chat_ring_ai_turns", "chat_ring_assistant_versions", column: "assistant_version_id", on_delete: :restrict
   add_foreign_key "chat_ring_ai_turns", "chat_ring_assistants", column: "assistant_id", on_delete: :restrict
   add_foreign_key "chat_ring_ai_turns", "chat_ring_inbox_assistant_bindings", column: "inbox_assistant_binding_id", on_delete: :restrict
+  add_foreign_key "chat_ring_ai_turns", "chat_ring_knowledge_indexes", column: "knowledge_index_id", on_delete: :restrict
   add_foreign_key "chat_ring_ai_turns", "chat_ring_workspaces", column: "workspace_id", on_delete: :cascade
   add_foreign_key "chat_ring_ai_turns", "conversations", column: "chatwoot_conversation_id", on_delete: :cascade
   add_foreign_key "chat_ring_ai_turns", "messages", column: "trigger_message_id", on_delete: :cascade

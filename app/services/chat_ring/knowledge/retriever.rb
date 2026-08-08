@@ -1,16 +1,17 @@
 class ChatRing::Knowledge::Retriever
   class Error < StandardError; end
+  ACTIVE_INDEX = Object.new.freeze
 
   def self.active_index_id(inbox:)
     knowledge_base_for(inbox.account).active_knowledge_index_id
   end
 
   def self.retrieve(inbox:, query:, limit: ChatRing::Knowledge::DocsGptProvider::DEFAULT_EVIDENCE_LIMIT,
-                    knowledge_scope: nil)
+                    knowledge_scope: nil, knowledge_index_id: ACTIVE_INDEX)
     raise Error, 'Inbox must belong to an account' if inbox.account.blank?
 
     knowledge_base = knowledge_base_for(inbox.account)
-    index = active_provider_index(knowledge_base)
+    index = provider_index(knowledge_base, knowledge_index_id)
     return empty_set(query, limit) if index.blank? || knowledge_base.materials.retrievable.none?
 
     evidence_set = provider(index).retrieve(
@@ -35,6 +36,18 @@ class ChatRing::Knowledge::Retriever
     index
   end
   private_class_method :active_provider_index
+
+  def self.provider_index(knowledge_base, knowledge_index_id)
+    return active_provider_index(knowledge_base) if knowledge_index_id.equal?(ACTIVE_INDEX)
+    return if knowledge_index_id.blank?
+
+    index = knowledge_base.knowledge_indexes.find_by(id: knowledge_index_id)
+    raise Error, 'Pinned knowledge index does not belong to the Inbox Account' if index.blank?
+    raise Error, 'Pinned knowledge index is unavailable for retrieval' unless %w[active retired].include?(index.status)
+
+    index
+  end
+  private_class_method :provider_index
 
   # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
   def self.source_manifest(index, knowledge_scope: nil)

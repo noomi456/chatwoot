@@ -56,6 +56,25 @@ RSpec.describe ChatRing::Knowledge::Retriever do
     expect(result).to have_attributes(status: 'insufficient_evidence', items: [])
   end
 
+  it 'retrieves from the turn-pinned retired index after a newer active pointer is selected' do
+    index, = active_index
+    provider = instance_double(ChatRing::Knowledge::DocsGptProvider)
+    allow(described_class).to receive(:provider).with(index).and_return(provider)
+    allow(provider).to receive(:retrieve).and_return(
+      ChatRing::Knowledge::EvidenceSet.new(
+        knowledge_index_id: index.id.to_s, provider: 'docs_gpt', provider_release: index.provider_release,
+        query: 'Question', status: 'accepted', error_code: nil, latency_ms: 1,
+        retrieval_strategy: 'classic_cosine', retrieval_configuration: {}, items: [].freeze
+      )
+    )
+    index.update!(status: 'retired')
+
+    result = described_class.retrieve(inbox: first_inbox, query: 'Question', knowledge_index_id: index.id)
+
+    expect(result.status).to eq('insufficient_evidence')
+    expect(provider).to have_received(:retrieve)
+  end
+
   def active_index # rubocop:disable Metrics/MethodLength
     knowledge_base = ChatRing::KnowledgeBase.for_account!(account)
     source = knowledge_base.website_sources.create!(root_url: 'https://example.com/', status: 'available')

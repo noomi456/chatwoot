@@ -13,6 +13,7 @@ class ChatRing::AssistantVersion < ApplicationRecord
 
   validates :version, numericality: { only_integer: true, greater_than: 0 }, uniqueness: { scope: :assistant_id }
   validates :published_at, presence: true
+  validates :llm_provider, :llm_model, presence: true
   validate :configuration_shapes
   validate :knowledge_scope_belongs_to_workspace
   validate :published_snapshot_is_immutable, on: :update
