@@ -329,57 +329,96 @@ onBeforeUnmount(() => window.clearInterval(pollTimer));
             </tr>
           </thead>
           <tbody class="divide-y divide-n-weak">
-            <tr
+            <template
               v-for="material in filteredMaterials"
               :key="material.material_key"
             >
-              <td class="px-6 py-4">
-                <button
-                  type="button"
-                  class="text-left"
-                  @click="preview(material)"
-                >
-                  <span class="block text-n-slate-12">{{ material.name }}</span>
-                  <span
-                    v-if="material.public_url"
-                    class="block mt-1 text-xs text-n-brand"
+              <tr>
+                <td class="px-6 py-4">
+                  <button
+                    type="button"
+                    class="text-left"
+                    @click="preview(material)"
                   >
-                    {{ material.public_url }}
-                  </span>
-                </button>
-              </td>
-              <td class="px-4 py-4 uppercase text-n-slate-11">
-                {{ material.type }}
-              </td>
-              <td class="px-4 py-4 text-n-slate-11">
-                {{ formatNumber(material.characters) }}
-              </td>
-              <td class="px-4 py-4 text-n-slate-11">
-                {{ statusLabel(material.status) }}
-              </td>
-              <td class="px-4 py-4 text-n-slate-11">
-                {{ formatDate(material.extracted_at || material.updated_at) }}
-              </td>
-              <td class="px-6 py-4 text-right">
-                <Button
-                  sm
-                  slate
-                  ghost
-                  :disabled="
-                    ['processing', 'updating'].includes(material.status)
-                  "
-                  :label="t('CHATRING_KNOWLEDGE.RERUN')"
-                  @click="rerunMaterial(material)"
-                />
-                <Button
-                  sm
-                  ruby
-                  ghost
-                  :label="t('CHATRING_KNOWLEDGE.DELETE')"
-                  @click="deleteMaterial(material)"
-                />
-              </td>
-            </tr>
+                    <span class="block text-n-slate-12">
+                      {{ material.name }}
+                    </span>
+                    <span
+                      v-if="material.public_url"
+                      class="block mt-1 text-xs text-n-brand"
+                    >
+                      {{ material.public_url }}
+                    </span>
+                  </button>
+                </td>
+                <td class="px-4 py-4 uppercase text-n-slate-11">
+                  {{ material.type }}
+                </td>
+                <td class="px-4 py-4 text-n-slate-11">
+                  {{ formatNumber(material.characters) }}
+                </td>
+                <td class="px-4 py-4 text-n-slate-11">
+                  {{ statusLabel(material.status) }}
+                </td>
+                <td class="px-4 py-4 text-n-slate-11">
+                  {{ formatDate(material.extracted_at || material.updated_at) }}
+                </td>
+                <td class="px-6 py-4 text-right">
+                  <Button
+                    sm
+                    slate
+                    ghost
+                    :disabled="
+                      ['processing', 'updating'].includes(material.status)
+                    "
+                    :label="t('CHATRING_KNOWLEDGE.RERUN')"
+                    @click="rerunMaterial(material)"
+                  />
+                  <Button
+                    sm
+                    ruby
+                    ghost
+                    :label="t('CHATRING_KNOWLEDGE.DELETE')"
+                    @click="deleteMaterial(material)"
+                  />
+                </td>
+              </tr>
+              <tr
+                v-if="
+                  previewMaterial?.id === material.id &&
+                  previewMaterial.markdown
+                "
+              >
+                <td colspan="6" class="bg-n-alpha-1 px-6 py-5">
+                  <div class="grid gap-4 text-sm">
+                    <div>
+                      <h3 class="font-medium text-n-slate-12">
+                        {{ previewMaterial.name }}
+                      </h3>
+                      <p
+                        v-if="previewMaterial.source_reference"
+                        class="mt-1 text-xs text-n-slate-10"
+                      >
+                        {{ previewMaterial.source_reference }}
+                      </p>
+                    </div>
+                    <div>
+                      <p class="font-medium text-n-slate-12">
+                        {{
+                          previewMaterial.available_to_ai
+                            ? t('CHATRING_KNOWLEDGE.CONTENT_AVAILABLE')
+                            : t('CHATRING_KNOWLEDGE.CONTENT_NOT_AVAILABLE')
+                        }}
+                      </p>
+                      <pre
+                        class="mt-2 max-h-80 overflow-auto whitespace-pre-wrap rounded-lg bg-n-alpha-2 p-4 text-xs text-n-slate-11"
+                        :text-content.prop="previewMaterial.markdown"
+                      />
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            </template>
             <tr v-if="!filteredMaterials.length">
               <td colspan="6" class="px-6 py-8 text-center text-n-slate-10">
                 {{ t('CHATRING_KNOWLEDGE.NO_MATERIALS') }}
@@ -387,36 +426,6 @@ onBeforeUnmount(() => window.clearInterval(pollTimer));
             </tr>
           </tbody>
         </table>
-
-        <div
-          v-if="previewMaterial?.markdown"
-          class="grid gap-4 border-t border-n-weak px-6 py-5 text-sm"
-        >
-          <div>
-            <h3 class="font-medium text-n-slate-12">
-              {{ previewMaterial.name }}
-            </h3>
-            <p
-              v-if="previewMaterial.source_reference"
-              class="mt-1 text-xs text-n-slate-10"
-            >
-              {{ previewMaterial.source_reference }}
-            </p>
-          </div>
-          <div>
-            <p class="font-medium text-n-slate-12">
-              {{
-                previewMaterial.available_to_ai
-                  ? t('CHATRING_KNOWLEDGE.CONTENT_AVAILABLE')
-                  : t('CHATRING_KNOWLEDGE.CONTENT_NOT_AVAILABLE')
-              }}
-            </p>
-            <pre
-              class="mt-2 max-h-80 overflow-auto whitespace-pre-wrap rounded-lg bg-n-alpha-2 p-4 text-xs text-n-slate-11"
-              :text-content.prop="previewMaterial.markdown"
-            />
-          </div>
-        </div>
       </section>
     </div>
   </main>

@@ -11,22 +11,28 @@ RSpec.describe ChatRing::Knowledge::SourcePolicy do
         { url: 'https://example.com/cookies' },
         { url: 'https://example.com/terms-of-service' },
         { url: 'https://example.com/sitemap.xml' },
-        { url: 'https://example.com/docs/start' }
+        { url: 'https://example.com/docs/start' },
+        { url: 'https://example.com/help/getting-started' },
+        { url: 'https://example.com/blog/product-news' },
+        { url: 'https://example.com/features' }
       ]
     )
 
     expect(manifest.reject { |entry| entry['included'] }.pluck('url')).to contain_exactly(
       'https://example.com/cookies',
+      'https://example.com/docs/start',
+      'https://example.com/help/getting-started',
+      'https://example.com/blog/product-news',
       'https://example.com/login',
       'https://example.com/privacy-policy',
       'https://example.com/sitemap.xml',
       'https://example.com/terms-of-service'
     )
-    expect(manifest.find { |entry| entry['url'].end_with?('/docs/start') }).to include('included' => true)
+    expect(manifest.find { |entry| entry['url'].end_with?('/features') }).to include('included' => true)
   end
 
-  it 'keeps blogs, security text, named examples, and non-English pages as customer content' do
-    manifest = policy.prepare_manifest([{ url: 'https://example.com/blog/security-update' }])
+  it 'keeps security text, named examples, and non-English pages as customer content' do
+    manifest = policy.prepare_manifest([{ url: 'https://example.com/security-update' }])
     markdown = <<~MARKDOWN
       # Actualización de seguridad
 
@@ -36,7 +42,7 @@ RSpec.describe ChatRing::Knowledge::SourcePolicy do
     record = {
       markdown: markdown,
       metadata: {
-        sourceURL: 'https://example.com/blog/security-update', title: 'Actualización',
+        sourceURL: 'https://example.com/security-update', title: 'Actualización',
         statusCode: 200, language: 'es'
       }
     }.deep_stringify_keys

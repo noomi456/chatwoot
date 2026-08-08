@@ -2,15 +2,17 @@ require 'digest'
 require 'uri'
 
 class ChatRing::Knowledge::SourcePolicy
-  VERSION = 4
+  VERSION = 5
   MAX_CORPUS_BYTES = 50.megabytes
   MIN_MEANINGFUL_CHARACTERS = 80
 
   # These routes are excluded before paid extraction because they are
-  # operational or boilerplate, not business knowledge. Content categories
-  # such as blogs, careers, security, and non-English pages remain eligible.
+  # operational or boilerplate, not core business knowledge for a full-site
+  # import. An administrator can still add any excluded URL directly through
+  # the exact-webpage path.
   EXCLUDED_PATHS = %r{\A/(?:
     auth|login|log-in|sign[-_]?in|sign[-_]?up|register|admin|account|cart|checkout|search|unsubscribe|
+    blog|blogs|help|docs|documentation|
     sitemaps?(?:\.xml)?|robots\.txt|404|privacy(?:-policy)?|cookie(?:-policy|s)?|
     terms(?:-of-(?:service|use))?
   )(?:/|\z)}ix
