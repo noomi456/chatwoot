@@ -57,9 +57,7 @@ RSpec.describe ChatRing::Brain::Runner do
   it 'records a failed attempt and releases the turn for a bounded retry after a provider failure' do
     allow(provider).to receive(:call).and_raise(ChatRing::Brain::RubyLlmProvider::Error.new('provider_failed'))
 
-    expect do
-      described_class.new(turn, provider: provider).call
-    end.to raise_error do |error|
+    expect { described_class.new(turn, provider: provider).call }.to raise_error do |error|
       expect(error.class.name).to eq('ChatRing::Brain::Runner::RetryableError')
       expect(error.message).to eq('provider_failed')
     end
