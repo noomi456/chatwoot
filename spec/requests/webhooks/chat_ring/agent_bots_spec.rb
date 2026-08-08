@@ -3,6 +3,11 @@ require 'rails_helper'
 RSpec.describe 'ChatRing managed AgentBot webhooks', type: :request do
   include ActiveJob::TestHelper
 
+  before do
+    allow(ChatRing::AiTurnJob).to receive(:perform_later)
+      .and_return(instance_double(ActiveJob::Base, successfully_enqueued?: true))
+  end
+
   let(:account) { create(:account) }
   let(:workspace) { account.chat_ring_workspace }
   let(:inbox) { create(:inbox, account: account) }
@@ -158,9 +163,37 @@ RSpec.describe 'ChatRing managed AgentBot webhooks', type: :request do
     expect(ChatRing::AiTurn.count).to eq(0)
   end
 
+  it 'keeps a durable turn retryable when the Brain job cannot be enqueued' do
+    body = payload_for
+    post_webhook(body, signed_headers(body))
+    delivery = ChatRing::WebhookDelivery.last
+    allow(ChatRing::AiTurnJob).to receive(:perform_later).and_return(false)
+
+    expect do
+      ChatRing::WebhookDeliveryJob.perform_now(delivery.id)
+    end.to raise_error(RuntimeError, 'ChatRing AI turn could not be queued')
+
+    expect(delivery.reload).to be_received
+    expect(ChatRing::AiTurn.find_by!(trigger_message: message)).to be_status_received
+  end
+
   it 'removes runtime delivery and turn records when their Workspace is destroyed' do
     body = payload_for
     perform_enqueued_jobs { post_webhook(body, signed_headers(body)) }
+    index = workspace.knowledge_base.knowledge_indexes.create!(
+      workspace: workspace,
+      status: 'building',
+      provider_release: 'provider-release',
+      mapped_manifest: [],
+      manifest_digest: Digest::SHA256.hexdigest('manifest')
+    )
+    turn = ChatRing::AiTurn.last
+    turn.update!(knowledge_index: index)
+    turn.evidence.create!(
+      position: 0, evidence_id: 'evidence-1', knowledge_index: index, source_kind: 'website',
+      source_reference: 'https://example.com/', source_title: 'Example', excerpt: 'Example evidence',
+      source_content_hash: Digest::SHA256.hexdigest('content'), rank: 1, score: 0.8
+    )
 
     expect do
       workspace.destroy!

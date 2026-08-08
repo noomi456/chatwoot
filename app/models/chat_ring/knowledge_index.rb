@@ -23,6 +23,14 @@ class ChatRing::KnowledgeIndex < ApplicationRecord
           class_name: 'ChatRing::KnowledgeProviderCleanup',
           inverse_of: :knowledge_index,
           dependent: nil
+  has_many :ai_turns,
+           class_name: 'ChatRing::AiTurn',
+           inverse_of: :knowledge_index,
+           dependent: :restrict_with_exception
+  has_many :ai_turn_evidence,
+           class_name: 'ChatRing::AiTurnEvidence',
+           inverse_of: :knowledge_index,
+           dependent: :restrict_with_exception
 
   encrypts :provider_agent_api_key
 

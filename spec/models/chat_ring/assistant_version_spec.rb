@@ -31,4 +31,15 @@ RSpec.describe ChatRing::AssistantVersion do
     expect(version).not_to be_valid
     expect(version.errors[:knowledge_scope]).to include('must belong to the Assistant Workspace')
   end
+
+  it 'pins provider and model identifiers inside the immutable version' do
+    version = ChatRing::AssistantVersions::Publisher.new(
+      assistant: assistant,
+      knowledge_scope: knowledge_scope,
+      configuration: { llm_provider: 'openai', llm_model: 'gpt-4.1-mini' }
+    ).call
+
+    expect(version).to have_attributes(llm_provider: 'openai', llm_model: 'gpt-4.1-mini')
+    expect(version.update(llm_model: 'another-model')).to be(false)
+  end
 end
