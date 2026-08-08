@@ -25,6 +25,26 @@ RSpec.describe Conversation do
     it_behaves_like 'auto_assignment_handler'
   end
 
+  describe 'ownership scopes' do
+    let(:account) { create(:account) }
+    let(:inbox) { create(:inbox, account: account) }
+    let(:agent) { create(:user, account: account) }
+    let(:agent_bot) { create(:agent_bot, account: account) }
+    let!(:unassigned_conversation) { create(:conversation, account: account, inbox: inbox) }
+    let!(:human_owned_conversation) { create(:conversation, account: account, inbox: inbox, assignee: agent) }
+    let!(:bot_owned_conversation) { create(:conversation, account: account, inbox: inbox, assignee_agent_bot: agent_bot) }
+
+    it 'treats human and AgentBot ownership as assigned' do
+      expect(described_class.assigned).to include(human_owned_conversation, bot_owned_conversation)
+      expect(described_class.assigned).not_to include(unassigned_conversation)
+    end
+
+    it 'only treats conversations without either owner as unassigned' do
+      expect(described_class.unassigned).to include(unassigned_conversation)
+      expect(described_class.unassigned).not_to include(human_owned_conversation, bot_owned_conversation)
+    end
+  end
+
   describe '.before_create' do
     let(:conversation) { build(:conversation, display_id: nil) }
 
@@ -192,6 +212,17 @@ RSpec.describe Conversation do
       expect(Rails.configuration.dispatcher).to have_received(:dispatch)
         .with(described_class::CONVERSATION_UPDATED, kind_of(Time), conversation: conversation, notifiable_assignee_change: true,
                                                                     changed_attributes: changed_attributes, performed_by: nil)
+    end
+
+    it 'dispatches an assignee changed event when an agent bot is assigned' do
+      conversation.update!(assignee: nil)
+      agent_bot = create(:agent_bot, account: account)
+
+      conversation.update!(assignee_agent_bot: agent_bot)
+
+      expect(Rails.configuration.dispatcher).to have_received(:dispatch)
+        .with(described_class::ASSIGNEE_CHANGED, kind_of(Time), conversation: conversation, notifiable_assignee_change: false,
+                                                                changed_attributes: conversation.previous_changes, performed_by: nil)
     end
 
     it 'will not run conversation_updated event for empty updates' do
