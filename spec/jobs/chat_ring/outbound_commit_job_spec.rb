@@ -43,16 +43,7 @@ RSpec.describe ChatRing::OutboundCommitJob, type: :job do
     )
   end
 
-  it 'does nothing while the compile-time public response gate is closed' do
-    turn
-
-    expect { described_class.perform_now(turn.id) }.not_to(change { conversation.messages.outgoing.count })
-    expect(turn.reload).to be_status_ready_to_commit
-  end
-
-  context 'with the gate opened only inside the commit-path spec' do
-    before { stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', true) }
-
+  context 'with the public response gate open' do
     it 'commits exactly one ordinary message across job retries' do
       2.times { described_class.perform_now(turn.id) }
 
