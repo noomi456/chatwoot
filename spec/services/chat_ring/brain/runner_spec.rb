@@ -87,6 +87,27 @@ RSpec.describe ChatRing::Brain::Runner do
     expect(turn.decision_payload).to eq({})
   end
 
+  it 'suppresses a completed decision when the Inbox Assistant binding changes during inference' do
+    allow(provider).to receive(:call) do
+      turn.inbox_assistant_binding.update!(status: :inactive)
+      ChatRing::Brain::RubyLlmProvider::Result.new(
+        payload: {
+          'decision_type' => 'reply', 'response_text' => 'Late reply',
+          'reason_code' => 'answered', 'evidence_ids' => ['evidence-1']
+        },
+        input_tokens: 10,
+        output_tokens: 5,
+        response_digest: Digest::SHA256.hexdigest('stale-binding')
+      )
+    end
+
+    described_class.new(turn, provider: provider).call
+
+    expect(turn.reload).to be_status_ineligible
+    expect(turn.decision_type).to eq('binding_inactive')
+    expect(turn.decision_payload).to eq({})
+  end
+
   def build_turn
     account = create(:account)
     workspace = account.chat_ring_workspace

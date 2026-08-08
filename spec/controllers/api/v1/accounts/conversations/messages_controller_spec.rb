@@ -36,6 +36,16 @@ RSpec.describe 'Conversation Messages API', type: :request do
         expect(conversation.messages.first.content).to eq(params[:content])
       end
 
+      it 'marks a public human reply as superseding an in-flight AI turn' do
+        post api_v1_account_conversation_messages_url(account_id: account.id, conversation_id: conversation.display_id),
+             params: { content: 'I will take this', private: false },
+             headers: agent.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(conversation.messages.last).to be_supersedes_ai_turn
+      end
+
       it 'does not create the message' do
         params = { content: "#{'h' * 150 * 1000}a", private: true }
 
@@ -224,7 +234,12 @@ RSpec.describe 'Conversation Messages API', type: :request do
              as: :json
 
         expect(response).to have_http_status(:ok)
-        expect(response.parsed_body).to include('message_id' => commit.reload.chatwoot_message_id, 'idempotent' => false)
+        expect(response.parsed_body).to include(
+          'message_id' => commit.reload.chatwoot_message_id,
+          'idempotent' => false,
+          'conversation_status' => 'pending',
+          'assignee_agent_bot_id' => connection.agent_bot.id
+        )
       end
     end
   end

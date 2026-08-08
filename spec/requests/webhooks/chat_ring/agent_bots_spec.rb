@@ -102,6 +102,51 @@ RSpec.describe 'ChatRing managed AgentBot webhooks', type: :request do
     expect(ChatRing::AiTurn.count).to eq(1)
   end
 
+  it 'creates a separate turn for a newer customer message' do
+    original_body = payload_for
+    newer_message = create(
+      :message,
+      account: account,
+      inbox: inbox,
+      conversation: conversation,
+      message_type: :incoming,
+      sender: conversation.contact,
+      private: false,
+      content: 'One more question'
+    )
+    newer_body = payload_for(newer_message)
+
+    perform_enqueued_jobs { post_webhook(original_body, signed_headers(original_body, delivery_id: 'delivery-original')) }
+    perform_enqueued_jobs { post_webhook(newer_body, signed_headers(newer_body, delivery_id: 'delivery-newer')) }
+
+    expect(ChatRing::AiTurn.where(trigger_message_id: [message.id, newer_message.id]).count).to eq(2)
+  end
+
+  it 'commits one public reply across duplicate webhook delivery and commit retries' do
+    stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', true)
+    body = payload_for
+    headers = signed_headers(body, delivery_id: 'delivery-reply-retry')
+
+    perform_enqueued_jobs { post_webhook(body, headers) }
+    perform_enqueued_jobs { post_webhook(body, headers) }
+    turn = ChatRing::AiTurn.find_by!(trigger_message: message)
+    turn.update!(
+      status: :ready_to_commit,
+      decision_type: 'reply',
+      decision_payload: {
+        'decision_type' => 'reply',
+        'response_text' => 'Widgets are supported.',
+        'reason_code' => 'answered',
+        'evidence_ids' => ['evidence-1']
+      }
+    )
+
+    2.times { ChatRing::OutboundCommitJob.perform_now(turn.id) }
+
+    expect(ChatRing::AiTurn.where(trigger_message: message).count).to eq(1)
+    expect(conversation.messages.outgoing.where(sender: agent_bot).pluck(:content)).to eq(['Widgets are supported.'])
+  end
+
   it 'rejects a reused delivery ID carrying a different signed body' do
     body = payload_for
     headers = signed_headers(body, delivery_id: 'delivery-collision')
