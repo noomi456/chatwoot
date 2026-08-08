@@ -412,8 +412,7 @@ onBeforeUnmount(() => window.clearInterval(pollTimer));
                       </p>
                       <pre
                         class="mt-2 max-h-80 overflow-auto whitespace-pre-wrap rounded-lg bg-n-alpha-2 p-4 text-xs text-n-slate-11"
-                        :text-content.prop="previewMaterial.markdown"
-                      />
+                      ><code>{{ previewMaterial.markdown }}</code></pre>
                     </div>
                   </div>
                 </td>
