@@ -11,6 +11,7 @@ on:
       - codex/phase2a-file-ingestion
       - codex/phase2a-account-knowledge
       - codex/chatring-layered-build
+      - codex/chatring-integration-contract-v2-2
   workflow_dispatch:
 
 concurrency:
