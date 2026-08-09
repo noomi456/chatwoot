@@ -33,8 +33,8 @@ This is the approved integration contract for remediation. The current public-re
 gate must be closed before runtime changes begin and must not be reopened until Section
 13 passes against the production path.
 
-The audited source currently sets `PUBLIC_AI_RELEASE_READY = true`; that state is not
-justified by the integrated lifecycle evidence and is an immediate containment item.
+The remediation source sets `PUBLIC_AI_RELEASE_READY = false`; that gate remains closed
+until the integrated lifecycle evidence satisfies Section 13.
 
 ### 1.1 Corrected executive decision
 
@@ -668,8 +668,8 @@ Before any public response is re-enabled:
 2. Disable the managed AgentBot public self-webhook path.
 3. Stop logging full webhook payloads, job arguments and webhook secrets.
 4. Rotate every exposed AgentBot webhook secret.
-5. Rotate the OpenAI key previously supplied through chat and update the deployment
-   secret store.
+5. Retain the designated pre-production model key only in the deployment secret store;
+   never commit or log it, and rotate it at the production cutover.
 6. Enforce identifier-only job arguments.
 7. Add per-Assistant and per-Workspace operational kill switches.
 8. Add explicit model request and total turn deadlines.
