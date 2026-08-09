@@ -81,7 +81,9 @@ Contract: v2.2 Sections 1, 4 and 10.
 Changes:
 
 - Set `PUBLIC_AI_RELEASE_READY = false` and correct its stale comment.
-- Stop new Assistant binding/switching while remediation is active.
+- Keep the existing console-only Assistant binding/switching service operationally
+  frozen while remediation is active. There is no user-facing Assistant binding API or
+  UI in this release; do not introduce a temporary product control solely for the freeze.
 - Make `AiTurnJob` and `OutboundCommitJob` inert while the gate is false.
 - Stop provisioning managed AgentBots with a public self-webhook URL.
 - Clear existing managed AgentBot `outgoing_url` values in a forward migration.
