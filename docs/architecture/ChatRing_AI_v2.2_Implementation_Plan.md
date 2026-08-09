@@ -80,9 +80,11 @@ predicate and that non-managed channel writers remain unchanged.
 
 ## 4. Delivery batches
 
-Each batch is a narrow PR. A later batch starts only after the previous batch's focused
-tests and combined static review pass. Runtime deployment occurs where the batch has a
-runtime containment or migration effect.
+PR #17 contains only Batches 0–5: containment and native-lifecycle remediation. It is
+frozen after the five-question checkpoint below passes. Brain policy, failure handling,
+knowledge pinning and production proof are separate follow-up PRs so regressions remain
+attributable. A later PR starts only after the previous PR's focused tests and combined
+static review pass.
 
 ### Batch 0 — containment
 
@@ -91,6 +93,10 @@ Contract: v2.2 Sections 1, 4 and 10.
 Changes:
 
 - Set `PUBLIC_AI_RELEASE_READY = false` and correct its stale comment.
+- Return from the post-template scheduling seam before creating or enqueuing an
+  `AITurn` while that gate is false.
+- Terminally cancel queued, unstarted `received` turns that reach `AiTurnJob` after
+  the gate closes, and forward-migrate stale gate-created rows to the same state.
 - Keep the existing console-only Assistant binding/switching service operationally
   frozen while remediation is active. There is no user-facing Assistant binding API or
   UI in this release; do not introduce a temporary product control solely for the freeze.
@@ -99,6 +105,8 @@ Changes:
 - Clear existing managed AgentBot `outgoing_url` values in a forward migration.
 - Reject the managed ChatRing webhook route before signature parsing or persistence.
 - Disable the conditional HTTP endpoint in internal mode.
+- Remove the legacy deterministic Assistant spike responder, job and global Message
+  extension; retain only the public-response and external-runtime constants.
 - Set `AgentBots::WebhookJob.log_arguments = false` and remove full-payload retry logs.
 - Rotate deployed managed webhook secrets after deployment.
 - Require a newly rotated model key from the deployment secret store; the repository
@@ -107,6 +115,8 @@ Changes:
 Proof:
 
 - No public AI Message can commit.
+- A gate-closed native message creates no `AITurn`, and an already queued unstarted
+  turn is cancelled without inference or native mutation.
 - A valid old managed webhook creates no WebhookDelivery or AITurn.
 - Existing Conversations and Messages are preserved.
 - Routine Rails/Sidekiq logs expose no payload, managed webhook secret or model key.
@@ -203,27 +213,65 @@ Changes:
 
 No existing customer Conversation is silently reassigned to a different Assistant.
 
-### Batch 6 — Brain reliability, privacy and knowledge pins
+### PR #17 architecture-freeze checkpoint
+
+The combined source must answer these questions before PR #17 is frozen:
+
+1. ChatRing does not own Conversation status or ownership; `AITurn` records computation
+   only, while native `Conversation` and `AssignmentService` remain authoritative.
+2. ChatRing does not bypass ordinary Message persistence or native channel delivery.
+3. ChatRing does not redefine assignment or handoff; guarded commits invoke the native
+   services and `Conversation#bot_handoff!`.
+4. Non-managed Chatwoot paths receive no ChatRing lifecycle mutation. An unbound Widget
+   takes only the short Inbox lock required to linearize first binding activation, then
+   performs the unchanged native write.
+5. The Brain, evidence and guarded-commit core are channel-neutral. A later channel adds
+   a certified native scheduling and serialization adapter; it does not clone the core.
+
+The legacy deterministic Assistant spike responder, job and global Message extension
+must not remain compiled as an alternate path. External webhook/HTTP contracts remain
+hard-disabled and unreachable in the internal deployment.
+
+### Follow-up PR A — Brain policy and privacy
 
 Contract: v2.2 Sections 6.2–6.5 and 10.
 
 Changes:
 
-- Add explicit model request timeout using RubyLLM's supported request timeout and a
-  persisted total turn deadline checked before retrieval, inference and retry.
-- Bound attempts; exhausted retries create/reuse a handoff OutboundCommit and enqueue
-  it, rather than only changing turn status.
-- Treat an enqueue failure as recoverably pending; add one explicit operator resume
-  task instead of a new periodic reconciliation system.
+- Reject unsupported non-empty audience and availability policies until their contract
+  exists; enforce native Inbox hours and Workspace/Assistant availability.
+- Enforce the persisted turn deadline before retrieval, inference, retry and commit.
 - Remove `resolution_request` from schema, parser, prompt and commit handling.
 - Preserve speaker provenance: customer, human_agent, managed_ai, native_template,
   automation and external_bot_or_system.
 - Omit Contact PII for the first release.
 - Include operational Workspace/Assistant status in every eligibility/final check.
+
+### Follow-up PR B — failure reliability
+
+Contract: v2.2 Sections 6.3, 6.5 and 8.
+
+Changes:
+
+- Add an explicit provider request timeout through RubyLLM's actual supported transport
+  seam and retain the total turn deadline from PR A.
+- Bound attempts; exhausted retries create/reuse a handoff `OutboundCommit` and enqueue
+  it, rather than only changing turn status.
+- Treat commit-enqueue failure as recoverably pending; add one explicit operator resume
+  task instead of a new periodic reconciliation system.
+- Prove retry, timeout, ambiguous enqueue and native fallback behavior without adding a
+  second handoff, retry or delivery lifecycle.
+
+### Follow-up PR C — Knowledge safety
+
+Contract: v2.2 Sections 6.3 and 10.
+
+Changes:
+
 - Exclude any KnowledgeIndex pinned by a nonterminal AITurn from provider cleanup.
 - Correlate trigger Message, AITurn, attempt, evidence, OutboundCommit and final Message.
 
-### Batch 7 — release verification and gate
+### Follow-up PR D — production proof and release gate
 
 Contract: v2.2 Sections 12, 13 and 15.
 
@@ -273,7 +321,15 @@ returns the constant to false; no partial public rollout is claimed.
 
 ## 7. Definition of implementation completion
 
-Implementation is complete only when the exact production path satisfies every item in
-v2.2 Section 15 and the Section 13 evidence is attached to the final release PR. Green
-unit tests, service-only barriers or a single successful widget response are not
+The work has three explicit gates:
+
+1. **Architecture frozen:** PR #17 passes its five-question native-first review, CI and
+   containment deployment. No new transport, ownership, assignment, handoff or delivery
+   architecture is added afterward without runtime evidence disproving an invariant.
+2. **Core AI proven:** Follow-up PRs A–D pass the exact Web Widget production path and
+   every v2.2 Section 13 concurrency/reliability gate. At this point the AI core is done.
+3. **Channel certification:** each additional channel is a compatibility project against
+   the frozen core and its own native lifecycle; it is not unfinished core architecture.
+
+Green unit tests, service-only barriers or a single successful widget response are not
 sufficient completion evidence.

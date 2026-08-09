@@ -1,5 +1,6 @@
 require 'rails_helper'
 require 'timeout'
+require Rails.root.join('db/migrate/20260809003000_terminalize_gate_closed_chat_ring_ai_turns').to_s
 
 module ChatRingConversationWriteBoundaryProbe
   private
@@ -32,8 +33,45 @@ RSpec.describe 'ChatRing internal Web Widget message lifecycle', type: :request 
   end
 
   before do
+    stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', true)
     inbox.update!(greeting_enabled: false, enable_email_collect: false)
     publish_and_bind_assistant!
+  end
+
+  it 'does not create or enqueue a turn while the public-response gate is closed' do
+    stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', false)
+
+    message = post_widget_message('What plans do you offer?')
+
+    expect(ChatRing::AiTurn.where(trigger_message: message)).not_to exist
+    expect(ChatRing::AiTurnJob).not_to have_been_enqueued
+  end
+
+  it 'cancels an already-enqueued received turn if the gate closes before execution' do
+    message = post_widget_message('What plans do you offer?')
+    turn = ChatRing::AiTurn.find_by!(trigger_message: message)
+    stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', false)
+
+    ChatRing::AiTurnJob.perform_now(turn.id)
+
+    expect(turn.reload).to have_attributes(
+      status: 'cancelled',
+      failure_code: 'public_response_gate_closed'
+    )
+    expect(turn.completed_at).to be_present
+  end
+
+  it 'backfills an unstarted gate-created received turn to cancelled' do
+    message = post_widget_message('What plans do you offer?')
+    turn = ChatRing::AiTurn.find_by!(trigger_message: message)
+
+    TerminalizeGateClosedChatRingAiTurns.new.migrate(:up)
+
+    expect(turn.reload).to have_attributes(
+      status: 'cancelled',
+      failure_code: 'public_response_gate_closed'
+    )
+    expect(turn.completed_at).to be_present
   end
 
   it 'creates one internally sourced turn after native handling without a webhook delivery' do

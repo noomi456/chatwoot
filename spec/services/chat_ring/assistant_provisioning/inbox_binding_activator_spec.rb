@@ -141,6 +141,7 @@ RSpec.describe ChatRing::AssistantProvisioning::InboxBindingActivator do
   end
 
   it 'hands off old-bot Conversations and cancels unfinished turns before switching Assistants' do
+    stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', true)
     publish
     connection = provision
     first = described_class.new(assistant: assistant, inbox: inbox).call

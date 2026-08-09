@@ -689,6 +689,9 @@ The sequence is deliberately narrow and test-first.
 ### Stage 0 — containment
 
 - Set the public-response gate to false.
+- While the gate is false, do not create or enqueue new `AITurn` records. Terminally
+  cancel any previously queued, unstarted `received` turns without inference or a
+  customer-visible mutation.
 - Freeze new Assistant binding, switching and channel expansion during remediation.
 - Confirm no new AI public reply can commit.
 - Preserve records for audit; do not delete customer Conversations or Messages.

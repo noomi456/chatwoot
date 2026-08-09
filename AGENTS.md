@@ -31,7 +31,7 @@ This repository is ChatRing's Community Edition conversation foundation, derived
 - Do not bypass feature gates or licensing checks.
 - Keep the upstream Enterprise source untouched for upstream compatibility; the ChatRing CE image workflow must exclude it from the build context before the image is built.
 - Independently built ChatRing capabilities live outside the Enterprise overlay and must use CE-supported APIs and extension boundaries.
-- The deterministic Assistant spike is ChatRing-owned CE code. It must not import, mirror, translate, or call Enterprise/Captain code, and it must remain inert unless an explicitly configured spike AgentBot is enabled.
+- The legacy deterministic Assistant spike responder is removed. `ChatRing::AssistantSpike` retains only compile-time release/runtime gates; no alternate responder may bypass the v2.2 production path.
 
 ## Build / Test / Lint
 

@@ -7,6 +7,7 @@ class ChatRing::InternalTurnScheduler
   end
 
   def call
+    return unless ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY
     return if ChatRing::AssistantSpike::EXTERNAL_RUNTIME_ENABLED
     return unless customer_widget_message?
 
