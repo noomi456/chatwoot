@@ -6,6 +6,7 @@ RSpec.describe ChatRing::Brain::Runner do
   let(:evidence_set) { accepted_evidence_set }
 
   before do
+    stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', true)
     allow(ChatRing::Knowledge::Retriever).to receive(:active_index_id).and_return(nil)
     allow(ChatRing::Knowledge::Retriever).to receive(:retrieve).and_return(evidence_set)
     allow(provider).to receive(:call)

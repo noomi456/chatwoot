@@ -3,6 +3,10 @@ require 'rails_helper'
 RSpec.describe ChatRing::Brain::ContextBuilder do
   let(:turn) { build_turn }
 
+  before do
+    stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', true)
+  end
+
   it 'uses only bounded public conversation history and trusted base Contact fields' do
     trigger = turn.trigger_message
     trigger.update!(content: 'Current question')

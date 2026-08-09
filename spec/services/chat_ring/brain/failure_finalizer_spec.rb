@@ -1,6 +1,10 @@
 require 'rails_helper'
 
 RSpec.describe ChatRing::Brain::FailureFinalizer do
+  before do
+    stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', true)
+  end
+
   it 'records the configured safe terminal decision after bounded provider retries' do
     turn = build_turn
 
