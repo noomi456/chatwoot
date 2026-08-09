@@ -8,7 +8,6 @@ class TerminalizeGateClosedChatRingAiTurns < ActiveRecord::Migration[7.1]
           updated_at = CURRENT_TIMESTAMP
       WHERE turns.status = 0
         AND turns.started_at IS NULL
-        AND turns.native_handling_snapshot <> '{}'::jsonb
         AND NOT EXISTS (
           SELECT 1
           FROM chat_ring_outbound_commits AS commits

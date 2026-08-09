@@ -61,9 +61,10 @@ RSpec.describe 'ChatRing internal Web Widget message lifecycle', type: :request 
     expect(turn.completed_at).to be_present
   end
 
-  it 'backfills an unstarted gate-created received turn to cancelled' do
+  it 'backfills an unstarted legacy received turn to cancelled' do
     message = post_widget_message('What plans do you offer?')
     turn = ChatRing::AiTurn.find_by!(trigger_message: message)
+    turn.update!(native_handling_snapshot: {})
 
     TerminalizeGateClosedChatRingAiTurns.new.migrate(:up)
 
