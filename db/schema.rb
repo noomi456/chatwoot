@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_08_09_001000) do
+ActiveRecord::Schema[7.1].define(version: 2026_08_09_002000) do
   # These extensions should be enabled to support this database
   enable_extension "pg_stat_statements"
   enable_extension "pg_trgm"
@@ -1047,6 +1047,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_09_001000) do
     t.string "failure_code"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.integer "outcome_type", default: 0, null: false
     t.index ["ai_turn_id"], name: "index_chat_ring_outbound_commits_on_ai_turn_id", unique: true
     t.index ["idempotency_key"], name: "index_chat_ring_outbound_commits_on_idempotency_key", unique: true
   end

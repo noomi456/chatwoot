@@ -51,7 +51,6 @@ class Conversations::AgentBotConditionalCommitService
       begin
         outbound_commit = ChatRing::OutboundCommit.lock.find_by!(idempotency_key: idempotency_key)
         validate_ledger!(outbound_commit)
-        ChatRing::Assistant.lock.find(outbound_commit.ai_turn.assistant_id)
         @idempotent = outbound_commit.status_committed?
         result = outbound_commit.status_committed? ? outbound_commit : commit_or_reject(outbound_commit)
       ensure
@@ -63,6 +62,7 @@ class Conversations::AgentBotConditionalCommitService
 
   def validate_ledger!(outbound_commit)
     turn = outbound_commit.ai_turn
+    raise Unauthorized unless outbound_commit.outcome_type_reply?
     raise Unauthorized unless turn.chatwoot_conversation_id == conversation.id
     raise Unauthorized unless turn.expected_agent_bot_id == agent_bot.id
   end

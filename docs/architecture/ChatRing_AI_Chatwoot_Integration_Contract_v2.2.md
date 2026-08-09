@@ -448,8 +448,11 @@ human-owned Conversations so ownership cannot race an unlocked precheck.
 
 The predicate is evaluated from authoritative state and rechecked after entering the
 shared boundary. Assignment and binding transitions participate in the same boundary.
-An unlocked `managed?` read is never the sole decision. Non-ChatRing Inboxes do not
-take the ChatRing serialization lock.
+An unlocked `managed?` read is never the sole decision. A qualifying Web Widget public
+write takes the Inbox row lock even when no binding currently exists, because otherwise
+first binding activation could commit between the unlocked predicate and Message
+commit. Without an active/draining binding it takes no Conversation or ledger lock.
+Other channel writers take no ChatRing lock before their channel is approved.
 
 It covers:
 
@@ -825,8 +828,10 @@ direct model creation.
 
 - Representative non-managed Web Widget, Email, API Inbox, WhatsApp, SMS/Twilio,
   Facebook/Instagram and Telegram writes preserve upstream behavior.
-- No ChatRing serialization lock is taken for an Inbox without an active/draining
-  ChatRing binding; ownership and binding transitions cannot race the scoped predicate.
+- An unbound Web Widget write takes only the short Inbox row lock needed to linearize
+  first binding activation; it takes no ChatRing Conversation or ledger lock. Other
+  unbound channel writers take no ChatRing lock. Ownership and binding transitions
+  cannot race the scoped predicate.
 - AgentBot, Dialogflow and existing external-bot behavior remains compatible.
 
 ### 13.8 Runtime proof

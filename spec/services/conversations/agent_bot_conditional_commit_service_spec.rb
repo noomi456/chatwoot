@@ -96,6 +96,8 @@ RSpec.describe Conversations::AgentBotConditionalCommitService do
 
     expect { service.perform }
       .to raise_error(described_class::PreconditionFailed, 'newer_human_reply')
+    expect(conversation.reload.assignee_agent_bot).to be_nil
+    expect(conversation).to be_open
     expect(conversation.messages.outgoing.where(sender: connection.agent_bot)).to be_empty
   end
 
@@ -167,5 +169,21 @@ RSpec.describe Conversations::AgentBotConditionalCommitService do
 
     expect { service.perform }
       .to raise_error(described_class::PreconditionFailed, 'assistant_version_changed')
+  end
+
+  it 'fails closed when a competing Automation bypasses configuration validation before commit' do
+    outbound_commit
+    rule = build(
+      :automation_rule,
+      account: account,
+      event_name: 'message_created',
+      conditions: [{ 'attribute_key' => 'inbox_id', 'filter_operator' => 'equal_to', 'values' => [inbox.id] }],
+      actions: [{ 'action_name' => 'send_message', 'action_params' => ['Competing response'] }]
+    )
+    rule.save!(validate: false)
+
+    expect { service.perform }
+      .to raise_error(described_class::PreconditionFailed, 'automation_conflict')
+    expect(outbound_commit.reload).to be_status_rejected
   end
 end

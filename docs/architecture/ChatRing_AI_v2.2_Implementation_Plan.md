@@ -59,11 +59,13 @@ Rules:
 1. Binding, disable, archive, rebind and AutomationRule mutation take the Account lock.
 2. Binding transitions then take the Inbox lock.
 3. Rebind/handoff takes each affected Conversation lock in ascending ID order.
-4. Qualifying incoming/human Message writes and AI commit use the same Inbox then
-   Conversation order.
+4. Qualifying Web Widget incoming/human Message writes first take the Inbox row lock
+   to linearize first binding activation. Only an active/draining binding proceeds to
+   the Conversation lock. AI commit uses the same Inbox then Conversation order.
 5. The managed-binding predicate is rechecked after both locks are held.
-6. An Inbox with no active/draining ChatRing binding keeps upstream behavior and does
-   not take the ChatRing serialization locks.
+6. An Inbox with no active/draining ChatRing binding keeps upstream Conversation and
+   Message behavior and does not take the Conversation or ledger locks. The short
+   Web Widget Inbox row lock is solely the activation-race boundary.
 
 Controlled-barrier tests must prove activation, rebind and assignment cannot race the
 predicate and that non-managed channel writers remain unchanged.

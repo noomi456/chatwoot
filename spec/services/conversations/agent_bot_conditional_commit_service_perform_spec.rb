@@ -161,6 +161,8 @@ RSpec.describe Conversations::AgentBotConditionalCommitService, '#perform', :agg
 
     expect(error.class.name).to eq('Conversations::AgentBotConditionalCommitService::PreconditionFailed')
     expect(error.message).to eq('newer_human_reply')
+    expect(conversation.reload.assignee_agent_bot).to be_nil
+    expect(conversation).to be_open
     expect(conversation.messages.outgoing.where(sender: connection.agent_bot)).to be_empty
   end
 

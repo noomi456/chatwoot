@@ -10,7 +10,7 @@ class ChatRing::Brain::Eligibility
   end
 
   def check
-    reason = configuration_failure || ownership_failure || freshness_failure
+    reason = configuration_failure || freshness_failure || ownership_failure
     Result.new(eligible: reason.nil?, reason: reason)
   end
 
@@ -24,6 +24,7 @@ class ChatRing::Brain::Eligibility
     return 'binding_version_changed' unless turn.inbox_assistant_binding.binding_version == turn.binding_version
     return 'assistant_inactive' unless turn.assistant.active?
     return 'assistant_version_changed' unless turn.assistant.current_version_id == turn.assistant_version_id
+    return 'automation_conflict' if automation_conflict?
   end
 
   def ownership_failure
@@ -35,6 +36,13 @@ class ChatRing::Brain::Eligibility
       inbox_id: conversation.inbox_id,
       agent_bot_id: turn.expected_agent_bot_id
     )
+  end
+
+  def automation_conflict?
+    ChatRing::AutomationConflictClassifier.new(
+      account: turn.conversation.account,
+      inbox: turn.conversation.inbox
+    ).conflicting?
   end
 
   def freshness_failure

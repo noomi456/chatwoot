@@ -1,4 +1,19 @@
 require 'rails_helper'
+require 'timeout'
+
+module ChatRingMessageSerializationProbe
+  private
+
+  def lock_conversation_for_public_message
+    probe = Thread.current[:chatring_message_serialization_probe]
+    probe&.call(:before, self)
+    result = super
+    probe&.call(:after, self)
+    result
+  end
+end
+
+Message.prepend(ChatRingMessageSerializationProbe) unless Message < ChatRingMessageSerializationProbe
 
 RSpec.describe 'ChatRing internal Web Widget message lifecycle', type: :request do
   let(:account) { create(:account) }
@@ -106,6 +121,95 @@ RSpec.describe 'ChatRing internal Web Widget message lifecycle', type: :request 
     expect(ChatRing::AiTurnJob).not_to have_been_enqueued
   end
 
+  # The production controllers construct these Message instances; probing their real
+  # callback is the controlled barrier required by the integration contract.
+  it 'rejects an old AI reply when a real Widget writer wins the serialization boundary' do
+    trigger_message = post_widget_message('What plans do you offer?')
+    turn = ready_turn_for(trigger_message)
+    service = conditional_service_for(turn)
+    writer_inside_boundary = Queue.new
+    release_writer = Queue.new
+    writer_thread = run_writer_with_probe(writer_inside_boundary, 'One more question', phase: :after, release: release_writer) do
+      widget_session.post(widget_messages_path, **widget_request('One more question'))
+    end
+    wait_for(writer_inside_boundary)
+    ai_thread = run_in_thread do
+      service.perform
+    rescue StandardError => e
+      e
+    end
+    release_writer << true
+    writer_thread.value
+    error = ai_thread.value
+
+    expect(error).to be_a(Conversations::AgentBotConditionalCommitService::PreconditionFailed)
+    expect(error.code).to eq('newer_customer_message')
+    expect(trigger_message.conversation.messages.outgoing.where(sender: turn.expected_agent_bot)).to be_empty
+  end
+
+  it 'rejects an old AI reply when a real dashboard public-reply writer completes native takeover first' do
+    trigger_message = post_widget_message('What plans do you offer?')
+    turn = ready_turn_for(trigger_message)
+    service = conditional_service_for(turn)
+    agent = create(:user, account: account, role: :agent)
+    create(:inbox_member, inbox: inbox, user: agent)
+    writer_inside_boundary = Queue.new
+    release_writer = Queue.new
+    path = api_v1_account_conversation_messages_path(
+      account_id: account.id,
+      conversation_id: trigger_message.conversation.display_id
+    )
+    request = {
+      params: { content: 'I will take this', private: false },
+      headers: agent.create_new_auth_token,
+      as: :json
+    }
+
+    writer_thread = run_writer_with_probe(writer_inside_boundary, 'I will take this', phase: :after, release: release_writer) do
+      dashboard_session.post(path, **request)
+    end
+    wait_for(writer_inside_boundary)
+    ai_thread = run_in_thread do
+      service.perform
+    rescue StandardError => e
+      e
+    end
+    release_writer << true
+    writer_thread.value
+    error = ai_thread.value
+
+    expect(error).to be_a(Conversations::AgentBotConditionalCommitService::PreconditionFailed)
+    expect(error.code).to eq('newer_human_reply')
+    expect(trigger_message.conversation.reload).to have_attributes(status: 'open', assignee: agent, assignee_agent_bot: nil)
+    expect(trigger_message.conversation.messages.outgoing.where(sender: turn.expected_agent_bot)).to be_empty
+  end
+
+  it 'rejects an old handoff when a real Widget writer wins the serialization boundary' do
+    trigger_message = post_widget_message('What plans do you offer?')
+    turn = ready_turn_for(trigger_message, outcome_type: :handoff)
+    service = handoff_service_for(turn)
+    writer_inside_boundary = Queue.new
+    release_writer = Queue.new
+    writer_thread = run_writer_with_probe(writer_inside_boundary, 'One more question before handoff',
+                                          phase: :after, release: release_writer) do
+      widget_session.post(widget_messages_path, **widget_request('One more question before handoff'))
+    end
+    wait_for(writer_inside_boundary)
+    handoff_thread = run_in_thread do
+      service.perform
+    rescue StandardError => e
+      e
+    end
+    release_writer << true
+    writer_thread.value
+    error = handoff_thread.value
+
+    expect(error).to be_a(Conversations::AgentBotConditionalCommitService::PreconditionFailed)
+    expect(error.code).to eq('newer_customer_message')
+    expect(turn.outbound_commit.reload).to have_attributes(status: 'rejected', failure_code: 'newer_customer_message')
+    expect(trigger_message.conversation.reload.assignee_agent_bot).to eq(turn.expected_agent_bot)
+  end
+
   private
 
   def publish_and_bind_assistant!
@@ -130,5 +234,87 @@ RSpec.describe 'ChatRing internal Web Widget message lifecycle', type: :request 
 
     expect(response).to have_http_status(:success)
     Message.find(response.parsed_body.fetch('id'))
+  end
+
+  def ready_turn_for(trigger_message, outcome_type: :reply)
+    turn = ChatRing::AiTurn.find_by!(trigger_message: trigger_message)
+    turn.update!(
+      status: :ready_to_commit,
+      decision_type: outcome_type,
+      decision_payload: {
+        'decision_type' => outcome_type.to_s,
+        'response_text' => outcome_type == :reply ? 'Our plans are...' : '',
+        'reason_code' => outcome_type == :reply ? 'answered' : 'human_requested',
+        'evidence_ids' => outcome_type == :reply ? ['evidence-1'] : []
+      }
+    )
+    ChatRing::OutboundCommit.create!(
+      ai_turn: turn,
+      idempotency_key: Digest::SHA256.hexdigest("chatring:#{outcome_type}:#{workspace.id}:#{turn.id}"),
+      outcome_type: outcome_type
+    )
+    turn
+  end
+
+  def conditional_service_for(turn)
+    Conversations::AgentBotConditionalCommitService.new(
+      conversation: turn.conversation,
+      agent_bot: turn.expected_agent_bot,
+      expected_agent_bot_id: turn.expected_agent_bot_id,
+      responding_to_message_id: turn.trigger_message_id,
+      idempotency_key: turn.outbound_commit.idempotency_key,
+      message: { content: turn.decision_payload.fetch('response_text'), content_type: 'text' }
+    )
+  end
+
+  def handoff_service_for(turn)
+    Conversations::AgentBotConditionalHandoffService.new(turn: turn, outbound_commit: turn.outbound_commit)
+  end
+
+  def widget_session
+    @widget_session ||= ActionDispatch::Integration::Session.new(Rails.application)
+  end
+
+  def dashboard_session
+    @dashboard_session ||= ActionDispatch::Integration::Session.new(Rails.application)
+  end
+
+  def widget_messages_path
+    Rails.application.routes.url_helpers.api_v1_widget_messages_path
+  end
+
+  def widget_request(content)
+    {
+      params: {
+        website_token: channel.website_token,
+        message: { content: content, timestamp: Time.current }
+      },
+      headers: { 'X-Auth-Token' => token },
+      as: :json
+    }
+  end
+
+  def run_in_thread(&)
+    Thread.new do
+      ActiveRecord::Base.connection_pool.with_connection(&)
+    end
+  end
+
+  def run_writer_with_probe(queue, content, phase:, release: nil)
+    run_in_thread do
+      Thread.current[:chatring_message_serialization_probe] = lambda do |observed_phase, message|
+        next unless observed_phase == phase && message.content == content
+
+        queue << true
+        ActiveSupport::Dependencies.interlock.permit_concurrent_loads { release.pop } if release
+      end
+      yield
+    ensure
+      Thread.current[:chatring_message_serialization_probe] = nil
+    end
+  end
+
+  def wait_for(queue)
+    Timeout.timeout(10) { queue.pop }
   end
 end

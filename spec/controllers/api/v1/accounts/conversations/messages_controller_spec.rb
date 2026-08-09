@@ -46,6 +46,60 @@ RSpec.describe 'Conversation Messages API', type: :request do
         expect(conversation.messages.last).to be_supersedes_ai_turn
       end
 
+      it 'completes native human takeover before a public reply in an Assistant-bound Widget Inbox' do
+        workspace = account.chat_ring_workspace
+        assistant = ChatRing::Assistant.create!(workspace: workspace, name: 'Support')
+        scope = workspace.knowledge_scopes.find_by!(business_wide: true)
+        ChatRing::AssistantVersions::Publisher.new(assistant: assistant, knowledge_scope: scope).call
+        connection = ChatRing::AssistantProvisioning::AgentBotProvisioner.new(assistant: assistant).call
+        ChatRing::AssistantProvisioning::InboxBindingActivator.new(assistant: assistant, inbox: inbox).call
+        conversation.update!(status: :pending, assignee: nil, assignee_agent_bot: connection.agent_bot)
+        observed_events = []
+        allow(Rails.configuration.dispatcher).to receive(:dispatch).and_wrap_original do |original, event, *arguments|
+          observed_events << event
+          original.call(event, *arguments)
+        end
+
+        post api_v1_account_conversation_messages_url(account_id: account.id, conversation_id: conversation.display_id),
+             params: { content: 'I will take this', private: false },
+             headers: agent.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(conversation.reload).to have_attributes(status: 'open', assignee: agent, assignee_agent_bot: nil)
+        expect(conversation.messages.last).to be_public_human_reply
+        expect(observed_events.count(Conversation::CONVERSATION_OPENED)).to eq(1)
+        expect(observed_events.count(Conversation::CONVERSATION_STATUS_CHANGED)).to eq(1)
+        expect(observed_events.count(Events::Types::ASSIGNEE_CHANGED)).to eq(1)
+      end
+
+      it 'takes over from the exact draining managed bot during an Assistant rebind' do
+        workspace = account.chat_ring_workspace
+        scope = workspace.knowledge_scopes.find_by!(business_wide: true)
+        original_assistant = ChatRing::Assistant.create!(workspace: workspace, name: 'Original')
+        replacement_assistant = ChatRing::Assistant.create!(workspace: workspace, name: 'Replacement')
+        [original_assistant, replacement_assistant].each do |assistant|
+          ChatRing::AssistantVersions::Publisher.new(assistant: assistant, knowledge_scope: scope).call
+          ChatRing::AssistantProvisioning::AgentBotProvisioner.new(assistant: assistant).call
+        end
+        original_binding = ChatRing::AssistantProvisioning::InboxBindingActivator.new(
+          assistant: original_assistant,
+          inbox: inbox
+        ).call
+        original_bot = original_binding.assistant_agent_bot_connection.agent_bot
+        conversation.update!(status: :pending, assignee: nil, assignee_agent_bot: original_bot)
+        ChatRing::AssistantProvisioning::InboxBindingActivator.new(assistant: replacement_assistant, inbox: inbox).call
+
+        post api_v1_account_conversation_messages_url(account_id: account.id, conversation_id: conversation.display_id),
+             params: { content: 'I will take this', private: false },
+             headers: agent.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(original_binding.reload).to be_draining
+        expect(conversation.reload).to have_attributes(status: 'open', assignee: agent, assignee_agent_bot: nil)
+      end
+
       it 'does not create the message' do
         params = { content: "#{'h' * 150 * 1000}a", private: true }
 
@@ -114,6 +168,7 @@ RSpec.describe 'Conversation Messages API', type: :request do
         let(:conversation) { create(:conversation, inbox: api_inbox, account: account) }
 
         it 'reopens the conversation with new incoming message' do
+          expect(Inbox).not_to receive(:lock)
           create(:message, conversation: conversation, account: account)
           conversation.resolved!
 

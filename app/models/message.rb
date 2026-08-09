@@ -67,6 +67,7 @@ class Message < ApplicationRecord
   before_save :ensure_processed_message_content
   before_save :ensure_in_reply_to
   before_create :lock_conversation_for_public_message
+  after_create :complete_native_human_takeover
 
   validates :account_id, presence: true
   validates :inbox_id, presence: true
@@ -297,7 +298,48 @@ class Message < ApplicationRecord
   private
 
   def lock_conversation_for_public_message
-    Conversation.lock.find(conversation_id) if supersedes_ai_turn?
+    return unless supersedes_ai_turn?
+
+    authoritative_conversation = Conversation.find(conversation_id)
+    return unless authoritative_conversation.inbox.web_widget?
+
+    Inbox.lock.find(authoritative_conversation.inbox_id)
+    bindings = managed_chat_ring_bindings(authoritative_conversation)
+    return unless bindings.exists?
+
+    locked_conversation = Conversation.lock.find(authoritative_conversation.id)
+    bindings = managed_chat_ring_bindings(locked_conversation)
+    return unless bindings.exists?
+
+    @chatring_locked_conversation = locked_conversation if public_human_reply?
+  end
+
+  def managed_chat_ring_bindings(authoritative_conversation)
+    workspace = ChatRing::Workspace.find_by(chatwoot_account_id: authoritative_conversation.account_id)
+    return ChatRing::InboxAssistantBinding.none unless workspace
+
+    ChatRing::InboxAssistantBinding.where(
+      workspace_id: workspace.id,
+      chatwoot_inbox_id: authoritative_conversation.inbox_id,
+      status: %i[active draining]
+    )
+  end
+
+  def complete_native_human_takeover
+    return unless @chatring_locked_conversation && sender.is_a?(User)
+
+    owner_binding = managed_chat_ring_bindings(@chatring_locked_conversation).joins(:assistant_agent_bot_connection).find_by(
+      chat_ring_assistant_agent_bot_connections: { agent_bot_id: @chatring_locked_conversation.assignee_agent_bot_id }
+    )
+    return unless owner_binding
+
+    Conversations::AssignmentService.new(
+      conversation: @chatring_locked_conversation,
+      assignee_id: sender.id
+    ).perform
+    association(:conversation).reset
+  ensure
+    @chatring_locked_conversation = nil
   end
 
   def prevent_message_flooding
