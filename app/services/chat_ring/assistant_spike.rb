@@ -1,9 +1,10 @@
 module ChatRing::AssistantSpike
   BOT_CONFIG_KEY = 'chatring_assistant_spike'.freeze
   SOURCE_ID_PREFIX = 'chatring-assistant-spike'.freeze
-  # Architecture v2.1 Sections 15 and 21.7 have passed. This gate applies only
-  # to the production Brain/conditional-commit path.
-  PUBLIC_AI_RELEASE_READY = true
+  # Public replies stay disabled until the v2.2 Section 13 native-lifecycle
+  # gates pass on the exact deployed path.
+  PUBLIC_AI_RELEASE_READY = false
+  EXTERNAL_RUNTIME_ENABLED = false
   LEGACY_DETERMINISTIC_RESPONSES_ENABLED = false
 
   module_function

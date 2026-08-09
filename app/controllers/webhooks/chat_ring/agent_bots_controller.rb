@@ -7,6 +7,8 @@ class Webhooks::ChatRing::AgentBotsController < ActionController::API
               with: :render_unprocessable_entity
 
   def events
+    return head :not_found unless ChatRing::AssistantSpike::EXTERNAL_RUNTIME_ENABLED
+
     result = receive_delivery
     return head :ok unless result.delivery.received?
 

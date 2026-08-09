@@ -190,6 +190,7 @@ RSpec.describe 'Conversation Messages API', type: :request do
       end
 
       it 'conditionally commits through an authenticated account-owned managed AgentBot' do
+        stub_const('ChatRing::AssistantSpike::EXTERNAL_RUNTIME_ENABLED', true)
         workspace = account.chat_ring_workspace
         assistant = ChatRing::Assistant.create!(workspace: workspace, name: 'Support')
         scope = workspace.knowledge_scopes.find_by!(business_wide: true)
@@ -228,6 +229,17 @@ RSpec.describe 'Conversation Messages API', type: :request do
           'conversation_status' => 'pending',
           'assignee_agent_bot_id' => connection.agent_bot.id
         )
+      end
+
+      it 'does not expose the external conditional commit endpoint in internal runtime mode' do
+        agent_bot.update!(account: account)
+
+        post "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/messages/conditional_create",
+             params: {},
+             headers: { api_access_token: agent_bot.access_token.token },
+             as: :json
+
+        expect(response).to have_http_status(:not_found)
       end
     end
   end

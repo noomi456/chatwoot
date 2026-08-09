@@ -28,7 +28,7 @@ RSpec.describe ChatRing::AssistantProvisioning::InboxBindingActivator do
     expect(first.update(instructions: 'Mutated')).to be(false)
   end
 
-  it 'provisions one account-owned managed AgentBot without copying raw secrets' do
+  it 'provisions one account-owned managed AgentBot without a public self-webhook or copied raw secrets' do
     publish
 
     connection = provision
@@ -36,10 +36,18 @@ RSpec.describe ChatRing::AssistantProvisioning::InboxBindingActivator do
     expect(connection).to be_active
     expect(connection.agent_bot).to be_chatring_assistant
     expect(connection.agent_bot.account).to eq(account)
-    expect(connection.agent_bot.outgoing_url).to end_with("/webhooks/chatring/agent-bots/#{connection.webhook_key}")
+    expect(connection.agent_bot.outgoing_url).to be_nil
     expect(connection.access_token_secret_ref).not_to include(connection.agent_bot.access_token.token)
     expect(connection.webhook_secret_ref).not_to include(connection.agent_bot.secret)
     expect(provision).to eq(connection)
+  end
+
+  it 'removes a legacy public self-webhook when verifying an existing connection' do
+    publish
+    connection = provision
+    connection.agent_bot.update!(outgoing_url: connection.webhook_url)
+
+    expect(provision.agent_bot.reload.outgoing_url).to be_nil
   end
 
   it 'activates an idempotent versioned Inbox binding' do

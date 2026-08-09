@@ -41,7 +41,7 @@ class ChatRing::AssistantProvisioning::AgentBotProvisioner
   end
 
   def create_connection!(agent_bot)
-    connection = assistant.create_agent_bot_connection!(
+    assistant.create_agent_bot_connection!(
       workspace: assistant.workspace,
       agent_bot: agent_bot,
       status: :active,
@@ -49,23 +49,21 @@ class ChatRing::AssistantProvisioning::AgentBotProvisioner
       webhook_secret_ref: "agent_bots/#{agent_bot.id}/secret",
       last_verified_at: Time.current
     )
-    agent_bot.update!(outgoing_url: connection.webhook_url)
-    connection
   end
 
   def verify_existing_connection!
     connection = assistant.agent_bot_connection
     connection.validate!
-    update_webhook_url!(connection)
+    disconnect_public_webhook!(connection)
     return connection if connection.active?
 
     connection.update!(status: :active, last_verified_at: Time.current)
     connection
   end
 
-  def update_webhook_url!(connection)
-    return if connection.agent_bot.outgoing_url == connection.webhook_url
+  def disconnect_public_webhook!(connection)
+    return if connection.agent_bot.outgoing_url.blank?
 
-    connection.agent_bot.update!(outgoing_url: connection.webhook_url)
+    connection.agent_bot.update!(outgoing_url: nil)
   end
 end

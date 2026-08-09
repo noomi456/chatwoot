@@ -11,6 +11,8 @@ class ChatRing::AiTurnJob < ApplicationJob
   retry_on CommitEnqueueError, wait: :polynomially_longer, attempts: 3
 
   def perform(turn_id)
+    return unless ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY
+
     turn = ChatRing::AiTurn.find_by(id: turn_id)
     return unless turn
 

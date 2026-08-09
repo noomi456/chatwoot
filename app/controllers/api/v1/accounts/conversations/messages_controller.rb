@@ -14,7 +14,7 @@ class Api::V1::Accounts::Conversations::MessagesController < Api::V1::Accounts::
   end
 
   def conditional_create
-    return head :not_found unless ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY
+    return head :not_found unless ChatRing::AssistantSpike::EXTERNAL_RUNTIME_ENABLED
 
     result = Conversations::AgentBotConditionalCommitService.new(
       conversation: @conversation,

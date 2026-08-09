@@ -44,6 +44,10 @@ RSpec.describe ChatRing::OutboundCommitJob, type: :job do
   end
 
   context 'with the public response gate open' do
+    before do
+      stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', true)
+    end
+
     it 'commits exactly one ordinary message across job retries' do
       2.times { described_class.perform_now(turn.id) }
 
@@ -71,6 +75,15 @@ RSpec.describe ChatRing::OutboundCommitJob, type: :job do
       expect { described_class.perform_now(turn.id) }.not_to(change { conversation.messages.outgoing.count })
       expect(turn.reload).to be_status_cancelled
       expect(turn.failure_code).to eq('conversation_not_pending')
+    end
+  end
+
+  context 'with the public response gate closed' do
+    it 'does not commit a customer-visible message' do
+      expect { described_class.perform_now(turn.id) }.not_to(change { conversation.messages.outgoing.count })
+
+      expect(turn.reload).to be_status_ready_to_commit
+      expect(turn.outbound_commit).to be_nil
     end
   end
 end

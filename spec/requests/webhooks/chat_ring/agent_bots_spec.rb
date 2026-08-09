@@ -4,6 +4,7 @@ RSpec.describe 'ChatRing managed AgentBot webhooks', type: :request do
   include ActiveJob::TestHelper
 
   before do
+    stub_const('ChatRing::AssistantSpike::EXTERNAL_RUNTIME_ENABLED', true)
     allow(ChatRing::AiTurnJob).to receive(:perform_later)
       .and_return(instance_double(ActiveJob::Base, successfully_enqueued?: true))
   end
@@ -59,6 +60,18 @@ RSpec.describe 'ChatRing managed AgentBot webhooks', type: :request do
 
   def post_webhook(body, headers)
     post "/webhooks/chatring/agent-bots/#{connection.webhook_key}", params: body, headers: headers
+  end
+
+  it 'rejects a previously valid signed managed webhook in internal runtime mode' do
+    stub_const('ChatRing::AssistantSpike::EXTERNAL_RUNTIME_ENABLED', false)
+    body = payload_for
+
+    expect do
+      post_webhook(body, signed_headers(body))
+    end.not_to change(ChatRing::WebhookDelivery, :count)
+
+    expect(response).to have_http_status(:not_found)
+    expect(ChatRing::AiTurn.count).to eq(0)
   end
 
   it 'accepts a signed delivery and creates one received AI turn from fresh Chatwoot state' do
