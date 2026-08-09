@@ -114,8 +114,16 @@ class ChatRing::InternalTurnScheduler
   end
 
   def native_terminal_reason
+    return 'automation_conflict' if automation_conflict?
     return 'native_out_of_office' if message.inbox.out_of_office?
     return 'native_email_collection' if email_collection_required?
+  end
+
+  def automation_conflict?
+    ChatRing::AutomationConflictClassifier.new(
+      account: message.account,
+      inbox: message.inbox
+    ).conflicting?
   end
 
   def native_handling_snapshot

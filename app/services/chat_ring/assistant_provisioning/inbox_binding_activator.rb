@@ -6,7 +6,9 @@ class ChatRing::AssistantProvisioning::InboxBindingActivator
 
   def call
     connection = active_connection!
-    inbox.with_lock { activate_binding!(connection) }
+    assistant.workspace.chatwoot_account.with_lock do
+      inbox.with_lock { activate_binding!(connection) }
+    end
   end
 
   private

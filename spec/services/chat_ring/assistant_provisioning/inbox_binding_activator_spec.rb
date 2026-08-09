@@ -87,6 +87,46 @@ RSpec.describe ChatRing::AssistantProvisioning::InboxBindingActivator do
     end.to raise_error(ChatRing::AssistantProvisioning::AgentBotConnector::ConflictError)
   end
 
+  it 'rejects binding when a potentially matching automation can send a public reply' do
+    publish
+    provision
+    create(
+      :automation_rule,
+      account: account,
+      event_name: 'message_created',
+      conditions: [{
+        'attribute_key' => 'inbox_id',
+        'filter_operator' => 'equal_to',
+        'values' => [inbox.id],
+        'query_operator' => nil
+      }],
+      actions: [{ 'action_name' => 'send_message', 'action_params' => ['Automation reply'] }]
+    )
+
+    expect do
+      described_class.new(assistant: assistant, inbox: inbox).call
+    end.to raise_error(ChatRing::AssistantProvisioning::AgentBotConnector::ConflictError)
+  end
+
+  it 'allows binding when a matching automation only adds a label' do
+    publish
+    provision
+    create(
+      :automation_rule,
+      account: account,
+      event_name: 'message_created',
+      conditions: [{
+        'attribute_key' => 'inbox_id',
+        'filter_operator' => 'equal_to',
+        'values' => [inbox.id],
+        'query_operator' => nil
+      }],
+      actions: [{ 'action_name' => 'add_label', 'action_params' => ['priority'] }]
+    )
+
+    expect(described_class.new(assistant: assistant, inbox: inbox).call).to be_active
+  end
+
   it 'switches Assistants by draining the old binding under the Inbox lock' do
     publish
     provision

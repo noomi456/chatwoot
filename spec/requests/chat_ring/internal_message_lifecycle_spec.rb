@@ -87,6 +87,25 @@ RSpec.describe 'ChatRing internal Web Widget message lifecycle', type: :request 
     expect(ChatRing::AiTurn.where(trigger_message: message)).not_to exist
   end
 
+  it 'fails closed at scheduling when a conflicting automation bypasses binding validation' do
+    rule = create(
+      :automation_rule,
+      account: account,
+      event_name: 'message_created',
+      active: false,
+      actions: [{ 'action_name' => 'send_message', 'action_params' => ['Automation reply'] }]
+    )
+    rule.update_columns(active: true, updated_at: Time.current) # rubocop:disable Rails/SkipsModelValidations
+    clear_enqueued_jobs
+
+    message = post_widget_message('Can the Assistant answer this?')
+    turn = ChatRing::AiTurn.find_by!(trigger_message: message)
+
+    expect(turn).to be_status_ineligible
+    expect(turn.decision_type).to eq('automation_conflict')
+    expect(ChatRing::AiTurnJob).not_to have_been_enqueued
+  end
+
   private
 
   def publish_and_bind_assistant!

@@ -7,7 +7,7 @@ class ChatRing::AssistantProvisioning::InboxConflictDetector
   end
 
   def call
-    [agent_bot_conflict, dialogflow_conflict, captain_conflict].compact.freeze
+    ([agent_bot_conflict, dialogflow_conflict, captain_conflict].compact + automation_conflicts).freeze
   end
 
   def conflicting?
@@ -52,5 +52,11 @@ class ChatRing::AssistantProvisioning::InboxConflictDetector
       WHERE inbox_id = #{connection.quote(inbox.id)}
       LIMIT 1
     SQL
+  end
+
+  def automation_conflicts
+    ChatRing::AutomationConflictClassifier.new(account: inbox.account, inbox: inbox).conflicts.map do |rule|
+      Conflict.new(kind: :automation, record_id: rule.id)
+    end
   end
 end
