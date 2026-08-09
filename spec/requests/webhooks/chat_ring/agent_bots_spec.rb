@@ -66,12 +66,13 @@ RSpec.describe 'ChatRing managed AgentBot webhooks', type: :request do
     stub_const('ChatRing::AssistantSpike::EXTERNAL_RUNTIME_ENABLED', false)
     body = payload_for
 
-    expect do
-      post_webhook(body, signed_headers(body))
-    end.not_to change(ChatRing::WebhookDelivery, :count)
+    delivery_count = ChatRing::WebhookDelivery.count
+    turn_count = ChatRing::AiTurn.count
+    post_webhook(body, signed_headers(body))
 
     expect(response).to have_http_status(:not_found)
-    expect(ChatRing::AiTurn.count).to eq(0)
+    expect(ChatRing::WebhookDelivery.count).to eq(delivery_count)
+    expect(ChatRing::AiTurn.count).to eq(turn_count)
   end
 
   it 'accepts a signed delivery and creates one received AI turn from fresh Chatwoot state' do
