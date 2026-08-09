@@ -36,14 +36,14 @@ RSpec.describe 'Conversation Messages API', type: :request do
         expect(conversation.messages.first.content).to eq(params[:content])
       end
 
-      it 'marks a public human reply as superseding an in-flight AI turn' do
+      it 'keeps native public human-reply semantics' do
         post api_v1_account_conversation_messages_url(account_id: account.id, conversation_id: conversation.display_id),
              params: { content: 'I will take this', private: false },
              headers: agent.create_new_auth_token,
              as: :json
 
         expect(response).to have_http_status(:success)
-        expect(conversation.messages.last).to be_supersedes_ai_turn
+        expect(conversation.messages.last).to be_public_human_reply
       end
 
       it 'completes native human takeover before a public reply in an Assistant-bound Widget Inbox' do
@@ -77,18 +77,15 @@ RSpec.describe 'Conversation Messages API', type: :request do
         workspace = account.chat_ring_workspace
         scope = workspace.knowledge_scopes.find_by!(business_wide: true)
         original_assistant = ChatRing::Assistant.create!(workspace: workspace, name: 'Original')
-        replacement_assistant = ChatRing::Assistant.create!(workspace: workspace, name: 'Replacement')
-        [original_assistant, replacement_assistant].each do |assistant|
-          ChatRing::AssistantVersions::Publisher.new(assistant: assistant, knowledge_scope: scope).call
-          ChatRing::AssistantProvisioning::AgentBotProvisioner.new(assistant: assistant).call
-        end
+        ChatRing::AssistantVersions::Publisher.new(assistant: original_assistant, knowledge_scope: scope).call
+        ChatRing::AssistantProvisioning::AgentBotProvisioner.new(assistant: original_assistant).call
         original_binding = ChatRing::AssistantProvisioning::InboxBindingActivator.new(
           assistant: original_assistant,
           inbox: inbox
         ).call
         original_bot = original_binding.assistant_agent_bot_connection.agent_bot
         conversation.update!(status: :pending, assignee: nil, assignee_agent_bot: original_bot)
-        ChatRing::AssistantProvisioning::InboxBindingActivator.new(assistant: replacement_assistant, inbox: inbox).call
+        original_binding.draining!
 
         post api_v1_account_conversation_messages_url(account_id: account.id, conversation_id: conversation.display_id),
              params: { content: 'I will take this', private: false },

@@ -7,9 +7,13 @@ class Api::V1::Widget::MessagesController < Api::V1::Widget::BaseController
   end
 
   def create
-    @message = conversation.messages.new(message_params)
-    build_attachment
-    @message.save!
+    @message = ChatRing::ConversationWriteBoundary.new(conversation: conversation).call do
+      message = conversation.messages.new(message_params)
+      @message = message
+      build_attachment
+      message.save!
+      message
+    end
   end
 
   def update

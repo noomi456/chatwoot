@@ -1,19 +1,21 @@
 require 'rails_helper'
 require 'timeout'
 
-module ChatRingMessageSerializationProbe
+module ChatRingConversationWriteBoundaryProbe
   private
 
-  def lock_conversation_for_public_message
+  def perform_native_write
     probe = Thread.current[:chatring_message_serialization_probe]
-    probe&.call(:before, self)
+    probe&.call(:before, nil)
     result = super
-    probe&.call(:after, self)
+    probe&.call(:after, result)
     result
   end
 end
 
-Message.prepend(ChatRingMessageSerializationProbe) unless Message < ChatRingMessageSerializationProbe
+unless ChatRing::ConversationWriteBoundary < ChatRingConversationWriteBoundaryProbe
+  ChatRing::ConversationWriteBoundary.prepend(ChatRingConversationWriteBoundaryProbe)
+end
 
 RSpec.describe 'ChatRing internal Web Widget message lifecycle', type: :request do
   let(:account) { create(:account) }
@@ -93,8 +95,10 @@ RSpec.describe 'ChatRing internal Web Widget message lifecycle', type: :request 
   end
 
   it 'does not affect an unbound native Web Widget inbox' do
-    ChatRing::InboxAssistantBinding.delete_all
-    AgentBotInbox.delete_all
+    binding = workspace.inbox_assistant_bindings.find_by!(chatwoot_inbox_id: inbox.id)
+    binding.ai_turns.destroy_all
+    binding.destroy!
+    AgentBotInbox.where(inbox_id: inbox.id).delete_all
 
     message = post_widget_message('Hello')
 
@@ -121,8 +125,7 @@ RSpec.describe 'ChatRing internal Web Widget message lifecycle', type: :request 
     expect(ChatRing::AiTurnJob).not_to have_been_enqueued
   end
 
-  # The production controllers construct these Message instances; probing their real
-  # callback is the controlled barrier required by the integration contract.
+  # The production controllers invoke this boundary around their native Message writers.
   it 'rejects an old AI reply when a real Widget writer wins the serialization boundary' do
     trigger_message = post_widget_message('What plans do you offer?')
     turn = ready_turn_for(trigger_message)

@@ -8,7 +8,11 @@ class Api::V1::Accounts::Conversations::MessagesController < Api::V1::Accounts::
   def create
     user = Current.user || @resource
     mb = Messages::MessageBuilder.new(user, @conversation, params)
-    @message = mb.perform
+    @message = if public_human_reply?(user)
+                 ChatRing::ConversationWriteBoundary.new(conversation: @conversation).call { mb.perform }
+               else
+                 mb.perform
+               end
   rescue StandardError => e
     render_could_not_create_error(e.message)
   end
@@ -87,6 +91,10 @@ class Api::V1::Accounts::Conversations::MessagesController < Api::V1::Accounts::
 
   def permitted_params
     params.permit(:id, :target_language, :status, :external_error)
+  end
+
+  def public_human_reply?(sender)
+    sender.is_a?(User) && !ActiveModel::Type::Boolean.new.cast(params[:private])
   end
 
   def conditional_params

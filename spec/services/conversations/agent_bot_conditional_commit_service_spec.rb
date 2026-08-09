@@ -91,8 +91,12 @@ RSpec.describe Conversations::AgentBotConditionalCommitService do
 
   it 'rejects a reply after a public human response' do
     outbound_commit
-    create(:message, account: account, inbox: inbox, conversation: conversation, sender: create(:user, account: account),
-                     message_type: :outgoing, private: false, content: 'I will take this')
+    human_message = build(:message, account: account, inbox: inbox, conversation: conversation, sender: create(:user, account: account),
+                                    message_type: :outgoing, private: false, content: 'I will take this')
+    ChatRing::ConversationWriteBoundary.new(conversation: conversation).call do
+      human_message.save!
+      human_message
+    end
 
     expect { service.perform }
       .to raise_error(described_class::PreconditionFailed, 'newer_human_reply')

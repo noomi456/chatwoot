@@ -190,6 +190,22 @@ The one-to-one Workspace record remains the ChatRing configuration boundary. Eve
 runtime lookup begins from the authoritative Chatwoot Account and proves the exact
 Workspace, Inbox, binding, AssistantVersion and account-owned AgentBot relationship.
 
+### 3.4 Native-first implementation test
+
+Before adding any ChatRing lifecycle service, state machine, event transport,
+assignment mechanism, message writer, handoff mechanism, retry mechanism or delivery
+mechanism, implementation must first identify the equivalent native Chatwoot
+lifecycle or service and integrate through that seam. A new ChatRing component is
+permitted only when the required capability does not exist natively, and it remains
+subordinate to Chatwoot authority.
+
+`AITurn` describes AI computation only. It never determines Conversation status,
+ownership, human takeover or Message deliverability. `OutboundCommit` provides
+idempotency and audit for one native Chatwoot outcome; it is not a second message
+store. The first-release serialization guard is installed only around the approved
+Web Widget customer writer and dashboard public-reply writer. It is not a global
+`Message` callback.
+
 ---
 
 ## 4. Chosen runtime boundary
@@ -615,7 +631,7 @@ is permitted in the ChatRing CE implementation or image.
 |---|---|
 | Public self-webhook to the same Rails app | Internal post-template turn scheduler |
 | Live direct service plus unused HTTP endpoint | One internal commit boundary |
-| Global `Message.before_create` Conversation lock | Assistant-enabled Inbox predicate with lock/recheck |
+| Global `Message.before_create` Conversation lock | Narrow lock/recheck wrapper around the approved Widget/dashboard writers |
 | Conflict detector checks AgentBot/Dialogflow/Captain only | Include native templates and conflicting automations |
 | Rebind swaps Inbox pointer only | Drain/handoff old-bot Conversations before activation |
 | Every accessible managed bot assignable | Only active Inbox-connected managed bot assignable |
@@ -898,7 +914,9 @@ the same lifecycle, serialization, takeover and delivery suite.
 
 ### Chatwoot CE/current ChatRing
 
-- Message callback and serialization changes: [`app/models/message.rb`](../../app/models/message.rb)
+- Approved Widget writer: [`app/controllers/api/v1/widget/messages_controller.rb`](../../app/controllers/api/v1/widget/messages_controller.rb)
+- Approved dashboard public-reply writer: [`app/controllers/api/v1/accounts/conversations/messages_controller.rb`](../../app/controllers/api/v1/accounts/conversations/messages_controller.rb)
+- Narrow serialization wrapper: [`app/services/chat_ring/conversation_write_boundary.rb`](../../app/services/chat_ring/conversation_write_boundary.rb)
 - Native template order: [`app/services/message_templates/hook_execution_service.rb`](../../app/services/message_templates/hook_execution_service.rb)
 - AgentBot event selection and webhook enqueue: [`app/listeners/agent_bot_listener.rb`](../../app/listeners/agent_bot_listener.rb)
 - AgentBot webhook retry/logging: [`app/jobs/agent_bots/webhook_job.rb`](../../app/jobs/agent_bots/webhook_job.rb)

@@ -76,14 +76,16 @@ RSpec.describe Conversations::AgentBotConditionalCommitService, '#perform', :agg
       release_ai.pop
       original.call(*arguments)
     end
-    allow(customer_message).to receive(:lock_conversation_for_public_message).and_wrap_original do |original|
-      customer_attempting_lock << true
-      original.call
-    end
-
     ai_thread = run_in_thread { service.perform }
     wait_for(ai_inside_boundary)
-    customer_thread = run_in_thread { customer_message.save! }
+    writer = ChatRing::ConversationWriteBoundary.new(conversation: conversation)
+    customer_thread = run_in_thread do
+      customer_attempting_lock << true
+      writer.call do
+        customer_message.save!
+        customer_message
+      end
+    end
     wait_for(customer_attempting_lock)
 
     customer_interleaved = conversation.messages.exists?(content: 'One more question')
@@ -108,13 +110,20 @@ RSpec.describe Conversations::AgentBotConditionalCommitService, '#perform', :agg
       private: false,
       content: 'One more question'
     )
-    allow(customer_message).to receive(:lock_conversation_for_public_message).and_wrap_original do |original|
-      original.call
+    writer = ChatRing::ConversationWriteBoundary.new(conversation: conversation)
+    allow(writer).to receive(:perform_native_write).and_wrap_original do |original, &native_write|
+      result = original.call(&native_write)
       customer_inside_boundary << true
       release_customer.pop
+      result
     end
 
-    customer_thread = run_in_thread { customer_message.save! }
+    customer_thread = run_in_thread do
+      writer.call do
+        customer_message.save!
+        customer_message
+      end
+    end
     wait_for(customer_inside_boundary)
     ai_thread = run_in_thread do
       conditional_service.perform
@@ -142,13 +151,20 @@ RSpec.describe Conversations::AgentBotConditionalCommitService, '#perform', :agg
       private: false,
       content: 'I will take this'
     )
-    allow(human_message).to receive(:lock_conversation_for_public_message).and_wrap_original do |original|
-      original.call
+    writer = ChatRing::ConversationWriteBoundary.new(conversation: conversation)
+    allow(writer).to receive(:perform_native_write).and_wrap_original do |original, &native_write|
+      result = original.call(&native_write)
       human_inside_boundary << true
       release_human.pop
+      result
     end
 
-    human_thread = run_in_thread { human_message.save! }
+    human_thread = run_in_thread do
+      writer.call do
+        human_message.save!
+        human_message
+      end
+    end
     wait_for(human_inside_boundary)
     ai_thread = run_in_thread do
       conditional_service.perform
@@ -205,11 +221,11 @@ RSpec.describe Conversations::AgentBotConditionalCommitService, '#perform', :agg
       conversation: takeover_conversation,
       assignee_id: create(:user, account: account).id
     )
-    allow(takeover_conversation).to receive(:with_lock).and_wrap_original do |original, *arguments, &block|
-      original.call(*arguments) do
+    allow(assignment).to receive(:with_assignment_lock).and_wrap_original do |original, &assignment_write|
+      original.call do
         takeover_inside_boundary << true
         release_takeover.pop
-        block.call
+        assignment_write.call
       end
     end
 

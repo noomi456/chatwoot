@@ -27,6 +27,12 @@ Enterprise or Captain code.
 | Handoff | native `bot_handoff!(dispatch_event:)` | Wrap; do not replace native semantics |
 | External runtime APIs | signed webhook plus conditional HTTP endpoint | Inactive and rejected in internal mode |
 
+Every implementation change must pass the contract's native-first test before a new
+ChatRing component is introduced. The only new serialization wrapper exists because
+Chatwoot has no native cross-writer compare-and-commit boundary; it wraps the approved
+Widget/dashboard writers and invokes native Message, AssignmentService and handoff
+behavior rather than replacing them.
+
 Captain was used only to confirm useful CE seams: internal post-template scheduling,
 ordinary Message persistence and native delivery. Its models, jobs, prompts, tools,
 policies and Enterprise overrides are not implementation sources.
@@ -59,13 +65,15 @@ Rules:
 1. Binding, disable, archive, rebind and AutomationRule mutation take the Account lock.
 2. Binding transitions then take the Inbox lock.
 3. Rebind/handoff takes each affected Conversation lock in ascending ID order.
-4. Qualifying Web Widget incoming/human Message writes first take the Inbox row lock
+4. The approved Web Widget incoming and dashboard public-human writer paths first take the Inbox row lock
    to linearize first binding activation. Only an active/draining binding proceeds to
    the Conversation lock. AI commit uses the same Inbox then Conversation order.
 5. The managed-binding predicate is rechecked after both locks are held.
 6. An Inbox with no active/draining ChatRing binding keeps upstream Conversation and
    Message behavior and does not take the Conversation or ledger locks. The short
    Web Widget Inbox row lock is solely the activation-race boundary.
+7. No global `Message` callback implements ChatRing serialization. Other native
+   message writers remain untouched until their channel is separately approved.
 
 Controlled-barrier tests must prove activation, rebind and assignment cannot race the
 predicate and that non-managed channel writers remain unchanged.

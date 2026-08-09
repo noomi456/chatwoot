@@ -6,9 +6,15 @@ class ChatRing::AssistantProvisioning::InboxBindingActivator
 
   def call
     connection = active_connection!
-    assistant.workspace.chatwoot_account.with_lock do
-      inbox.with_lock { activate_binding!(connection) }
+    handed_off_conversations = []
+    binding = assistant.workspace.chatwoot_account.with_lock do
+      inbox.with_lock do
+        validate_inbox!
+        activate_binding!(connection, handed_off_conversations)
+      end
     end
+    handed_off_conversations.each(&:dispatch_bot_handoff_event)
+    binding
   end
 
   private
@@ -24,7 +30,7 @@ class ChatRing::AssistantProvisioning::InboxBindingActivator
     raise ActiveRecord::RecordInvalid, assistant
   end
 
-  def activate_binding!(connection)
+  def activate_binding!(connection, handed_off_conversations)
     current = active_binding
     return activate_existing!(current, connection) if current_matches?(current, connection)
 
@@ -34,7 +40,7 @@ class ChatRing::AssistantProvisioning::InboxBindingActivator
     ).call.reject { |conflict| replaceable_agent_bot_conflict?(conflict, current) }
     raise ChatRing::AssistantProvisioning::AgentBotConnector::ConflictError, conflicts if conflicts.any?
 
-    current&.draining!
+    handed_off_conversations.concat(drain_binding!(current)) if current
     connect_agent_bot!(connection, current)
     verify_agent_bot_connection!(connection)
     binding = create_binding!(connection)
@@ -44,6 +50,20 @@ class ChatRing::AssistantProvisioning::InboxBindingActivator
 
   def current_matches?(current, connection)
     current&.assistant_id == assistant.id && current.assistant_agent_bot_connection_id == connection.id
+  end
+
+  def validate_inbox!
+    return if inbox.web_widget?
+
+    inbox.errors.add(:base, 'ChatRing Assistants currently support Web Widget Inboxes only')
+    raise ActiveRecord::RecordInvalid, inbox
+  end
+
+  def drain_binding!(binding)
+    ChatRing::AssistantProvisioning::InboxBindingDrainer.new(
+      binding: binding,
+      failure_code: 'binding_rebound'
+    ).call_with_lock!
   end
 
   def activate_existing!(current, connection)

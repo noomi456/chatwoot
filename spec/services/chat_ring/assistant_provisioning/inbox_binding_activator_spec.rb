@@ -77,6 +77,19 @@ RSpec.describe ChatRing::AssistantProvisioning::InboxBindingActivator do
     expect(inbox.reload.agent_bot).to eq(other_inbox.reload.agent_bot)
   end
 
+  it 'rejects non-Widget Inboxes before creating a binding' do
+    publish
+    provision
+    email_inbox = create(:inbox, :with_email, account: account)
+
+    expect do
+      described_class.new(assistant: assistant, inbox: email_inbox).call
+    end.to raise_error(ActiveRecord::RecordInvalid, /Web Widget Inboxes only/)
+
+    expect(email_inbox.reload.agent_bot).to be_nil
+    expect(assistant.inbox_bindings).to be_empty
+  end
+
   it 'fails closed when Dialogflow is configured' do
     publish
     provision
@@ -127,10 +140,26 @@ RSpec.describe ChatRing::AssistantProvisioning::InboxBindingActivator do
     expect(described_class.new(assistant: assistant, inbox: inbox).call).to be_active
   end
 
-  it 'switches Assistants by draining the old binding under the Inbox lock' do
+  it 'hands off old-bot Conversations and cancels unfinished turns before switching Assistants' do
     publish
-    provision
+    connection = provision
     first = described_class.new(assistant: assistant, inbox: inbox).call
+    conversation = create(
+      :conversation,
+      account: account,
+      inbox: inbox,
+      status: :pending,
+      assignee_agent_bot: connection.agent_bot
+    )
+    trigger_message = create(
+      :message,
+      account: account,
+      inbox: inbox,
+      conversation: conversation,
+      sender: conversation.contact,
+      message_type: :incoming
+    )
+    turn = ChatRing::AiTurn.find_by!(trigger_message: trigger_message)
     replacement = ChatRing::Assistant.create!(workspace: workspace, name: 'Sales')
     publish(replacement)
     provision(replacement)
@@ -138,8 +167,78 @@ RSpec.describe ChatRing::AssistantProvisioning::InboxBindingActivator do
     second = described_class.new(assistant: replacement, inbox: inbox).call
 
     expect(first.reload).to be_draining
-    expect(second).to be_active
-    expect(second.binding_version).to eq(2)
+    expect(second).to have_attributes(status: 'active', binding_version: 2)
     expect(inbox.reload.agent_bot).to eq(replacement.agent_bot_connection.agent_bot)
+    expect(conversation.reload).to be_open
+    expect(conversation.assignee_agent_bot).to be_nil
+    expect(turn.reload).to be_status_cancelled
+    expect(turn.failure_code).to eq('binding_rebound')
+  end
+
+  it 'rolls back a replacement when native handoff fails' do
+    publish
+    connection = provision
+    first = described_class.new(assistant: assistant, inbox: inbox).call
+    conversation = create(
+      :conversation,
+      account: account,
+      inbox: inbox,
+      status: :pending,
+      assignee_agent_bot: connection.agent_bot
+    )
+    replacement = ChatRing::Assistant.create!(workspace: workspace, name: 'Sales')
+    publish(replacement)
+    provision(replacement)
+    drainer = instance_double(ChatRing::AssistantProvisioning::InboxBindingDrainer)
+    allow(ChatRing::AssistantProvisioning::InboxBindingDrainer).to receive(:new).and_return(drainer)
+    allow(drainer).to receive(:call_with_lock!).and_raise(ActiveRecord::RecordNotSaved)
+
+    expect do
+      described_class.new(assistant: replacement, inbox: inbox).call
+    end.to raise_error(ActiveRecord::RecordNotSaved)
+
+    expect(first.reload).to be_active
+    expect(inbox.reload.agent_bot).to eq(connection.agent_bot)
+    expect(conversation.reload.assignee_agent_bot).to eq(connection.agent_bot)
+    expect(replacement.inbox_bindings).to be_empty
+  end
+
+  it 'disables a binding only after native handoff completes' do
+    publish
+    connection = provision
+    binding = described_class.new(assistant: assistant, inbox: inbox).call
+    conversation = create(
+      :conversation,
+      account: account,
+      inbox: inbox,
+      status: :pending,
+      assignee_agent_bot: connection.agent_bot
+    )
+
+    result = ChatRing::AssistantProvisioning::InboxBindingDeactivator.new(binding: binding).call
+
+    expect(result).to be_inactive
+    expect(inbox.reload.agent_bot).to be_nil
+    expect(conversation.reload).to be_open
+    expect(conversation.assignee_agent_bot).to be_nil
+  end
+
+  it 'archives an Assistant only after all of its Inbox Conversations are handed off' do
+    publish
+    connection = provision
+    other_inbox = create(:inbox, account: account)
+    bindings = [inbox, other_inbox].map { |target| described_class.new(assistant: assistant, inbox: target).call }
+    conversations = [inbox, other_inbox].map do |target|
+      create(:conversation, account: account, inbox: target, status: :pending, assignee_agent_bot: connection.agent_bot)
+    end
+
+    ChatRing::AssistantProvisioning::AssistantArchiver.new(assistant: assistant).call
+
+    expect(assistant.reload).to be_archived
+    expect(connection.reload).to be_inactive
+    expect(bindings.map { |binding| binding.reload.status }).to all(eq('inactive'))
+    expect([inbox, other_inbox].map { |target| target.reload.agent_bot }).to all(be_nil)
+    expect(conversations.map { |conversation| conversation.reload.status }).to all(eq('open'))
+    expect(conversations.map(&:assignee_agent_bot)).to all(be_nil)
   end
 end
