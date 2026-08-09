@@ -2,7 +2,7 @@
 
 ## Architecture reconciliation v2.2
 
-**Status:** Audited correction; implementation is blocked until this contract is approved
+**Status:** Approved implementation authority; public AI remains blocked until Section 13 passes
 
 **Runtime decision:** Internal ChatRing control plane inside the Chatwoot deployment
 
@@ -29,9 +29,9 @@ unaffected v2.1 decisions remain valid: Workspace ownership, Assistant and immut
 AssistantVersion, account-level Knowledge Base and Knowledge Scopes, governed memory,
 tool authorization, identity assurance, auditability and ordinary Chatwoot delivery.
 
-This is an integration contract, not permission to continue implementation. The
-current public-response gate must be closed before remediation begins and must not be
-reopened until Section 13 passes against the production path.
+This is the approved integration contract for remediation. The current public-response
+gate must be closed before runtime changes begin and must not be reopened until Section
+13 passes against the production path.
 
 The audited source currently sets `PUBLIC_AI_RELEASE_READY = true`; that state is not
 justified by the integrated lifecycle evidence and is an immediate containment item.
@@ -319,6 +319,12 @@ email collection is enabled and the Contact still lacks email, every later incom
 message remains AI-ineligible even when the existing input-email message is not sent
 again.
 
+The native template classes rescue their own failures and do not return a reliable
+typed result. The integration therefore records the relevant template-message set
+before the native hook, runs the native hook unchanged, reloads authoritative Inbox,
+Contact, Conversation and Message state, and records the resulting delta. It never
+infers success from a template service return value.
+
 ---
 
 ## 6. End-to-end response path
@@ -376,6 +382,13 @@ metadata. Outgoing messages must not all be represented as if the Assistant said
 Contact fields are data-minimized. Name, email, phone and identifier are included only
 when the active Assistant policy and turn purpose require them. Private notes are
 excluded by default.
+
+For the first Web Widget release, empty `audience_policy` means all visitors to the
+bound Widget Inbox and empty `availability_policy` means the native Inbox working-hours
+window. Contact name, email, phone, identifier and other profile data are omitted from
+model context. Any non-empty audience or availability policy is rejected at publish or
+binding until a separately approved schema and management surface define its semantics;
+the runtime never guesses what unknown policy keys mean.
 
 ### 6.4 Knowledge
 
@@ -447,6 +460,19 @@ It covers:
 
 Non-managed conversations preserve upstream behavior. A channel is not declared
 ChatRing-supported merely because its Message happens to use the shared model.
+
+Lock acquisition order is fixed to prevent lifecycle deadlocks:
+
+```text
+configuration mutation: Account -> Inbox -> affected Conversations in ascending ID
+managed message/turn transition: Inbox -> Conversation -> ChatRing ledger rows
+```
+
+Automation mutation takes the Account lock before validating active bindings. Binding,
+disable, archive and rebind take the same Account lock, then the Inbox lock. Every
+managed-message predicate is rechecked after the Inbox and Conversation locks are held.
+An initial unlocked lookup may optimize the non-managed path, but it is never the
+authoritative decision when an active or draining binding exists.
 
 ### 6.8 Handoff
 
