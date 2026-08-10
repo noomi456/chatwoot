@@ -1,6 +1,8 @@
 class ChatRing::AiTurn < ApplicationRecord
   self.table_name = 'chat_ring_ai_turns'
 
+  DEFAULT_DEADLINE = 2.minutes
+
   enum status: {
     received: 0,
     eligible: 1,

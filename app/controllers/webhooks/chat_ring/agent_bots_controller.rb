@@ -7,7 +7,7 @@ class Webhooks::ChatRing::AgentBotsController < ActionController::API
               with: :render_unprocessable_entity
 
   def events
-    return head :not_found unless ChatRing::AssistantSpike::EXTERNAL_RUNTIME_ENABLED
+    return head :not_found unless external_public_runtime_enabled?
 
     result = receive_delivery
     return head :ok unless result.delivery.received?
@@ -16,6 +16,10 @@ class Webhooks::ChatRing::AgentBotsController < ActionController::API
   end
 
   private
+
+  def external_public_runtime_enabled?
+    ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY && ChatRing::AssistantSpike::EXTERNAL_RUNTIME_ENABLED
+  end
 
   def receive_delivery
     connection = ChatRing::AssistantAgentBotConnection.find_by!(webhook_key: params[:webhook_key])

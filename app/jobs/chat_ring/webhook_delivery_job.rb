@@ -71,6 +71,7 @@ class ChatRing::WebhookDeliveryJob < ApplicationJob
       turn.assistant = assistant
       turn.assistant_version = assistant_version
       turn.expected_agent_bot = delivery.assistant_agent_bot_connection.agent_bot
+      turn.deadline_at = Time.current + ChatRing::AiTurn::DEFAULT_DEADLINE
       turn.status = eligible ? :received : :ineligible
       turn.decision_type = reason unless eligible
       turn.completed_at = Time.current unless eligible
