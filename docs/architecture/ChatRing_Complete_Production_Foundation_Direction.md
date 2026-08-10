@@ -84,11 +84,9 @@ The approved first-release provider boundary is:
 ```text
 Text/channel certification
 1. Web Widget
-2. Twilio SMS
-3. Email
-4. WhatsApp Cloud
-5. Facebook Messenger
-6. Instagram, only when the deployed Meta app and Inbox are available
+2. Twilio SMS, Email, WhatsApp Cloud, Facebook Messenger and Instagram are then
+   certified independently according to real provider/compliance readiness;
+   Instagram requires a deployed Meta app and Inbox
 
 Human calls
 1. Cloudflare RealtimeKit through Chatwoot's native Website integration
@@ -99,6 +97,11 @@ Twilio is the selected v1 SMS/PSTN provider. Telnyx is not part of v1. Twilio Wh
 Bandwidth SMS, WhatsApp default/non-Cloud, API, Telegram, LINE, TikTok and X/Twitter are
 not silently included merely because Chatwoot contains a model or provider path. They
 require a later written scope decision and their own native-path certification.
+
+Sales Core v1 therefore requires a configured WhatsApp Cloud Inbox before claiming
+WhatsApp support. An existing default/non-Cloud WhatsApp Inbox remains native Chatwoot
+functionality but is outside the v1 AI certification boundary unless a later written
+decision replaces the provider scope after auditing that actual deployed path.
 
 "Available" means the deployed CE runtime has the required provider credentials, app
 approval, phone number/capabilities and feature configuration. Source availability alone
@@ -2167,10 +2170,13 @@ Facebook Messenger
 Instagram
 ```
 
-The certification order begins with Web Widget, then Twilio SMS, Email, WhatsApp Cloud,
-Facebook Messenger and Instagram when the deployed provider is available. Every other
-Inbox/provider is excluded from Sales Core v1 by the locked product decision above; a
-future addition requires a separate native audit and channel-certification PR.
+Certification begins with the complete Web Widget sales-and-RealtimeKit vertical. The
+remaining approved channels are then certified independently in the current product-
+priority order determined by provider credentials, app approval, number availability,
+compliance readiness and a real test environment. No channel blocks a ready sibling
+merely because it appeared earlier in a planning list. Every other Inbox/provider is
+excluded from Sales Core v1 by the locked product decision above; a future addition
+requires a separate native audit and channel-certification PR.
 
 ## 20.1 Shared across channels
 
@@ -2885,7 +2891,7 @@ It explicitly did not freeze post-template scheduling as the final production tr
 
 Do not reopen PR #17 or mix Sales product work into its historical scope.
 
-The first directly stacked lifecycle work remains Native Handling Completion:
+The directly stacked Native Handling Completion work is merged:
 
 ```text
 synchronous template completion
@@ -2893,6 +2899,18 @@ synchronous template completion
 actual immediate Automation completion/effects
 +
 idempotent ChatRing scheduling
+```
+
+Source head:
+
+```text
+019cf695695137b1733da8ab2d6a9060aa06add4
+```
+
+Merge commit:
+
+```text
+28aeef3baebbf75c1a521c30783bcc6c9d5588b8
 ```
 
 Current fork behavior and current upstream delayed-Automation behavior must be audited separately.
@@ -2905,7 +2923,10 @@ PR #17 merge is not permission to enable public AI.
 
 # 27. Package Sales Core v1 as stacked, reviewable work
 
-PR #17 is merged. Continue through bounded PRs in dependency order.
+PR #17 and Native Handling Completion are merged. Continue through bounded PRs in
+dependency order. Feature-specific administration ships with its feature; the later
+administration stage consolidates navigation, health and analytics rather than deferring
+operability.
 
 ```text
 PR #17 - merged
@@ -2915,7 +2936,7 @@ Native lifecycle remediation
 
         ->
 
-Foundation PR - Native Handling Completion
+Foundation PR - Native Handling Completion - merged
 synchronous template completion
 immediate Automation completion/effect observation
 one two-sided trigger barrier
@@ -2923,13 +2944,13 @@ no rule re-evaluation
 
         ->
 
-Foundation PR - Brain / Context / Text Knowledge
+Foundation PR - BrainInvocation / Context / Policy
 BrainInvocation
 trusted-vs-model context
 speaker provenance
 privacy and Contact projection
-text Knowledge evidence and pin safety
-deadlines, LLM timeout and typed decisions
+native hours, identity and kill-switch policy
+deadlines and typed decisions
 
         ->
 
@@ -2940,11 +2961,39 @@ durable fallback and pending-outcome recovery
 
         ->
 
-Foundation PR - Inbox Capability and Tool System
+Foundation PR - Knowledge Safety
+nonterminal KnowledgeIndex pin protection
+evidence and outcome correlation
+cleanup safety
+
+        ->
+
+Foundation PR - Native Actions / Automation / Memory Base
+actual native effect arbitration
+server-authorized native actions through Chatwoot services
+human-visible notes and governed memory policy
+
+        ->
+
+Foundation PR - Basic Assistant Administration
+create and publish immutable Assistant versions
+bind, switch, disable/archive and inspect failures
+configure Knowledge and basic policy
+
+        ->
+
+Foundation PR - Web Widget Core Production Proof
+real PostgreSQL, Redis, Sidekiq and DocsGPT boundaries
+native handling through Brain, Knowledge, native reply/action/handoff
+both race orderings and concurrency proof
+
+        ->
+
+Foundation PR - Bounded Sales Core Tool System
 ToolDefinition
 InboxCapabilityProfile
 InboxToolPolicy
-native action executors
+native action and conversational/Widget capability adapters
 channel renderer/fallback contract
 ToolExecution audit
 
@@ -2968,25 +3017,18 @@ strict Engagement/Playbook separation
 
         ->
 
-Foundation PR - Native Actions / Automation / Memory
-actual native effect arbitration
-authorized native actions
-human-visible sales notes/memory
+Foundation PRs - Complete Website Sales + RealtimeKit Vertical
+first harden participant authorization, credential storage, timeouts, role presets,
+participant-state concurrency and native takeover
+then add visitor Talk to us through native hours, presence, routing and assignment
+prove free-form sales, Playbooks, Engagements, native actions, human handoff and calls
 
         ->
 
-Foundation PRs - Omnichannel Sales Certification
-one shared Brain
-Inbox-owned Playbooks and Tool policies
-Web Widget first
-Twilio SMS, Email, WhatsApp Cloud, Facebook and available Instagram certified through native providers
-
-        ->
-
-Foundation PR - Native RealtimeKit Website Calls
-fix participant authorization, credential, timeout and role-presets first
-then agent and visitor call flows through native integration Messages
-native hours, presence, routing and assignment
+Foundation PRs - Approved Text-Channel Certification
+one shared Brain with Inbox-owned Playbooks and Tool policies
+Twilio SMS, Email, WhatsApp Cloud, Facebook and available Instagram
+each independently certified when its real provider gate is ready; no fixed sibling order
 
         ->
 
@@ -2997,11 +3039,11 @@ native hours, presence, routing and assignment
 
         ->
 
-Foundation PR - Sales Product Shell and Administration
+Foundation PR - Final Sales Shell, Administration and Analytics
 sales navigation and terminology
 hide support-first surfaces
-Assistant, Knowledge, Playbook, Engagement, Tool and call administration
-sales analytics
+consolidated configuration health and failure inspection
+sales analytics; feature-specific administration already ships with each feature
 
         ->
 

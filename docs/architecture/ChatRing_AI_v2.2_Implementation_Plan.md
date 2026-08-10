@@ -4,7 +4,7 @@
 
 **Post-PR #17 production authority:** `ChatRing_Complete_Production_Foundation_Direction.md`
 
-**Base tree:** deployed-equivalent `0309e77ea7954dec5185dc480f31dab610b468d4`
+**Current foundation:** PR #17 merge `401a33f35a4edda131edf51ed829a6b2fbbcec61`, followed by Native Handling Completion merge `28aeef3baebbf75c1a521c30783bcc6c9d5588b8`
 
 **Release rule:** `PUBLIC_AI_RELEASE_READY` remains `false` until every v2.2 Section 13 gate and the complete Sales Core v1 release gate pass on the exact deployed paths.
 
@@ -368,21 +368,28 @@ the approved channel set, human voice/calls and the full production proof in
 AI Navigator, media-aware Knowledge and Microsites are separately gated later stages.
 Any failed Sales Core gate leaves the constant false.
 
-### Post-PR G — locked native channel and human-call certification
+### Post-PR G — Sales Core feature and channel sequence
 
-Do not clone the Web Widget lifecycle or build provider transports. Extend the same
-BrainInvocation/commit core through each existing native writer/delivery path:
+Do not clone the Web Widget lifecycle or build provider transports. First build the
+bounded native Sales capabilities on the proven core, then complete one coherent Website
+sales-and-human-call vertical before broad channel certification:
 
 ```text
 Web Widget proof
--> Twilio SMS hardening and native-path certification
--> Email certification
--> WhatsApp Cloud certification
--> Facebook Messenger certification
--> Instagram certification when the deployed Meta app is available
--> hardened native Cloudflare RealtimeKit Website calls
+-> bounded Sales Core Tool system
+-> Inbox-owned Playbooks
+-> Engagement starters and Classic Widget sales UX
+-> hardened native Cloudflare RealtimeKit agent-call path
+-> visitor-initiated Website Talk to us
+-> independently certify the approved text-channel set according to provider readiness
 -> independently implemented Twilio PSTN Voice CE capability
+-> consolidated Sales administration, analytics and full production proof
 ```
+
+Native action authorization/Automation coexistence and basic Assistant administration
+precede Web Widget proof and the Tool/Playbook stages. Feature-specific administration
+ships with each feature. The final administration stage only unifies navigation,
+configuration health and analytics.
 
 Twilio SMS must first add synchronous signed-webhook validation to the existing callback
 controllers, durable provider-SID deduplication, monotonic status, safe MMS ingestion and
@@ -391,7 +398,10 @@ STOP/consent enforcement. Facebook/Instagram AI Messages must never use the nati
 credential/timeout/role issues before visitor-initiated routing is extended. Agent call
 start/accept must complete native human takeover through the existing serialization and
 `Conversations::AssignmentService`, including a pending-AITurn race proof. Twilio Voice
-must not copy or unlock the Enterprise implementation.
+must not copy or unlock the Enterprise implementation. After the complete Website
+vertical, Twilio SMS, Email, WhatsApp Cloud, Facebook and available Instagram are
+independent certification gates; their order is chosen from actual credentials,
+approval, compliance, test-environment and commercial readiness rather than architecture.
 
 ## 5. Migration and deployment safety
 
