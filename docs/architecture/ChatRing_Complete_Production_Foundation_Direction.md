@@ -34,6 +34,23 @@ This does **not** mean copying all Captain features, building every possible con
 
 The foundation may be delivered through PR #17 plus stacked, reviewable PRs. The public release gate remains closed until the complete production foundation defined in this document is implemented and proven.
 
+The authority order is explicit:
+
+```text
+actual deployed and current native Chatwoot source/runtime
+        ↓
+this document — ChatRing v1 production/release authority
+        ↓
+ChatRing_AI_Chatwoot_Integration_Contract_v2.2.md — bounded lifecycle remediation
+        ↓
+ChatRing_AI_v2.2_Implementation_Plan.md — reviewed execution sequence
+        ↓
+AGENTS.md files — concise mirrored engineering constraints
+```
+
+Contradictory prose never overrides executable native behavior. When source/runtime
+evidence changes an assumption, correct the documents before expanding implementation.
+
 The governing engineering rule is:
 
 ```text
@@ -669,6 +686,14 @@ Do not reimplement its conditions.
 Do not re-run Automation rules inside ChatRing.
 
 Extend the native lifecycle at the smallest safe point.
+
+The current fork and current upstream must be distinguished. The audited PR #17 fork
+has immediate asynchronous Automation dispatch but no delayed-execution model. Current
+upstream Chatwoot includes delayed Automation execution. ChatRing v1 must not claim that
+capability merely because upstream contains it: either port it in a separate source-
+audited PR and certify its later-effect semantics, or explicitly keep it unavailable.
+Immediate AI must not wait indefinitely for a future delayed rule; a later native effect
+may supersede a still-nonterminal turn according to authoritative Conversation state.
 
 ---
 
@@ -1525,6 +1550,8 @@ explicit Tool timeout
 
 bounded retries
 
+one explicit retry owner per operation
+
 retry safety/idempotency classification
 
 durable execution attempts
@@ -1532,6 +1559,8 @@ durable execution attempts
 no stranded received/running/ready_to_commit state
 
 durable final-commit enqueue/recovery
+
+automatic recovery of durable pending customer outcomes; operator resume is supplemental
 
 release kill switch
 
@@ -1603,7 +1632,7 @@ The Brain's answer is advisory until final guarded commit succeeds.
 
 PR #17 should not be abandoned or converted wholesale into every production-foundation feature.
 
-PR #17 owns the native lifecycle correction:
+PR #17 owns the native authority and containment correction:
 
 ```text
 release-gate containment
@@ -1612,7 +1641,7 @@ stale gate-created AITurn reconciliation
 
 managed AgentBot self-webhook removal
 
-internal post-template scheduling
+contained post-template observation with the public gate closed
 
 native AgentBot ownership
 
@@ -1633,7 +1662,11 @@ non-managed Inbox regression protection
 lifecycle and containment deployment proof
 ```
 
-If the native Automation audit proves that ChatRing is scheduled at an incorrect lifecycle point, the minimal scheduling-seam correction belongs in PR #17 or a directly stacked lifecycle PR.
+The native Automation audit proves that post-template is not necessarily post-Automation.
+PR #17 therefore freezes the native authority boundary and fail-closed containment, not
+the current scheduling location. A directly stacked Native Handling Completion PR must
+establish the final two-sided template/immediate-Automation completion contract before
+Brain expansion.
 
 Brain/context, Tool, channel certification and outbound work may be delivered in separate reviewable PRs.
 
@@ -1657,22 +1690,51 @@ Native lifecycle remediation
 
         ↓
 
-Foundation PR — Brain / Context / Knowledge / Reliability
+Foundation PR — Native Handling Completion
+template completion observation
+immediate Automation completion/effect observation
+one durable two-sided trigger barrier
+no Automation condition/action re-evaluation
+
+        ↓
+
+Foundation PR — BrainInvocation / Context / Policy
 BrainInvocation
 trusted-vs-model context
 native context resolver
 speaker provenance
 identity/context policy
-Knowledge pin/evidence safety
-deadlines/timeouts/retries/fallback recovery
+deadlines and model-data minimization
+
+        ↓
+
+Foundation PR — Failure Reliability
+one retry owner
+bounded provider calls
+durable fallback OutboundCommit
+automatic pending-outcome recovery
+
+        ↓
+
+Foundation PR — Knowledge Safety
+nonterminal index pins
+end-to-end audit correlation
 
         ↓
 
 Foundation PR — Native Actions and Automation Integration
 native action authorization/execution
 actual Automation effect observation
-native-handling completion/arbitration seam
+deterministic native-effect arbitration
 human-visible memory/notes policy
+
+        ↓
+
+Foundation PR — Basic Assistant Administration
+create + immutable publish
+bind + switch + disable/archive
+secret rotation + failure inspection
+native Chatwoot permissions and services remain authoritative
 
         ↓
 
@@ -2061,6 +2123,10 @@ Staged rollout may enable channels incrementally behind feature flags.
 That operational rollout does not alter the completion definition.
 
 Merging PR #17 or enabling Web Widget alone must not be described as ChatRing v1 production completion.
+
+Basic Assistant administration is part of this production definition. Console-only
+create, publish, bind, switch, disable/archive, secret rotation and failure inspection
+is acceptable during contained engineering work, but not at ChatRing v1 release.
 
 ---
 

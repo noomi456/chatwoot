@@ -16,13 +16,13 @@ Enterprise or Captain code.
 | Concern | Verified authority | Integration decision |
 |---|---|---|
 | Incoming message | `Message#execute_after_create_commit_callbacks` | Preserve native callback order |
-| Templates | `MessageTemplates::HookExecutionService` | Schedule only after the native hook returns |
+| Templates | `MessageTemplates::HookExecutionService` | Record the synchronous-template half of native handling after the hook returns |
 | Template result | Inbox, Contact, Conversation and Message rows | Record before/after state; template return values are not authoritative |
-| Automation | `AutomationRule` and `AutomationRules::ActionService` | Reject responder/ownership conflicts; no timing barrier exists |
+| Automation | `AutomationRuleListener` and `AutomationRules::ActionService` | PR #17 fails closed on possible conflicts; the first stacked PR must observe actual immediate effects and complete the two-sided barrier without re-evaluating rules |
 | Conversation owner/status | `Conversation` and `Conversations::AssignmentService` | Reuse native transitions under shared locks |
 | Inbox bot | `AgentBotInbox` | Keep one exact account-owned managed bot |
 | AI identity/sender | managed `AgentBot` | Keep identity and Message sender; remove self-webhook transport |
-| AI trigger | post-template CE extension | Create one durable AITurn using record IDs only |
+| AI trigger | native template completion plus native immediate-Automation completion | PR #17 contains only the gate-closed template-side seam; the first stacked PR selects and proves the minimal durable two-sided completion boundary before inference |
 | AI reasoning | ChatRing Brain | Revalidate native state before every expensive/final stage |
 | Knowledge | Phase 2A Retriever | Pin exact index and protect it while a turn is nonterminal |
 | Customer reply | ordinary Chatwoot `Message` | One guarded in-process commit, then native delivery |
@@ -51,7 +51,9 @@ policies and Enterprise overrides are not implementation sources.
 - No Contact name, email, phone, identifier or private notes enter model context.
 - Decisions are grounded reply/clarification or handoff only.
 - No tools, memory, Q&A, Images, additional channels or public Assistant management UI
-  are included in this remediation.
+  are included in PR #17. Basic Assistant create, publish, bind, disable and failure
+  inspection is a required production-foundation PR; console-only operation is not an
+  acceptable v1 release state.
 
 ## 3. Lock and mutation contract
 
@@ -111,8 +113,8 @@ Changes:
   extension; retain only the public-response and external-runtime constants.
 - Set `AgentBots::WebhookJob.log_arguments = false` and remove full-payload retry logs.
 - Rotate deployed managed webhook secrets after deployment.
-- Require a newly rotated model key from the deployment secret store; the repository
-  cannot rotate the provider account credential itself.
+- Retain the designated testing model key in the deployment secret store throughout
+  pre-production testing; never commit or log it. Rotate it only at production cutover.
 
 Proof:
 
@@ -141,23 +143,27 @@ Write failing integration tests before production corrections for:
 These tests may add controlled barriers but must enter through the real Widget and
 dashboard/public-reply writers. Direct service tests remain supplemental.
 
-### Batch 2 — one internal post-template trigger
+### Batch 2 — contained post-template half of the internal trigger
 
 Contract: v2.2 Sections 4, 5.4 and 6.1.
 
 Changes:
 
-- Replace the legacy spike hook with a ChatRing-owned CE post-template scheduler.
+- Replace the legacy spike hook with a ChatRing-owned CE post-template extension that
+  records synchronous template outcomes. Do not freeze this as the final AI scheduling
+  seam because current Automations execute through the asynchronous dispatcher.
 - Capture template Message IDs before the native hook, invoke `super`, reload native
   state, and capture the resulting template delta.
 - Persist `AiTurn.native_handling_snapshot` and `AiTurn.deadline_at`.
-- Create/find one AITurn by Workspace, Conversation and trigger Message.
-- Enqueue by AITurn ID only and verify ActiveJob enqueue success.
+- With the public gate closed, create or enqueue no AITurn. The directly stacked native-
+  handling completion PR will create/find one turn only after both immediate native
+  sides finish.
 - Do not create WebhookDelivery for internal turns.
 - Remove the deterministic spike runtime; keep only compile-time gates.
 
-The causal snapshot records Inbox-hours result, Contact-email requirement, greeting,
-email-input and out-of-office template IDs. It contains no raw message body or secret.
+The template-side snapshot records Inbox-hours result, Contact-email requirement,
+greeting, email-input and out-of-office template IDs. It contains no raw message body
+or secret. It is containment evidence, not proof that Automation processing is complete.
 
 ### Batch 3 — response arbitration and policy
 
@@ -234,48 +240,99 @@ The legacy deterministic Assistant spike responder, job and global Message exten
 must not remain compiled as an alternate path. External webhook/HTTP contracts remain
 hard-disabled and unreachable in the internal deployment.
 
-### Follow-up PR A — Brain policy and privacy
+### Follow-up PR A — native handling completion
 
-Contract: v2.2 Sections 6.2–6.5 and 10.
+Native authority reused:
 
-Changes:
+- `MessageTemplates::HookExecutionService` for synchronous template effects;
+- `AutomationRuleListener` and `AutomationRules::ActionService` for immediate native
+  Automation evaluation and actions;
+- the resulting Conversation and Message rows as effect authority.
 
-- Reject unsupported non-empty audience and availability policies until their contract
-  exists; enforce native Inbox hours and Workspace/Assistant availability.
+Work:
+
+- Characterize both native paths with real callback/job tests before choosing storage.
+- Record completion and actual effect provenance from both paths without duplicating or
+  re-evaluating Automation conditions/actions.
+- Release exactly one AITurn only after both immediate paths complete and the trigger is
+  still eligible.
+- Keep the broad `AutomationConflictClassifier` as fail-closed containment until actual-
+  effect arbitration passes; then narrow it so orthogonal label/priority/private-note
+  effects can coexist.
+- Decide storage from evidence: reuse `AiTurn.native_handling_snapshot` only if it can do
+  so without making AITurn native lifecycle authority; otherwise add the smallest durable
+  completion record keyed to the trigger Message.
+- Treat delayed Automations separately. The current fork has no delayed-execution model;
+  do not claim support or import it implicitly. A later source-audited PR may port the
+  current upstream capability, with later native effects superseding any still-
+  nonterminal AI turn according to native state.
+
+This PR is required before Brain expansion. PR #17 freezes native authority and
+containment, not the current post-template scheduling location.
+
+### Follow-up PR B — BrainInvocation, context and policy
+
+Native authority reused: Account, Inbox, Contact/ContactInbox, Conversation, Message,
+Inbox hours and Phase 2A Retriever.
+
+Work:
+
+- Add an immutable `BrainInvocation` value contract and inbound builder; do not add a
+  second conversation or customer record.
+- Separate trusted native runtime context from the allowlisted model projection.
+- Reject unsupported non-empty audience/availability policies until their schemas and UI
+  exist; enforce native Inbox hours plus Workspace/Assistant status and kill switches.
 - Enforce the persisted turn deadline before retrieval, inference, retry and commit.
 - Remove `resolution_request` from schema, parser, prompt and commit handling.
 - Preserve speaker provenance: customer, human_agent, managed_ai, native_template,
   automation and external_bot_or_system.
-- Omit Contact PII for the first release.
-- Include operational Workspace/Assistant status in every eligibility/final check.
+- Omit Contact name, email, phone, identifier and private notes from the first-release
+  model projection unless a later purpose-specific policy explicitly allows a field.
 
-### Follow-up PR B — failure reliability
+### Follow-up PR C — failure reliability and durable outcome delivery
 
-Contract: v2.2 Sections 6.3, 6.5 and 8.
+Native authority reused: ActiveJob/Sidekiq execution, native handoff and ordinary
+Message delivery. `OutboundCommit` remains only an idempotency/audit ledger.
 
-Changes:
+Work:
 
-- Add an explicit provider request timeout through RubyLLM's actual supported transport
-  seam and retain the total turn deadline from PR A.
-- Bound attempts; exhausted retries create/reuse a handoff `OutboundCommit` and enqueue
-  it, rather than only changing turn status.
-- Treat commit-enqueue failure as recoverably pending; add one explicit operator resume
-  task instead of a new periodic reconciliation system.
-- Prove retry, timeout, ambiguous enqueue and native fallback behavior without adding a
-  second handoff, retry or delivery lifecycle.
+- Make ActiveJob the single cross-attempt retry owner. Configure RubyLLM per invocation
+  with internal retries disabled and a request timeout bounded by the remaining turn
+  budget.
+- Classify transient provider/network/rate-limit failures separately from permanent
+  configuration, authorization, schema, tenant and expired-deadline failures.
+- On exhaustion, transactionally create/reuse a pending handoff `OutboundCommit`; enqueue
+  after commit through the existing native handoff path.
+- Make pending outcomes automatically recoverable after enqueue/process failure through
+  a small condition-driven recovery job. Operator resume is supplemental, not the only
+  durability mechanism.
+- Prove crashes before/after enqueue, duplicate jobs, timeout, terminal rejection and
+  native fallback without adding a second handoff, retry or delivery lifecycle.
 
-### Follow-up PR C — Knowledge safety
+### Follow-up PR D — Knowledge safety and audit correlation
 
-Contract: v2.2 Sections 6.3 and 10.
+- Exclude every KnowledgeIndex pinned by a nonterminal AITurn from provider cleanup.
+- Correlate trigger Message, native-handling completion, AITurn, attempt, evidence,
+  OutboundCommit and final native Message/handoff.
+- Prove cleanup cannot invalidate running inference or retained audit evidence.
 
-Changes:
+### Follow-up PR E — native actions, Automation coexistence and memory
 
-- Exclude any KnowledgeIndex pinned by a nonterminal AITurn from provider cleanup.
-- Correlate trigger Message, AITurn, attempt, evidence, OutboundCommit and final Message.
+- Extend actual native-effect observation from PR A into deterministic arbitration.
+- Authorize AI-requested effects server-side, then invoke native Message, assignment,
+  status, labels, priority and note behavior; do not clone native actions.
+- Add a governed memory record only where native private notes cannot meet provenance and
+  retention requirements; human-visible projections use native notes.
 
-### Follow-up PR D — production proof and release gate
+### Follow-up PR F — basic Assistant administration
 
-Contract: v2.2 Sections 12, 13 and 15.
+- Provide account-scoped administrator API/UI for create, immutable publish, Inbox bind,
+  switch, disable/archive, managed secret rotation and failure inspection.
+- Reuse the existing provisioning/binding services and Chatwoot permissions; do not make
+  the UI a second authority.
+- Keep advanced analytics, marketplaces and design tooling outside this bounded PR.
+
+### Follow-up PR G — bounded Web Widget production proof
 
 Run, in order:
 
@@ -283,18 +340,18 @@ Run, in order:
 2. full Chatwoot CE backend/frontend/lint checks;
 3. immutable CE Rails/Sidekiq and private DocsGPT image builds;
 4. isolated migration/restore test from deployed data shape;
-5. VPS lifecycle suite with PostgreSQL, Redis and DocsGPT;
-6. Section 13 controlled concurrency at 10 workers;
-7. representative non-managed channel regression suite;
-8. clean Rails/Sidekiq/DocsGPT security/error scan;
-9. manual fresh-widget supported, unsupported and immediate-takeover scenarios.
+5. real Widget HTTP lifecycle with PostgreSQL, Redis, Sidekiq and DocsGPT;
+6. both human/AI race orderings and concurrency 10 across real process boundaries;
+7. non-managed Widget plus representative Email/API/provider regression checks;
+8. timeout, retry, automatic recovery, fallback, knowledge pin and tenant-isolation tests;
+9. clean Rails/Sidekiq/DocsGPT security/error scan;
+10. manual fresh-widget supported, unsupported and immediate-takeover scenarios.
 
-PR D does not open `PUBLIC_AI_RELEASE_READY`. It proves the bounded v2.2 lifecycle and
-execution path only. A separate final release commit may change the gate to true only
-after the complete production foundation in
-`ChatRing_Complete_Production_Foundation_Direction.md` is implemented and proven. Any
-failed gate leaves the constant false; no partial public rollout is claimed as product
-completion.
+PR G proves the bounded Web Widget core but does not open
+`PUBLIC_AI_RELEASE_READY`. Omnichannel certification, a real external capability,
+trusted business events/outbound and the full production proof in
+`ChatRing_Complete_Production_Foundation_Direction.md` still govern release. Any failed
+gate leaves the constant false.
 
 ## 5. Migration and deployment safety
 
@@ -321,7 +378,8 @@ completion.
 - Confirm no network call occurs inside database locks.
 - Confirm lock acquisition follows the fixed order.
 - Confirm every customer-affecting outcome uses OutboundCommit.
-- Confirm public AI remains disabled unless Batch 7 is complete.
+- Confirm public AI remains disabled through every remediation and foundation PR; only
+  the separate final production release commit may change the gate.
 - Update DOX only when a durable contract changed.
 
 ## 7. PR #17 and v2.2 completion boundary
@@ -331,9 +389,10 @@ The work has three distinct checkpoints:
 1. **Architecture frozen:** PR #17 passes its five-question native-first review, CI and
    containment deployment. No new transport, ownership, assignment, handoff or delivery
    architecture is added afterward without runtime evidence disproving an invariant.
-2. **v2.2 Web Widget path proven:** Follow-up PRs A–D pass the exact Web Widget path and
-   every v2.2 Section 13 concurrency/reliability gate. This proves the bounded native
-   lifecycle; it is not ChatRing v1 product completion and does not open the public gate.
+2. **v2.2 Web Widget path proven:** the stacked native-handling, Brain, reliability,
+   Knowledge-safety and production-proof PRs pass the exact Web Widget path and every
+   v2.2 Section 13 concurrency/reliability gate. This proves the bounded native lifecycle;
+   it is not ChatRing v1 product completion and does not open the public gate.
 3. **ChatRing v1 production foundation proven:** the BrainInvocation/context boundary,
    native Automation/action integration, enabled-channel certification, one real external
    capability, trusted business events, transactional and AI-assisted outbound, and full

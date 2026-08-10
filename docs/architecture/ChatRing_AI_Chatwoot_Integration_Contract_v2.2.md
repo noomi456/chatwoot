@@ -2,13 +2,13 @@
 
 ## Architecture reconciliation v2.2
 
-**Status:** Approved implementation authority; public AI remains blocked until Section 13 passes
+**Status:** Approved authority for the bounded native-lifecycle remediation; public AI remains blocked until both Section 13 and the complete ChatRing v1 production-foundation release gate pass
 
 **Runtime decision:** Internal ChatRing control plane inside the Chatwoot deployment
 
 **Native identity:** Account-owned Chatwoot `AgentBot`
 
-**Public-response status:** Must remain disabled until every gate in Section 13 passes
+**Public-response status:** Must remain disabled until every gate in Section 13 and `ChatRing_Complete_Production_Foundation_Direction.md` passes on the exact deployed paths
 
 **Verified ChatRing source:** `0309e77ea7954dec5185dc480f31dab610b468d4` (same tree as local `5acca0a21b0b5eb43a6d568986be8c9ee3970951`)
 
@@ -30,11 +30,13 @@ AssistantVersion, account-level Knowledge Base and Knowledge Scopes, governed me
 tool authorization, identity assurance, auditability and ordinary Chatwoot delivery.
 
 This is the approved integration contract for remediation. The current public-response
-gate must be closed before runtime changes begin and must not be reopened until Section
-13 passes against the production path.
+gate must be closed before runtime changes begin. Section 13 proves this bounded native
+lifecycle, but is necessary rather than sufficient for release; the gate must not reopen
+until the complete ChatRing v1 production-foundation contract also passes.
 
 The remediation source sets `PUBLIC_AI_RELEASE_READY = false`; that gate remains closed
-until the integrated lifecycle evidence satisfies Section 13.
+until the integrated lifecycle evidence satisfies Section 13 and the complete production
+foundation is implemented and proven on the exact deployed paths.
 
 ### 1.1 Corrected executive decision
 
@@ -159,7 +161,7 @@ Source: [`lib/webhooks/trigger.rb`](../../lib/webhooks/trigger.rb)
 | Inbox AgentBot connection | `AgentBotInbox` | Provision atomically and validate conflicts |
 | Working hours and out-of-office | Chatwoot Inbox and templates | Consume native result; do not duplicate schedules |
 | Greeting and email collection | Chatwoot templates | Apply the precedence in Section 5 |
-| Automation | Chatwoot automation engine | Reject launch conflicts; do not race it |
+| Automation | Chatwoot automation engine | Fail closed on launch conflicts until the directly stacked native-handling completion contract observes actual immediate native effects |
 | Message persistence | Chatwoot `Message` | Create one ordinary AgentBot message |
 | Customer delivery | Chatwoot | Use existing channel jobs/adapters |
 | Assistant role/configuration | ChatRing | Immutable AssistantVersion pinned per turn |
@@ -257,8 +259,10 @@ idempotency, timeout and ambiguous-result reconciliation.
 
 ## 5. Native response arbitration
 
-ChatRing scheduling occurs only after native template handling has returned. It does
-not start from the early AgentBot webhook event.
+PR #17 observes native template handling only after the native hook has returned and
+never starts from the early AgentBot webhook event. That is the correct transport
+containment seam, not the final release trigger: inference also requires the directly
+stacked immediate-Automation completion/effect contract.
 
 ### 5.1 First-release precedence
 
@@ -266,8 +270,8 @@ not start from the early AgentBot webhook event.
 |---|---|
 | Out-of-office template sent | Do not create a turn |
 | Email-collection input sent | Do not create a turn |
-| Greeting sent | Greeting remains; create the turn after template handling |
-| No template sent | Create the turn if otherwise eligible |
+| Greeting sent | Greeting remains; the trigger may proceed only after complete immediate native handling |
+| No template sent | The trigger may proceed only after complete immediate native handling |
 | Public automation reply may run | Assistant binding is rejected for launch |
 | Automation may change owner/status/team | Assistant binding is rejected for launch |
 
@@ -302,9 +306,9 @@ rule that may match that Inbox/event can:
 - invoke another bot/AI response path.
 
 Non-response actions such as labels and private notes may remain only if they cannot
-alter eligibility or leak into the public response path. A later coexistence design
-must introduce one explicit native-handling completion contract and its own lifecycle
-tests; it is not part of this remediation.
+alter eligibility or leak into the public response path. The directly stacked
+coexistence PR must introduce one explicit native-handling completion contract and its
+own lifecycle tests before Brain expansion; it is intentionally not added to PR #17.
 
 This constraint is reciprocal. Automation create, update and activation validate
 against active ChatRing bindings and reject a newly conflicting rule. Ambiguous rule
@@ -327,13 +331,16 @@ Enterprise/Captain source, and only considers:
 `AITurn(trigger_message_id)` remains uniquely constrained so callback/job redelivery
 cannot create a second turn.
 
-The scheduler persists a causal native-handling snapshot tied to that trigger message,
-including Inbox-hours state, whether email collection is still required and any
-greeting/template message identifiers. Eligibility does not infer terminal handling
-only from whether this callback created a new template row. In particular, while
-email collection is enabled and the Contact still lacks email, every later incoming
-message remains AI-ineligible even when the existing input-email message is not sent
-again.
+The remediation scheduler persists the synchronous-template side of a causal
+native-handling snapshot tied to that trigger message, including Inbox-hours state,
+whether email collection is still required and any greeting/template message
+identifiers. This snapshot is sufficient for fail-closed containment, but it is not a
+claim that immediate Automation processing is complete. A directly stacked
+native-handling contract must prove both native sides complete before inference may be
+released. Eligibility does not infer terminal handling only from whether this callback
+created a new template row. In particular, while email collection is enabled and the
+Contact still lacks email, every later incoming message remains AI-ineligible even when
+the existing input-email message is not sent again.
 
 The native template classes rescue their own failures and do not return a reliable
 typed result. The integration therefore records the relevant template-message set
@@ -350,13 +357,18 @@ infers success from a template service return value.
 ```text
 Incoming Message commits normally
   -> Chatwoot performs status/event/delivery/template work
-  -> ChatRing post-template scheduler evaluates authoritative state
-  -> one AITurn is inserted or an audited ineligible outcome is recorded
-  -> AiTurnJob is enqueued
+  -> ChatRing records synchronous-template completion
+  -> native immediate Automation processing records its actual effects/completion
+  -> one durable completion barrier releases one AITurn, or records ineligibility
+  -> AiTurnJob is enqueued once
 ```
 
-The scheduler does not copy the webhook payload and does not carry secrets or full
-customer content in job arguments. Jobs receive record identifiers only.
+The completion mechanism does not copy the webhook payload and does not carry secrets
+or full customer content in job arguments. Jobs receive record identifiers only. The
+exact storage mechanism is selected only after characterization proves whether the
+existing `AiTurn.native_handling_snapshot` can represent both sides without making
+`AiTurn` a native lifecycle authority; otherwise a minimal durable completion record is
+permitted.
 
 ### 6.2 Eligibility
 
@@ -629,7 +641,7 @@ is permitted in the ChatRing CE implementation or image.
 
 | Current behavior | Required correction |
 |---|---|
-| Public self-webhook to the same Rails app | Internal post-template turn scheduler |
+| Public self-webhook to the same Rails app | Internal native-handling trigger: template observation in PR #17 plus directly stacked immediate-Automation completion |
 | Live direct service plus unused HTTP endpoint | One internal commit boundary |
 | Global `Message.before_create` Conversation lock | Narrow lock/recheck wrapper around the approved Widget/dashboard writers |
 | Conflict detector checks AgentBot/Dialogflow/Captain only | Include native templates and conflicting automations |
@@ -703,18 +715,21 @@ Write failing full-lifecycle tests for template precedence, automation conflicts
 managed assignment, rebind, handoff event timing, internal scheduling and scoped
 serialization before changing the implementation.
 
-### Stage 2 — one internal trigger path
+### Stage 2 — one contained internal trigger path
 
-- Add the post-template CE integration module.
-- Create AITurn directly/idempotently from record identifiers.
+- Add the post-template CE integration module as the synchronous-template half of the
+  trigger contract; do not declare it the final scheduling seam.
+- While the public gate is closed, create no AITurn. After PR #17, complete the other
+  half at the smallest native Automation seam before enabling inference.
 - Remove managed self-webhook provisioning and recursion.
 - Retain AgentBot only as native owner/sender.
 
-### Stage 3 — native conflict and availability enforcement
+### Stage 3 — fail-closed native conflict containment
 
 - Implement the Section 5 template outcome contract.
-- Reject conflicting automation at binding time, automation mutation time and runtime
-  recheck.
+- Reject potentially conflicting automation at binding time, automation mutation time
+  and runtime recheck until the directly stacked actual-effect completion contract is
+  implemented and proven.
 - Enforce audience, Inbox hours and stricter Assistant availability server-side.
 
 ### Stage 4 — scoped serialization and native handoff
@@ -730,18 +745,17 @@ serialization before changing the implementation.
 - Implement drain/handoff-before-switch.
 - Test disable/archive with existing bot-owned Conversations.
 
-### Stage 6 — Brain failure/privacy correction
+### Stage 6 — stacked foundation work after PR #17
 
-- Enforce bounded request/turn deadlines.
-- Make exhausted retries commit the configured fallback.
-- Remove unsupported decisions.
-- Preserve typed speaker provenance and minimize Contact fields.
-- Protect KnowledgeIndexes pinned by nonterminal turns.
+- Complete the native-handling barrier before Brain expansion.
+- Deliver Brain policy/privacy, failure reliability and Knowledge pin safety in bounded
+  follow-up PRs governed by the production-foundation direction.
 
 ### Stage 7 — complete production-path verification
 
-Run Section 13 in CI and on the VPS using the exact immutable images. Only after every
-gate passes may the Web Widget public-response constant change to true.
+Run Section 13 in CI and on the VPS using the exact immutable images. Passing it proves
+the bounded Web Widget native-lifecycle path only. It does not permit the public-response
+constant to change; that requires the separate complete production-foundation gate.
 
 No additional channel, tool, Contact Memory, Q&A, Images or UI expansion is included
 in these remediation stages.
@@ -774,7 +788,8 @@ end-to-end lifecycle passed.
 
 ## 13. Release gates
 
-Public Web Widget AI remains disabled until all gates pass.
+Public Web Widget AI remains disabled until all gates in this section and the complete
+production-foundation release gate pass.
 
 ### 13.1 Native response arbitration
 
@@ -881,10 +896,11 @@ The following v2.1 statements are replaced by this contract:
 | Conditional HTTP endpoint required for current runtime | Direct guarded service is authoritative in internal mode |
 | Section 21.7 service/barrier sufficiency | Full native lifecycle topology in Sections 12–13 |
 | Locked external integration decision | Replaced by the explicit one-mode rule in Section 4 |
-| Verification record declaring runtime boundary complete | Reopened until Section 13 passes |
+| Verification record declaring runtime boundary complete | Reopened until Section 13 passes; production release remains governed by the complete foundation |
 
-All v2.1 tool, memory, identity-assurance and later-channel stages remain deferred.
-They may proceed only after this remediation is complete and the gate is reopened.
+All v2.1 tool, memory, identity-assurance and later-channel stages remain outside this
+bounded remediation. They proceed only through the production-foundation sequence; PR
+#17 completion does not reopen the public gate.
 
 ---
 
@@ -893,7 +909,7 @@ They may proceed only after this remediation is complete and the gate is reopene
 The corrected Web Widget response loop is complete only when:
 
 1. Chatwoot owns status, assignment, templates, automation, Message and delivery.
-2. One internal post-template path creates each AITurn; no public self-webhook exists.
+2. One internal two-sided native-handling completion path creates each AITurn; no public self-webhook exists and PR #17's post-template observation is not treated as Automation completion.
 3. Native response precedence is deterministic and tested.
 4. Conflicting automation cannot coexist silently.
 5. AgentBot is the exact account-owned Inbox bot and Message sender.
@@ -906,7 +922,8 @@ The corrected Web Widget response loop is complete only when:
 11. Failure is bounded and reaches the configured safe outcome.
 12. Phase 2A retrieval remains account/scope isolated and turn pins protect evidence.
 13. Every Section 13 CI, VPS and manual test passes on the exact deployed image.
-14. Only then is the Web Widget public-response gate set to true.
+14. Section 13 completion freezes the bounded native-lifecycle boundary; it does not open public AI.
+15. The Web Widget public-response gate may be set to true only in a separate release commit after `ChatRing_Complete_Production_Foundation_Direction.md` is implemented and proven.
 
 Additional channels remain disabled until each channel's native message semantics pass
 the same lifecycle, serialization, takeover and delivery suite.
@@ -949,7 +966,7 @@ source is an implementation dependency or permitted production source.
 
 ## 17. Audit limitation
 
-This contract is based on a static, source-level lifecycle audit of the exact deployed
-tree, upstream ownership baseline, v2.1 and Captain's integration seams. It is not
-runtime proof of the corrected design because remediation has not yet been
-implemented. Runtime claims begin only after Section 13 passes.
+This contract began as a static, source-level lifecycle audit of the exact deployed
+tree, upstream ownership baseline, v2.1 and Captain's integration seams. Runtime claims
+for the bounded native-lifecycle remediation require Section 13 evidence. ChatRing v1
+production claims additionally require the complete production-foundation release gate.
