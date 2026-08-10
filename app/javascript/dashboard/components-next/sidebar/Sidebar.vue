@@ -502,6 +502,11 @@ const menuItems = computed(() => {
             label: t('SIDEBAR.CHATRING_AI'),
             children: [
               {
+                name: 'ChatRing Assistants',
+                label: t('SIDEBAR.CHATRING_ASSISTANTS'),
+                to: accountScopedRoute('chatring_assistants_index'),
+              },
+              {
                 name: 'ChatRing Knowledge',
                 label: t('SIDEBAR.CHATRING_KNOWLEDGE'),
                 to: accountScopedRoute('chatring_knowledge_index'),
