@@ -2,6 +2,7 @@ class ChatRing::AiTurn < ApplicationRecord
   self.table_name = 'chat_ring_ai_turns'
 
   DEFAULT_DEADLINE = 2.minutes
+  MAX_PROVIDER_ATTEMPTS = 3
   NONTERMINAL_STATUSES = %w[received eligible running awaiting_tool ready_to_commit].freeze
 
   enum status: {
@@ -45,6 +46,15 @@ class ChatRing::AiTurn < ApplicationRecord
           dependent: :destroy
 
   scope :nonterminal, -> { where(status: statuses.values_at(*NONTERMINAL_STATUSES)) }
+  scope :recovery_due, lambda { |now = Time.current|
+    nonterminal.where(
+      '(status = :ready_to_commit) OR (deadline_at <= :now) OR (status IN (:queued) AND updated_at <= :stale_before)',
+      ready_to_commit: statuses.fetch('ready_to_commit'),
+      queued: statuses.values_at('received', 'eligible'),
+      now: now,
+      stale_before: now - 1.minute
+    )
+  }
 
   validates :binding_version, numericality: { only_integer: true, greater_than: 0 }
   validates :deadline_at, presence: true
@@ -69,6 +79,12 @@ class ChatRing::AiTurn < ApplicationRecord
                 :runtime_mode,
                 :native_handling_snapshot,
                 :deadline_at
+
+  def fail_running_attempts!(failure_code)
+    attempts.status_running.find_each do |attempt|
+      attempt.update!(status: :failed, failure_code: failure_code, completed_at: Time.current)
+    end
+  end
 
   private
 

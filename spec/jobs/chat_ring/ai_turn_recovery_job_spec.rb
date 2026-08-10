@@ -7,6 +7,9 @@ RSpec.describe ChatRing::AiTurnRecoveryJob, type: :job do
     stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', true)
     allow(ChatRing::AiTurn).to receive(:find_by).with(id: 42).and_return(turn)
     allow(turn).to receive(:status_ready_to_commit?).and_return(false)
+    allow(turn).to receive(:status_received?).and_return(false)
+    allow(turn).to receive(:status_eligible?).and_return(false)
+    allow(ChatRing::AiTurnJob).to receive(:perform_now)
     allow(ChatRing::Brain::FailureFinalizer).to receive(:call)
     allow(ChatRing::OutboundCommitDispatcher).to receive(:call)
   end
@@ -32,6 +35,16 @@ RSpec.describe ChatRing::AiTurnRecoveryJob, type: :job do
     described_class.perform_now(42)
 
     expect(ChatRing::OutboundCommitDispatcher).not_to have_received(:call)
+    expect(ChatRing::Brain::FailureFinalizer).not_to have_received(:call)
+  end
+
+  it 'resumes queued inference before the deadline' do
+    allow(turn).to receive(:status_received?).and_return(true)
+    allow(turn).to receive(:deadline_at).and_return(1.minute.from_now)
+
+    described_class.perform_now(42)
+
+    expect(ChatRing::AiTurnJob).to have_received(:perform_now).with(42)
     expect(ChatRing::Brain::FailureFinalizer).not_to have_received(:call)
   end
 end

@@ -93,7 +93,7 @@ RSpec.describe 'ChatRing managed AgentBot webhooks', type: :request do
     body = payload_for
 
     expect do
-      perform_enqueued_jobs { post_webhook(body, signed_headers(body)) }
+      perform_enqueued_jobs(only: ChatRing::WebhookDeliveryJob) { post_webhook(body, signed_headers(body)) }
     end.to change(ChatRing::WebhookDelivery, :count).by(1)
        .and change(ChatRing::AiTurn, :count).by(1)
 
@@ -126,9 +126,9 @@ RSpec.describe 'ChatRing managed AgentBot webhooks', type: :request do
     body = payload_for
     headers = signed_headers(body, delivery_id: 'delivery-retry')
 
-    perform_enqueued_jobs { post_webhook(body, headers) }
+    perform_enqueued_jobs(only: ChatRing::WebhookDeliveryJob) { post_webhook(body, headers) }
     expect do
-      perform_enqueued_jobs { post_webhook(body, headers) }
+      perform_enqueued_jobs(only: ChatRing::WebhookDeliveryJob) { post_webhook(body, headers) }
     end.not_to change(ChatRing::WebhookDelivery, :count)
 
     expect(response).to have_http_status(:ok)
@@ -138,8 +138,12 @@ RSpec.describe 'ChatRing managed AgentBot webhooks', type: :request do
   it 'creates one AI turn when the same message arrives under distinct delivery IDs' do
     body = payload_for
 
-    perform_enqueued_jobs { post_webhook(body, signed_headers(body, delivery_id: 'delivery-one')) }
-    perform_enqueued_jobs { post_webhook(body, signed_headers(body, delivery_id: 'delivery-two')) }
+    perform_enqueued_jobs(only: ChatRing::WebhookDeliveryJob) do
+      post_webhook(body, signed_headers(body, delivery_id: 'delivery-one'))
+    end
+    perform_enqueued_jobs(only: ChatRing::WebhookDeliveryJob) do
+      post_webhook(body, signed_headers(body, delivery_id: 'delivery-two'))
+    end
 
     expect(response).to have_http_status(:ok)
     expect(ChatRing::WebhookDelivery.count).to eq(2)
@@ -160,8 +164,12 @@ RSpec.describe 'ChatRing managed AgentBot webhooks', type: :request do
     )
     newer_body = payload_for(newer_message)
 
-    perform_enqueued_jobs { post_webhook(original_body, signed_headers(original_body, delivery_id: 'delivery-original')) }
-    perform_enqueued_jobs { post_webhook(newer_body, signed_headers(newer_body, delivery_id: 'delivery-newer')) }
+    perform_enqueued_jobs(only: ChatRing::WebhookDeliveryJob) do
+      post_webhook(original_body, signed_headers(original_body, delivery_id: 'delivery-original'))
+    end
+    perform_enqueued_jobs(only: ChatRing::WebhookDeliveryJob) do
+      post_webhook(newer_body, signed_headers(newer_body, delivery_id: 'delivery-newer'))
+    end
 
     expect(ChatRing::AiTurn.where(trigger_message_id: [message.id, newer_message.id]).count).to eq(2)
   end
@@ -171,8 +179,8 @@ RSpec.describe 'ChatRing managed AgentBot webhooks', type: :request do
     body = payload_for
     headers = signed_headers(body, delivery_id: 'delivery-reply-retry')
 
-    perform_enqueued_jobs { post_webhook(body, headers) }
-    perform_enqueued_jobs { post_webhook(body, headers) }
+    perform_enqueued_jobs(only: ChatRing::WebhookDeliveryJob) { post_webhook(body, headers) }
+    perform_enqueued_jobs(only: ChatRing::WebhookDeliveryJob) { post_webhook(body, headers) }
     turn = ChatRing::AiTurn.find_by!(trigger_message: message)
     turn.update!(
       status: :ready_to_commit,
@@ -194,7 +202,7 @@ RSpec.describe 'ChatRing managed AgentBot webhooks', type: :request do
   it 'rejects a reused delivery ID carrying a different signed body' do
     body = payload_for
     headers = signed_headers(body, delivery_id: 'delivery-collision')
-    perform_enqueued_jobs { post_webhook(body, headers) }
+    perform_enqueued_jobs(only: ChatRing::WebhookDeliveryJob) { post_webhook(body, headers) }
 
     changed_body = JSON.parse(body).merge('content' => 'different').to_json
     post_webhook(changed_body, signed_headers(changed_body, delivery_id: 'delivery-collision'))
@@ -271,7 +279,7 @@ RSpec.describe 'ChatRing managed AgentBot webhooks', type: :request do
 
   it 'removes runtime delivery and turn records when their Workspace is destroyed' do
     body = payload_for
-    perform_enqueued_jobs { post_webhook(body, signed_headers(body)) }
+    perform_enqueued_jobs(only: ChatRing::WebhookDeliveryJob) { post_webhook(body, signed_headers(body)) }
     index = workspace.knowledge_base.knowledge_indexes.create!(
       workspace: workspace,
       status: 'building',

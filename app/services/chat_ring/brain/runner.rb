@@ -2,11 +2,12 @@ require 'digest'
 
 class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
   TRANSIENT_FAILURE_CODES = %w[
-    knowledge_provider_failed provider_connection_failed provider_failed provider_rate_limited provider_timeout provider_unavailable
+    knowledge_provider_failed provider_connection_failed provider_rate_limited provider_timeout provider_unavailable
   ].freeze
   RETRIEVAL_TIMEOUT = 10
   OUTCOME_RESERVE = 2
   class DeadlineExpired < StandardError; end
+  class AttemptsExhausted < StandardError; end
 
   class RetryableError < StandardError
     attr_reader :code
@@ -38,6 +39,8 @@ class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
   rescue DeadlineExpired
     fail_attempt!(attempt, 'turn_deadline_expired') if attempt&.status_running?
     ChatRing::Brain::FailureFinalizer.call(turn.id, 'turn_deadline_expired')
+  rescue AttemptsExhausted
+    ChatRing::Brain::FailureFinalizer.call(turn.id, 'provider_attempts_exhausted')
   rescue RetryableError => e
     release_for_retry!(e.code)
     raise
@@ -222,6 +225,8 @@ class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
 
   def start_attempt!(messages)
     turn.with_lock do
+      raise AttemptsExhausted if turn.attempts.count >= ChatRing::AiTurn::MAX_PROVIDER_ATTEMPTS
+
       turn.attempts.create!(
         attempt_number: turn.attempts.maximum(:attempt_number).to_i + 1,
         provider: turn.assistant_version.llm_provider,
@@ -234,18 +239,24 @@ class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
   end
 
   def complete_attempt!(attempt, result)
-    attempt.update!(
-      status: :succeeded,
-      response_digest: result.response_digest,
-      input_tokens: result.input_tokens,
-      output_tokens: result.output_tokens,
-      completed_at: Time.current,
-      failure_code: nil
-    )
+    attempt.with_lock do
+      next unless attempt.status_running?
+
+      attempt.update!(
+        status: :succeeded,
+        response_digest: result.response_digest,
+        input_tokens: result.input_tokens,
+        output_tokens: result.output_tokens,
+        completed_at: Time.current,
+        failure_code: nil
+      )
+    end
   end
 
   def fail_attempt!(attempt, code)
-    attempt.update!(status: :failed, failure_code: code, completed_at: Time.current)
+    attempt.with_lock do
+      attempt.update!(status: :failed, failure_code: code, completed_at: Time.current) if attempt.status_running?
+    end
   end
 
   def release_for_retry!(code)

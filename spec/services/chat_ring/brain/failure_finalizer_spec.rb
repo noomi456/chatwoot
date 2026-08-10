@@ -42,6 +42,37 @@ RSpec.describe ChatRing::Brain::FailureFinalizer do
     expect(turn.outbound_commit).to be_nil
   end
 
+  it 'terminalizes an expired awaiting-tool execution through the configured native fallback' do
+    turn = build_turn
+    turn.update!(status: :awaiting_tool)
+    allow(ChatRing::OutboundCommitJob).to receive(:perform_later).and_return(false)
+    travel_to(turn.deadline_at + 1.second)
+
+    described_class.call(turn.id, 'turn_recovery_deadline')
+
+    expect(turn.reload).to be_status_handed_off
+    expect(turn.outbound_commit).to have_attributes(status: 'committed', outcome_type: 'handoff')
+  end
+
+  it 'closes an abandoned running provider attempt before committing fallback' do
+    turn = build_turn
+    attempt = turn.attempts.create!(
+      attempt_number: 1,
+      provider: 'openai',
+      model: 'gpt-5.4',
+      status: :running,
+      request_digest: Digest::SHA256.hexdigest('abandoned-attempt'),
+      started_at: 1.minute.ago
+    )
+    allow(ChatRing::OutboundCommitJob).to receive(:perform_later).and_return(false)
+
+    described_class.call(turn.id, 'turn_recovery_deadline')
+
+    expect(attempt.reload).to have_attributes(status: 'failed', failure_code: 'turn_recovery_deadline')
+    expect(attempt.completed_at).to be_present
+    expect(turn.reload).to be_status_handed_off
+  end
+
   def build_turn
     account = create(:account)
     workspace = account.chat_ring_workspace

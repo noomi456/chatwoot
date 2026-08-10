@@ -22,6 +22,7 @@ class ChatRing::Brain::FailureFinalizer
     dispatch_outcome = false
     turn.with_lock do
       turn.reload
+      turn.fail_running_attempts!(failure_code)
       next unless recoverable_execution_state?
 
       eligibility = ChatRing::Brain::Eligibility.check(turn, enforce_deadline: false)
@@ -36,7 +37,7 @@ class ChatRing::Brain::FailureFinalizer
   end
 
   def recoverable_execution_state?
-    turn.status_received? || turn.status_eligible? || turn.status_running?
+    turn.status_received? || turn.status_eligible? || turn.status_running? || turn.status_awaiting_tool?
   end
 
   def mark_ineligible(reason)

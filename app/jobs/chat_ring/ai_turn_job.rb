@@ -3,7 +3,7 @@ class ChatRing::AiTurnJob < ApplicationJob
 
   retry_on ChatRing::Brain::Runner::RetryableError,
            wait: :polynomially_longer,
-           attempts: 3 do |job, error|
+           attempts: ChatRing::AiTurn::MAX_PROVIDER_ATTEMPTS do |job, error|
     ChatRing::Brain::FailureFinalizer.call(job.arguments.first, error.code)
   end
   def perform(turn_id)
@@ -20,6 +20,7 @@ class ChatRing::AiTurnJob < ApplicationJob
   def cancel_gate_closed_turn(turn)
     turn.with_lock do
       turn.reload
+      turn.fail_running_attempts!('public_response_gate_closed')
       next unless ChatRing::AiTurn::NONTERMINAL_STATUSES.include?(turn.status)
 
       committed_outcome = turn.outbound_commit

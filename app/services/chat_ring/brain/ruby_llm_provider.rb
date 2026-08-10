@@ -4,6 +4,20 @@ require 'ruby_llm'
 class ChatRing::Brain::RubyLlmProvider
   MAX_REQUEST_TIMEOUT = 30
   OUTCOME_RESERVE = 2
+  ERROR_CLASSIFICATIONS = [
+    [[RubyLLM::RateLimitError], 'provider_rate_limited'],
+    [[RubyLLM::ServerError, RubyLLM::ServiceUnavailableError, RubyLLM::OverloadedError], 'provider_unavailable'],
+    [[Faraday::TimeoutError, Timeout::Error, Errno::ETIMEDOUT], 'provider_timeout'],
+    [[Faraday::ConnectionFailed], 'provider_connection_failed'],
+    [[RubyLLM::UnauthorizedError, RubyLLM::ForbiddenError], 'provider_authorization_error'],
+    [[RubyLLM::PaymentRequiredError], 'provider_payment_required'],
+    [[RubyLLM::ConfigurationError, RubyLLM::ModelNotFoundError, RubyLLM::PromptNotFoundError,
+      RubyLLM::InvalidRoleError, RubyLLM::InvalidToolChoiceError, RubyLLM::UnsupportedAttachmentError,
+      KeyError, ArgumentError], 'provider_configuration_error'],
+    [[RubyLLM::ContextLengthExceededError], 'provider_context_length_exceeded'],
+    [[RubyLLM::BadRequestError], 'provider_bad_request'],
+    [[JSON::ParserError, TypeError], 'provider_invalid_response']
+  ].freeze
 
   class Error < StandardError
     attr_reader :code
@@ -26,21 +40,32 @@ class ChatRing::Brain::RubyLlmProvider
     response = build_chat(credential, messages).ask(messages.last.fetch(:content))
     payload = normalize_payload(response.content)
     build_result(response, payload)
-  rescue Faraday::TimeoutError, Timeout::Error, Errno::ETIMEDOUT => e
-    raise Error.new('provider_timeout', e.message)
-  rescue KeyError, ArgumentError => e
-    raise Error.new('provider_configuration_error', e.message)
-  rescue JSON::ParserError, TypeError => e
-    raise Error.new('provider_invalid_response', e.message)
   rescue Error
     raise
   rescue StandardError => e
-    raise Error.new('provider_failed', e.message)
+    raise Error.new(provider_error_code(e), e.message)
   end
 
   private
 
   attr_reader :assistant_version, :deadline_at
+
+  def provider_error_code(error)
+    classification = ERROR_CLASSIFICATIONS.find do |classes, _code|
+      classes.any? { |error_class| error.is_a?(error_class) }
+    end
+    return classification.last if classification
+    return generic_ruby_llm_error_code(error) if error.is_a?(RubyLLM::Error)
+
+    'provider_unexpected_error'
+  end
+
+  def generic_ruby_llm_error_code(error)
+    return 'provider_timeout' if error.response&.status.to_i == 408
+    return 'provider_unavailable' if error.response&.status.to_i >= 500
+
+    'provider_request_failed'
+  end
 
   def ruby_llm_context(credential)
     RubyLLM.context do |config|
