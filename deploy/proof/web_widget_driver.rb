@@ -95,7 +95,6 @@ class ChatRingWebWidgetProof
     source_url = "https://proof.invalid/#{run_id}/pricing"
     source = knowledge_base.website_sources.create!(
       root_url: source_url,
-      canonical_origin: 'https://proof.invalid',
       source_type: 'webpage',
       status: 'available',
       mapped_manifest: [{ 'url' => source_url, 'status' => 'selected' }]
