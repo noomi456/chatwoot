@@ -830,7 +830,6 @@ class ChatRingWebWidgetProof
         WHERE pid = #{Integer(backend_pid)}
           AND wait_event_type = 'Lock'
           AND #{Integer(blocker_pid)} = ANY(pg_blocking_pids(pid))
-          AND query ILIKE '%#{relation_name}%'
         LIMIT 1
       SQL
     end
