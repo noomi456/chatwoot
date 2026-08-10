@@ -2,13 +2,13 @@
 
 ## Architecture reconciliation v2.2
 
-**Status:** Approved authority for the bounded native-lifecycle remediation; public AI remains blocked until both Section 13 and the complete ChatRing v1 production-foundation release gate pass
+**Status:** Approved authority for the bounded native-lifecycle remediation; public AI remains blocked until both Section 13 and the complete Sales Core v1 production-foundation release gate pass
 
 **Runtime decision:** Internal ChatRing control plane inside the Chatwoot deployment
 
 **Native identity:** Account-owned Chatwoot `AgentBot`
 
-**Public-response status:** Must remain disabled until every gate in Section 13 and `ChatRing_Complete_Production_Foundation_Direction.md` passes on the exact deployed paths
+**Public-response status:** Must remain disabled until every gate in Section 13 and the Sales Core v1 foundation in `ChatRing_Complete_Production_Foundation_Direction.md` passes on the exact deployed paths
 
 **Verified ChatRing source:** `0309e77ea7954dec5185dc480f31dab610b468d4` (same tree as local `5acca0a21b0b5eb43a6d568986be8c9ee3970951`)
 
@@ -32,11 +32,11 @@ tool authorization, identity assurance, auditability and ordinary Chatwoot deliv
 This is the approved integration contract for remediation. The current public-response
 gate must be closed before runtime changes begin. Section 13 proves this bounded native
 lifecycle, but is necessary rather than sufficient for release; the gate must not reopen
-until the complete ChatRing v1 production-foundation contract also passes.
+until the complete Sales Core v1 production-foundation contract also passes.
 
 The remediation source sets `PUBLIC_AI_RELEASE_READY = false`; that gate remains closed
-until the integrated lifecycle evidence satisfies Section 13 and the complete production
-foundation is implemented and proven on the exact deployed paths.
+until the integrated lifecycle evidence satisfies Section 13 and the complete Sales Core
+v1 foundation is implemented and proven on the exact deployed paths.
 
 ### 1.1 Corrected executive decision
 
@@ -755,7 +755,7 @@ serialization before changing the implementation.
 
 Run Section 13 in CI and on the VPS using the exact immutable images. Passing it proves
 the bounded Web Widget native-lifecycle path only. It does not permit the public-response
-constant to change; that requires the separate complete production-foundation gate.
+constant to change; that requires the separate complete Sales Core v1 gate.
 
 No additional channel, tool, Contact Memory, Q&A, Images or UI expansion is included
 in these remediation stages.
@@ -969,4 +969,4 @@ source is an implementation dependency or permitted production source.
 This contract began as a static, source-level lifecycle audit of the exact deployed
 tree, upstream ownership baseline, v2.1 and Captain's integration seams. Runtime claims
 for the bounded native-lifecycle remediation require Section 13 evidence. ChatRing v1
-production claims additionally require the complete production-foundation release gate.
+Sales Core v1 production claims additionally require the complete staged-foundation release gate.

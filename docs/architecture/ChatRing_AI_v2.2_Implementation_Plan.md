@@ -4,9 +4,9 @@
 
 **Post-PR #17 production authority:** `ChatRing_Complete_Production_Foundation_Direction.md`
 
-**Base tree:** deployed-equivalent `0309e77ea7954dec5185dc480f31dab610b468d4`
+**Current foundation:** PR #17 merge `401a33f35a4edda131edf51ed829a6b2fbbcec61`, followed by Native Handling Completion merge `28aeef3baebbf75c1a521c30783bcc6c9d5588b8`
 
-**Release rule:** `PUBLIC_AI_RELEASE_READY` remains `false` until every v2.2 Section 13 gate and the complete production-foundation release gate pass on the exact deployed paths.
+**Release rule:** `PUBLIC_AI_RELEASE_READY` remains `false` until every v2.2 Section 13 gate and the complete Sales Core v1 release gate pass on the exact deployed paths.
 
 ## 1. Verified integration map
 
@@ -360,10 +360,48 @@ Run, in order:
 10. manual fresh-widget supported, unsupported and immediate-takeover scenarios.
 
 PR G proves the bounded Web Widget core but does not open
-`PUBLIC_AI_RELEASE_READY`. Omnichannel certification, a real external capability,
-trusted business events/outbound and the full production proof in
-`ChatRing_Complete_Production_Foundation_Direction.md` still govern release. Any failed
-gate leaves the constant false.
+`PUBLIC_AI_RELEASE_READY`. Sales Core still requires the shared Brain/context and
+reliability boundary, native actions and Automation coexistence, Inbox-scoped Tool
+policy, Inbox-owned Playbooks, Website Engagement starter pills, sales administration,
+the approved channel set, human voice/calls and the full production proof in
+`ChatRing_Complete_Production_Foundation_Direction.md`. External business-event outbound,
+AI Navigator, media-aware Knowledge and Microsites are separately gated later stages.
+Any failed Sales Core gate leaves the constant false.
+
+### Post-PR G — Sales Core feature and channel sequence
+
+Do not clone the Web Widget lifecycle or build provider transports. First build the
+bounded native Sales capabilities on the proven core, then complete one coherent Website
+sales-and-human-call vertical before broad channel certification:
+
+```text
+Web Widget proof
+-> bounded Sales Core Tool system
+-> Inbox-owned Playbooks
+-> Engagement starters and Classic Widget sales UX
+-> hardened native Cloudflare RealtimeKit agent-call path
+-> visitor-initiated Website Talk to us
+-> independently certify the approved text-channel set according to provider readiness
+-> independently implemented Twilio PSTN Voice CE capability
+-> consolidated Sales administration, analytics and full production proof
+```
+
+Native action authorization/Automation coexistence and basic Assistant administration
+precede Web Widget proof and the Tool/Playbook stages. Feature-specific administration
+ships with each feature. The final administration stage only unifies navigation,
+configuration health and analytics.
+
+Twilio SMS must first add synchronous signed-webhook validation to the existing callback
+controllers, durable provider-SID deduplication, monotonic status, safe MMS ingestion and
+STOP/consent enforcement. Facebook/Instagram AI Messages must never use the native
+`HUMAN_AGENT` tag. RealtimeKit must close its Widget participant-token authorization and
+credential/timeout/role issues before visitor-initiated routing is extended. Agent call
+start/accept must complete native human takeover through the existing serialization and
+`Conversations::AssignmentService`, including a pending-AITurn race proof. Twilio Voice
+must not copy or unlock the Enterprise implementation. After the complete Website
+vertical, Twilio SMS, Email, WhatsApp Cloud, Facebook and available Instagram are
+independent certification gates; their order is chosen from actual credentials,
+approval, compliance, test-environment and commercial readiness rather than architecture.
 
 ## 5. Migration and deployment safety
 
@@ -405,11 +443,11 @@ The work has three distinct checkpoints:
    Knowledge-safety and production-proof PRs pass the exact Web Widget path and every
    v2.2 Section 13 concurrency/reliability gate. This proves the bounded native lifecycle;
    it is not ChatRing v1 product completion and does not open the public gate.
-3. **ChatRing v1 production foundation proven:** the BrainInvocation/context boundary,
-   native Automation/action integration, enabled-channel certification, one real external
-   capability, trusted business events, transactional and AI-assisted outbound, and full
-   production proof pass the release definition in
-   `ChatRing_Complete_Production_Foundation_Direction.md`.
+3. **Sales Core v1 production foundation proven:** the shared BrainInvocation/context
+   boundary, native Automation/action integration, Inbox-scoped Tool policy, Inbox-owned
+   Playbooks, Website Engagement starter pills, sales administration, enabled-channel
+   certification, human voice/calls and full production proof pass the release definition
+   in `ChatRing_Complete_Production_Foundation_Direction.md`.
 
 Green unit tests, service-only barriers or a single successful widget response are not
 sufficient completion evidence.
