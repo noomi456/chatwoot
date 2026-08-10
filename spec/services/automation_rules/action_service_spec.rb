@@ -111,6 +111,15 @@ RSpec.describe AutomationRules::ActionService do
         expect(conversation.reload.assignee).to be_nil
         expect(conversation.team).to be_nil
       end
+
+      it 'does not run ChatRing lifecycle observation outside a managed completion' do
+        expect(ChatRing::NativeHandling::AutomationEffectCollector).not_to receive(:lifecycle_snapshot)
+
+        described_class.new(rule, account, conversation).perform
+
+        expect(conversation.reload.assignee).to be_nil
+        expect(conversation.team).to be_nil
+      end
     end
 
     describe '#perform with send_email_transcript action' do

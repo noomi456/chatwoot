@@ -37,14 +37,16 @@ module ChatRing::AutomationRules::ActionService
     return yield unless ChatRing::NativeHandling::AutomationEffectCollector.active?
 
     before = ChatRing::NativeHandling::AutomationEffectCollector.lifecycle_snapshot(@conversation)
-    yield
-  ensure
-    after = ChatRing::NativeHandling::AutomationEffectCollector.lifecycle_snapshot(@conversation)
-    ChatRing::NativeHandling::AutomationEffectCollector.record_lifecycle_transition(
-      rule: @rule,
-      before: before,
-      after: after
-    )
+    begin
+      yield
+    ensure
+      after = ChatRing::NativeHandling::AutomationEffectCollector.lifecycle_snapshot(@conversation)
+      ChatRing::NativeHandling::AutomationEffectCollector.record_lifecycle_transition(
+        rule: @rule,
+        before: before,
+        after: after
+      )
+    end
   end
 
   LIFECYCLE_ACTIONS.each do |action_name|
