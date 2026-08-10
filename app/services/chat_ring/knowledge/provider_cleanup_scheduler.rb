@@ -1,5 +1,6 @@
 class ChatRing::Knowledge::ProviderCleanupScheduler
   RETENTION = 1.hour
+  PIN_RECHECK = 1.minute
   CLEANABLE_INDEX_STATUSES = %w[retired failed discarded].freeze
 
   def self.schedule_eligible!(knowledge_base:)
@@ -12,7 +13,7 @@ class ChatRing::Knowledge::ProviderCleanupScheduler
   # rubocop:disable Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
   def self.schedule!(index, eligible_at: nil, force: false, enqueue: true)
     source_id = provider_source_id(index)
-    return if source_id.blank? || (!force && protected?(index))
+    return if source_id.blank? || (!force && active?(index))
 
     cleanup = ChatRing::KnowledgeProviderCleanup.find_or_initialize_by(knowledge_index_id: index.id)
     if cleanup.persisted? && %w[pending retrying succeeded].include?(cleanup.status)
@@ -41,7 +42,7 @@ class ChatRing::Knowledge::ProviderCleanupScheduler
     return false unless cleanup.status == 'pending'
 
     job = ChatRing::Knowledge::ProviderCleanupJob.set(wait_until: cleanup.eligible_at).perform_later(cleanup.id)
-    return true if job.successfully_enqueued?
+    return true if job.respond_to?(:successfully_enqueued?) && job.successfully_enqueued?
 
     cleanup.update!(status: 'failed', last_error: 'Provider cleanup could not be queued')
     false
@@ -49,7 +50,7 @@ class ChatRing::Knowledge::ProviderCleanupScheduler
 
   def self.retry_failed!(cleanup)
     raise ArgumentError, 'Only a failed provider cleanup can be retried' unless cleanup.status == 'failed'
-    raise ArgumentError, 'The active provider index cannot be deleted' if protected?(cleanup.knowledge_index)
+    raise ArgumentError, 'The active provider index cannot be deleted' if active?(cleanup.knowledge_index)
 
     cleanup.update!(status: 'pending', attempts: 0, eligible_at: Time.current, cleaned_at: nil, last_error: nil)
     enqueue_cleanup!(cleanup)
@@ -74,7 +75,23 @@ class ChatRing::Knowledge::ProviderCleanupScheduler
   end
 
   def self.protected?(index)
+    active?(index) || pinned_by_nonterminal_turn?(index)
+  end
+
+  def self.active?(index)
     index.present? && index.knowledge_base.active_knowledge_index_id == index.id
+  end
+
+  def self.pinned_by_nonterminal_turn?(index)
+    index.present? && index.ai_turns.nonterminal.exists?
+  end
+
+  def self.defer_pinned!(cleanup)
+    cleanup.update!(
+      status: 'pending',
+      eligible_at: Time.current + PIN_RECHECK,
+      last_error: 'provider index is pinned by a nonterminal AI turn'
+    )
   end
 
   def self.provider_source_id(index)

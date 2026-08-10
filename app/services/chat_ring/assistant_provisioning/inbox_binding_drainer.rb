@@ -1,6 +1,4 @@
 class ChatRing::AssistantProvisioning::InboxBindingDrainer
-  NONTERMINAL_TURN_STATUSES = %i[received eligible running awaiting_tool ready_to_commit].freeze
-
   def initialize(binding:, failure_code:)
     @binding = binding
     @failure_code = failure_code
@@ -19,7 +17,7 @@ class ChatRing::AssistantProvisioning::InboxBindingDrainer
   attr_reader :binding, :failure_code
 
   def cancel_nonterminal_turns!
-    binding.ai_turns.where(status: NONTERMINAL_TURN_STATUSES).lock.order(:id).each do |turn|
+    binding.ai_turns.nonterminal.lock.order(:id).each do |turn|
       committed_outcome = turn.outbound_commit
       if committed_outcome&.status_committed?
         turn.update!(status: committed_outcome.outcome_type_handoff? ? :handed_off : :committed, failure_code: nil)
