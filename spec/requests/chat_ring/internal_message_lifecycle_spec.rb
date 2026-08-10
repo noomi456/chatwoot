@@ -68,11 +68,13 @@ RSpec.describe 'ChatRing internal Web Widget message lifecycle', type: :request 
     complete_automation_for(message)
     turn = ChatRing::AiTurn.find_by!(trigger_message: message)
     turn.update!(status: :ready_to_commit, started_at: Time.current)
+    outcome = ChatRing::OutboundCommitPreparer.call(turn, 'reply')
     stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', false)
 
     ChatRing::AiTurnJob.perform_now(turn.id)
 
     expect(turn.reload).to have_attributes(status: 'cancelled', failure_code: 'public_response_gate_closed')
+    expect(outcome.reload).to have_attributes(status: 'rejected', failure_code: 'public_response_gate_closed')
   end
 
   it 'reconciles a gate-closed nonterminal turn from its already committed outcome' do

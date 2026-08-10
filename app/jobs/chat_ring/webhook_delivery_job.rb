@@ -90,14 +90,13 @@ class ChatRing::WebhookDeliveryJob < ApplicationJob
   end
 
   def enqueue_turn!(turn)
-    job = ChatRing::AiTurnJob.perform_later(turn.id)
-    raise 'ChatRing AI turn could not be queued' unless job_enqueued?(job)
-  end
+    result = ChatRing::AiTurnDispatcher.call(turn)
+    if result.primary_enqueued || result.recovery_enqueued
+      turn.update!(failure_code: 'turn_enqueue_failed_recovery_scheduled') unless result.primary_enqueued
+      return
+    end
 
-  def job_enqueued?(job)
-    return false if job.blank?
-
-    job.successfully_enqueued?
+    raise 'ChatRing AI turn and recovery could not be queued'
   end
 
   def base_eligibility(delivery, message, binding)

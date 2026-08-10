@@ -31,6 +31,7 @@ RSpec.describe ChatRing::Brain::Runner do
 
     expect(turn.reload).to be_status_ready_to_commit
     expect(turn.decision_payload).to include('decision_type' => 'reply', 'evidence_ids' => ['evidence-1'])
+    expect(turn.outbound_commit).to have_attributes(status: 'pending', outcome_type: 'reply')
     expect(turn.context_metadata).to include('projection_version' => 1, 'contact_fields_included' => [])
     expect(turn.evidence.first).to have_attributes(evidence_id: 'evidence-1', excerpt: 'Widgets are supported.')
     expect(turn.attempts.first).to be_status_succeeded
@@ -42,7 +43,7 @@ RSpec.describe ChatRing::Brain::Runner do
     described_class.new(turn, provider: provider).call
 
     expect(provider).not_to have_received(:call)
-    expect(turn.reload).to be_status_ready_to_commit
+    expect(turn.reload).to be_status_cancelled
     expect(turn.decision_payload).to include('decision_type' => 'abstain', 'reason_code' => 'insufficient_evidence')
   end
 
@@ -74,8 +75,8 @@ RSpec.describe ChatRing::Brain::Runner do
 
     described_class.new(turn, provider: provider).call
 
-    expect(turn.reload).to be_status_ineligible
-    expect(turn.decision_type).to eq('turn_deadline_expired')
+    expect(turn.reload).to be_status_failed
+    expect(turn.failure_code).to eq('turn_deadline_expired')
     expect(ChatRing::Knowledge::Retriever).not_to have_received(:retrieve)
     expect(provider).not_to have_received(:call)
   end
@@ -96,10 +97,38 @@ RSpec.describe ChatRing::Brain::Runner do
 
     described_class.new(turn, provider: provider).call
 
-    expect(turn.reload).to be_status_ineligible
-    expect(turn.decision_type).to eq('turn_deadline_expired')
-    expect(turn.decision_payload).to eq({})
+    expect(turn.reload).to be_status_failed
+    expect(turn.decision_type).to eq('abstain')
     expect(turn.attempts.first).to have_attributes(status: 'failed', failure_code: 'turn_deadline_expired')
+  end
+
+  it 'does not retry a permanent provider configuration failure' do
+    allow(provider).to receive(:call).and_raise(ChatRing::Brain::RubyLlmProvider::Error.new('provider_configuration_error'))
+
+    expect { described_class.new(turn, provider: provider).call }.not_to raise_error
+
+    expect(turn.reload).to have_attributes(status: 'failed', failure_code: 'provider_configuration_error')
+    expect(turn.attempts.count).to eq(1)
+  end
+
+  it 'terminalizes a retrieval configuration failure instead of stranding a running turn' do
+    allow(ChatRing::Knowledge::Retriever).to receive(:retrieve)
+      .and_raise(ChatRing::Knowledge::Retriever::Error, 'Pinned index is invalid')
+
+    expect { described_class.new(turn, provider: provider).call }.not_to raise_error
+
+    expect(turn.reload).to have_attributes(status: 'failed')
+    expect(turn.failure_code).to start_with('knowledge_configuration_error:')
+    expect(provider).not_to have_received(:call)
+  end
+
+  it 'passes a retrieval timeout bounded by the remaining turn budget' do
+    allow(ChatRing::Knowledge::Retriever).to receive(:retrieve).and_return(empty_evidence_set)
+    travel_to(turn.deadline_at - 5.seconds)
+
+    described_class.new(turn, provider: provider).call
+
+    expect(ChatRing::Knowledge::Retriever).to have_received(:retrieve).with(hash_including(timeout_seconds: 3))
   end
 
   it 'respects native Inbox working hours' do

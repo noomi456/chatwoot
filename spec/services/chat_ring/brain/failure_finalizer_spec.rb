@@ -5,27 +5,41 @@ RSpec.describe ChatRing::Brain::FailureFinalizer do
     stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', true)
   end
 
-  it 'records the configured safe terminal decision after bounded provider retries' do
+  it 'executes the configured native handoff after bounded provider retries' do
     turn = build_turn
+    allow(ChatRing::OutboundCommitJob).to receive(:perform_later).and_return(false)
 
     expect do
       described_class.call(turn.id, 'provider_failed')
     end.not_to change(Message, :count)
 
-    expect(turn.reload).to be_status_ready_to_commit
+    expect(turn.reload).to be_status_handed_off
     expect(turn.decision_payload).to include('decision_type' => 'handoff', 'reason_code' => 'provider_failure')
-    expect(turn.failure_code).to eq('provider_failed')
+    expect(turn.failure_code).to be_nil
+    expect(turn.outbound_commit).to be_status_committed
+    expect(turn.conversation.reload).to have_attributes(status: 'open', assignee_agent_bot_id: nil)
   end
 
-  it 'does not prepare a fallback outcome after the turn deadline' do
+  it 'still executes the configured native fallback handoff after the inference deadline' do
     turn = build_turn
+    allow(ChatRing::OutboundCommitJob).to receive(:perform_later).and_return(false)
     travel_to(turn.deadline_at + 1.second)
 
     described_class.call(turn.id, 'provider_failed')
 
-    expect(turn.reload).to be_status_ineligible
-    expect(turn.decision_type).to eq('turn_deadline_expired')
-    expect(turn.decision_payload).to eq({})
+    expect(turn.reload).to be_status_handed_off
+    expect(turn.outbound_commit).to have_attributes(status: 'committed', outcome_type: 'handoff')
+    expect(turn.conversation.reload).to have_attributes(status: 'open', assignee_agent_bot_id: nil)
+  end
+
+  it 'does not overwrite a terminal turn when an exhausted duplicate arrives late' do
+    turn = build_turn
+    turn.update!(status: :cancelled, failure_code: 'newer_customer_message', completed_at: Time.current)
+
+    described_class.call(turn.id, 'provider_failed')
+
+    expect(turn.reload).to have_attributes(status: 'cancelled', failure_code: 'newer_customer_message')
+    expect(turn.outbound_commit).to be_nil
   end
 
   def build_turn

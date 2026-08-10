@@ -1,12 +1,13 @@
 class ChatRing::Brain::Eligibility
   Result = Data.define(:eligible, :reason)
 
-  def self.check(turn)
-    new(turn).check
+  def self.check(turn, enforce_deadline: true)
+    new(turn, enforce_deadline: enforce_deadline).check
   end
 
-  def initialize(turn)
+  def initialize(turn, enforce_deadline: true)
     @turn = turn
+    @enforce_deadline = enforce_deadline
   end
 
   def check
@@ -16,7 +17,7 @@ class ChatRing::Brain::Eligibility
 
   private
 
-  attr_reader :turn
+  attr_reader :turn, :enforce_deadline
 
   def runtime_failure
     return 'public_response_gate_closed' unless ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY
@@ -25,6 +26,8 @@ class ChatRing::Brain::Eligibility
   end
 
   def deadline_failure
+    return unless enforce_deadline
+
     'turn_deadline_expired' if turn.deadline_at.blank? || turn.deadline_at <= Time.current
   end
 

@@ -1,6 +1,11 @@
 require 'digest'
 
 class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
+  TRANSIENT_FAILURE_CODES = %w[
+    knowledge_provider_failed provider_connection_failed provider_failed provider_rate_limited provider_timeout provider_unavailable
+  ].freeze
+  RETRIEVAL_TIMEOUT = 10
+  OUTCOME_RESERVE = 2
   class DeadlineExpired < StandardError; end
 
   class RetryableError < StandardError
@@ -14,20 +19,25 @@ class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
 
   def initialize(turn, provider: nil)
     @turn = turn
-    @provider = provider || ChatRing::Brain::RubyLlmProvider.new(turn.assistant_version)
+    @provider = provider || ChatRing::Brain::RubyLlmProvider.new(turn.assistant_version, deadline_at: turn.deadline_at)
   end
 
-  def call
+  def call # rubocop:disable Metrics/AbcSize -- explicit typed failure boundary
+    return ChatRing::Brain::FailureFinalizer.call(turn.id, 'turn_deadline_expired') if deadline_expired?
     return unless claim_turn!
 
     execute_claimed_turn
   rescue ChatRing::Brain::RubyLlmProvider::Error => e
-    handle_provider_failure(attempt, e.code)
+    handle_execution_failure(attempt, e.code)
   rescue ChatRing::Brain::Decision::Invalid
-    handle_provider_failure(attempt, 'provider_invalid_decision')
+    handle_execution_failure(attempt, 'provider_invalid_decision')
+  rescue ChatRing::Knowledge::Retriever::Error, ChatRing::Knowledge::DocsGptProvider::ConfigurationError => e
+    handle_execution_failure(attempt, "knowledge_configuration_error:#{e.class.name}")
+  rescue ArgumentError, KeyError, TypeError => e
+    handle_execution_failure(attempt, "brain_configuration_error:#{e.class.name}")
   rescue DeadlineExpired
     fail_attempt!(attempt, 'turn_deadline_expired') if attempt&.status_running?
-    expire_turn!
+    ChatRing::Brain::FailureFinalizer.call(turn.id, 'turn_deadline_expired')
   rescue RetryableError => e
     release_for_retry!(e.code)
     raise
@@ -43,7 +53,7 @@ class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
     return unless recheck_eligibility!
 
     evidence_set = retrieve_evidence(invocation)
-    raise RetryableError, evidence_set.error_code || 'knowledge_provider_failed' if evidence_set.status == 'provider_error'
+    return handle_retrieval_failure!(evidence_set.error_code || 'knowledge_provider_failed') if evidence_set.status == 'provider_error'
 
     persist_evidence!(evidence_set)
     return complete_without_evidence!(invocation.digest) if evidence_set.status != 'accepted'
@@ -69,12 +79,22 @@ class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
     complete!(result.decision, context_digest: invocation.digest)
   end
 
-  def handle_provider_failure(attempt, code)
+  def handle_execution_failure(attempt, code)
     fail_attempt!(attempt, code) if attempt
-    return expire_turn! if deadline_expired?
+    return ChatRing::Brain::FailureFinalizer.call(turn.id, code) unless retryable_failure?(code) && !deadline_expired?
 
     release_for_retry!(code)
     raise RetryableError, code
+  end
+
+  def handle_retrieval_failure!(code)
+    return ChatRing::Brain::FailureFinalizer.call(turn.id, code) unless retryable_failure?(code)
+
+    raise RetryableError, code
+  end
+
+  def retryable_failure?(code)
+    TRANSIENT_FAILURE_CODES.include?(code)
   end
 
   def claim_turn!
@@ -102,12 +122,21 @@ class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
   end
 
   def retrieve_evidence(invocation)
+    ensure_within_deadline!
     ChatRing::Knowledge::Retriever.retrieve(
       inbox: turn.conversation.inbox,
       query: invocation.query,
       knowledge_scope: turn.assistant_version.knowledge_scope,
-      knowledge_index_id: turn.knowledge_index_id
+      knowledge_index_id: turn.knowledge_index_id,
+      timeout_seconds: remaining_timeout(RETRIEVAL_TIMEOUT)
     )
+  end
+
+  def remaining_timeout(maximum)
+    remaining = (turn.deadline_at - Time.current - OUTCOME_RESERVE).floor
+    raise DeadlineExpired unless remaining.positive?
+
+    [remaining, maximum].min
   end
 
   def persist_invocation_metadata!(invocation)
@@ -139,20 +168,6 @@ class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
 
   def deadline_expired?
     turn.deadline_at.blank? || turn.deadline_at <= Time.current
-  end
-
-  def expire_turn!
-    turn.with_lock do
-      turn.reload
-      next unless turn.status_running? || turn.status_received? || turn.status_eligible?
-
-      turn.update!(
-        status: :ineligible,
-        decision_type: 'turn_deadline_expired',
-        failure_code: 'turn_deadline_expired',
-        completed_at: Time.current
-      )
-    end
   end
 
   def persist_evidence!(evidence_set)
@@ -247,8 +262,10 @@ class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
         next
       end
 
+      effectful = ChatRing::OutboundCommitPreparer::EFFECTFUL_DECISIONS.key?(decision.decision_type)
+      ChatRing::OutboundCommitPreparer.call(turn, decision.decision_type) if effectful
       turn.update!(
-        status: :ready_to_commit,
+        status: effectful ? :ready_to_commit : :cancelled,
         decision_type: decision.decision_type,
         decision_payload: decision.to_h,
         context_digest: context_digest,

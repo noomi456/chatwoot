@@ -31,12 +31,16 @@ class Conversations::AgentBotConditionalHandoffService
   end
 
   def commit_handoff(conversation)
-    eligibility = ChatRing::Brain::Eligibility.check(turn.reload)
+    eligibility = ChatRing::Brain::Eligibility.check(turn.reload, enforce_deadline: !provider_failure_fallback?)
     return reject_handoff(eligibility.reason) unless eligibility.eligible
 
     conversation.bot_handoff!(dispatch_event: false)
     outbound_commit.update!(status: :committed, attempted_at: Time.current, committed_at: Time.current, failure_code: nil)
     nil
+  end
+
+  def provider_failure_fallback?
+    turn.decision_payload['reason_code'] == 'provider_failure'
   end
 
   def reject_handoff(failure_code)

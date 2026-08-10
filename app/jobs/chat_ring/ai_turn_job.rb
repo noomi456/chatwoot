@@ -1,6 +1,4 @@
 class ChatRing::AiTurnJob < ApplicationJob
-  class CommitEnqueueError < StandardError; end
-
   queue_as :high
 
   retry_on ChatRing::Brain::Runner::RetryableError,
@@ -8,15 +6,13 @@ class ChatRing::AiTurnJob < ApplicationJob
            attempts: 3 do |job, error|
     ChatRing::Brain::FailureFinalizer.call(job.arguments.first, error.code)
   end
-  retry_on CommitEnqueueError, wait: :polynomially_longer, attempts: 3
-
   def perform(turn_id)
     turn = ChatRing::AiTurn.find_by(id: turn_id)
     return unless turn
     return cancel_gate_closed_turn(turn) unless ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY
 
     ChatRing::Brain::Runner.new(turn).call
-    enqueue_commit!(turn.reload)
+    ChatRing::OutboundCommitDispatcher.call(turn.id)
   end
 
   private
@@ -27,14 +23,9 @@ class ChatRing::AiTurnJob < ApplicationJob
       next unless ChatRing::AiTurn::NONTERMINAL_STATUSES.include?(turn.status)
 
       committed_outcome = turn.outbound_commit
-      if committed_outcome&.status_committed?
-        turn.update!(
-          status: committed_outcome.outcome_type_handoff? ? :handed_off : :committed,
-          failure_code: nil,
-          completed_at: turn.completed_at || committed_outcome.committed_at || Time.current
-        )
-        next
-      end
+      next if reconcile_committed_outcome(turn, committed_outcome)
+
+      reject_pending_outcome(committed_outcome)
 
       turn.update!(
         status: :cancelled,
@@ -44,11 +35,20 @@ class ChatRing::AiTurnJob < ApplicationJob
     end
   end
 
-  def enqueue_commit!(turn)
-    return unless ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY
-    return unless turn.status_ready_to_commit?
+  def reconcile_committed_outcome(turn, outcome)
+    return false unless outcome&.status_committed?
 
-    job = ChatRing::OutboundCommitJob.perform_later(turn.id)
-    raise CommitEnqueueError unless job&.successfully_enqueued?
+    turn.update!(
+      status: outcome.outcome_type_handoff? ? :handed_off : :committed,
+      failure_code: nil,
+      completed_at: turn.completed_at || outcome.committed_at || Time.current
+    )
+    true
+  end
+
+  def reject_pending_outcome(outcome)
+    return unless outcome&.status_pending?
+
+    outcome.update!(status: :rejected, failure_code: 'public_response_gate_closed', attempted_at: Time.current)
   end
 end
