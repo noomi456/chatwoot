@@ -328,6 +328,7 @@
     "CHATRING_AI": "AI",
     "CHATRING_ASSISTANTS": "Assistants",
     "CHATRING_KNOWLEDGE": "Knowledge",
+    "CHATRING_TOOLS": "Tools",
     "CALLS": "Calls",
     "CAPTAIN_ASSISTANTS": "Assistants",
     "CAPTAIN_OVERVIEW": "Overview",

@@ -30,6 +30,10 @@ class ChatRing::Workspace < ApplicationRecord
            class_name: 'ChatRing::InboxAssistantBinding',
            inverse_of: :workspace,
            dependent: :destroy
+  has_many :inbox_tool_policies,
+           class_name: 'ChatRing::InboxToolPolicy',
+           inverse_of: :workspace,
+           dependent: :destroy
   has_many :knowledge_scopes,
            class_name: 'ChatRing::KnowledgeScope',
            inverse_of: :workspace,
