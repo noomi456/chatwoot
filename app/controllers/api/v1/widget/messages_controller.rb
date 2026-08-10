@@ -1,5 +1,4 @@
 class Api::V1::Widget::MessagesController < Api::V1::Widget::BaseController
-  before_action :set_conversation, only: [:create]
   before_action :set_message, only: [:update]
 
   def index
@@ -7,12 +6,15 @@ class Api::V1::Widget::MessagesController < Api::V1::Widget::BaseController
   end
 
   def create
-    @message = ChatRing::ConversationWriteBoundary.new(conversation: conversation).call do
-      message = conversation.messages.new(message_params)
-      @message = message
-      build_attachment
-      message.save!
-      message
+    ActiveRecord::Base.transaction do
+      ensure_conversation
+      @message = ChatRing::ConversationWriteBoundary.new(conversation: conversation).call do
+        message = conversation.messages.new(message_params)
+        @message = message
+        build_attachment
+        message.save!
+        message
+      end
     end
   end
 
@@ -46,11 +48,12 @@ class Api::V1::Widget::MessagesController < Api::V1::Widget::BaseController
     end
   end
 
-  def set_conversation
-    return unless conversation.nil?
+  def ensure_conversation
+    return if conversation
 
-    @conversation = create_conversation
-    apply_labels if permitted_params[:labels].present?
+    Inbox.lock.find(inbox.id)
+    @conversation = conversation || create_conversation
+    apply_labels if permitted_params[:labels].present? && @conversation.previously_new_record?
   end
 
   def apply_labels

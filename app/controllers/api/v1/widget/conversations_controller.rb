@@ -9,8 +9,11 @@ class Api::V1::Widget::ConversationsController < Api::V1::Widget::BaseController
   def create
     ActiveRecord::Base.transaction do
       process_update_contact
+      Inbox.lock.find(inbox.id)
       @conversation = create_conversation
-      conversation.messages.create!(message_params)
+      ChatRing::ConversationWriteBoundary.new(conversation: conversation).call do
+        conversation.messages.create!(message_params)
+      end
       # TODO: Temporary fix for message type cast issue, since message_type is returning as string instead of integer
       conversation.reload
     end

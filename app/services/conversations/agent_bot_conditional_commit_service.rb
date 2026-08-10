@@ -122,9 +122,8 @@ class Conversations::AgentBotConditionalCommitService
       content_type: message_attributes[:content_type].presence || :text,
       content: message_attributes[:content],
       source_id: "chatring:reply:#{idempotency_key}",
-      additional_attributes: {
-        'chatring_ai_turn_id' => turn.id,
-        'chatring_evidence_ids' => turn.decision_payload.fetch('evidence_ids', [])
+      content_attributes: {
+        'chatring_citations' => ChatRing::Brain::VisitorCitationPresenter.call(turn)
       }
     )
   end

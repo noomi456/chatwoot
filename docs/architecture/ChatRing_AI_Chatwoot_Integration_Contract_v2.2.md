@@ -794,8 +794,12 @@ production-foundation release gate pass.
 ### 13.1 Native response arbitration
 
 - Greeting enabled: one native greeting plus at most one grounded AI answer.
-- Unknown-email contact with email collection enabled: email input only; no AI turn.
-- Out of office: native OOO only; no AI turn.
+- Unknown-email contact with email collection enabled: email input only; no
+  nonterminal AI turn, provider request or AI reply. A terminal audit turn may record
+  that native email collection owned the trigger.
+- Out of office: native OOO only; no nonterminal AI turn, provider request or AI
+  reply. A terminal audit turn may record that native out-of-office handling owned the
+  trigger.
 - Conflicting public-message automation: binding/activation rejected.
 - Conflicting assignment/status automation: binding/activation rejected.
 - Conflicting automation created or activated after binding: rule change rejected.

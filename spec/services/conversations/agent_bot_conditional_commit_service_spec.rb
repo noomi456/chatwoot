@@ -75,6 +75,31 @@ RSpec.describe Conversations::AgentBotConditionalCommitService do
     expect(outbound_commit.message).to eq(result.message)
   end
 
+  it 'projects visitor-safe citations through native Message content attributes' do
+    turn.evidence.create!(
+      position: 0,
+      evidence_id: 'evidence-1',
+      source_kind: 'website',
+      source_reference: 'https://chatring.ai/pricing',
+      source_title: 'Pricing',
+      public_url: 'https://chatring.ai/pricing',
+      heading_path: ['Plans'],
+      excerpt: 'Internal evidence excerpt',
+      source_content_hash: Digest::SHA256.hexdigest('pricing'),
+      rank: 0,
+      score: 0.9,
+      metadata: { 'internal' => true }
+    )
+
+    message = service.perform.message
+
+    expect(message.content_attributes.fetch('chatring_citations')).to eq(
+      [{ 'title' => 'Pricing', 'url' => 'https://chatring.ai/pricing', 'heading_path' => ['Plans'] }]
+    )
+    expect(message.content_attributes.to_json).not_to match(/Internal evidence excerpt|evidence-1|"internal"/)
+    expect(message.additional_attributes).not_to include('chatring_ai_turn_id', 'chatring_evidence_ids')
+  end
+
   it 'cannot bypass the compile-time public response gate' do
     stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', false)
 
