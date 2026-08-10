@@ -64,9 +64,11 @@ class Api::V1::Accounts::ChatRing::AssistantsController < Api::V1::Accounts::Cha
   def binding_preflight
     authorize(@assistant, :update?)
     result = ChatRing::AssistantManagement::InboxBindingPreflight.new(assistant: @assistant, inbox: requested_inbox).call
+    conflicts = result.conflicts.dup
+    conflicts << release_gate_conflict unless public_ai_release_ready?
     render json: {
-      ready: result.ready,
-      conflicts: result.conflicts,
+      ready: result.ready && public_ai_release_ready?,
+      conflicts: conflicts,
       current_binding: result.current_binding && serialize_binding(result.current_binding),
       impact: result.impact
     }
@@ -75,6 +77,8 @@ class Api::V1::Accounts::ChatRing::AssistantsController < Api::V1::Accounts::Cha
   def bind
     authorize(@assistant, :update?)
     ensure_mutable_assistant!
+    return render_release_gate_closed unless public_ai_release_ready?
+
     binding = ChatRing::AssistantProvisioning::InboxBindingActivator.new(assistant: @assistant, inbox: requested_inbox).call
     render json: serialize_binding(binding), status: :created
   rescue ChatRing::AssistantProvisioning::AgentBotConnector::ConflictError => e
@@ -144,6 +148,21 @@ class Api::V1::Accounts::ChatRing::AssistantsController < Api::V1::Accounts::Cha
       'on_insufficient_evidence' => 'handoff',
       'on_provider_failure' => 'handoff'
     }
+  end
+
+  def public_ai_release_ready?
+    ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY
+  end
+
+  def release_gate_conflict
+    { kind: 'public_ai_release_closed', record_id: nil, blocking: true }
+  end
+
+  def render_release_gate_closed
+    render json: {
+      error: 'Public AI release gate is closed',
+      code: 'public_ai_release_closed'
+    }, status: :conflict
   end
 
   def ensure_mutable_assistant!

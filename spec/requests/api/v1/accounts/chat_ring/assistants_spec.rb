@@ -102,6 +102,7 @@ RSpec.describe 'ChatRing Assistant administration API', type: :request do
   end
 
   it 'preflights, binds and disables through the existing native Inbox services' do
+    stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', true)
     assistant = published_assistant
     inbox = create(:inbox, account: account)
 
@@ -125,6 +126,33 @@ RSpec.describe 'ChatRing Assistant administration API', type: :request do
     expect(response).to have_http_status(:no_content)
     expect(binding.reload).to be_inactive
     expect(inbox.reload.agent_bot).to be_nil
+  end
+
+  it 'keeps new Inbox bindings closed while public AI is disabled' do
+    stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', false)
+    assistant = published_assistant
+    inbox = create(:inbox, account: account)
+
+    get "#{base_path}/assistants/#{assistant.id}/binding_preflight",
+        params: { inbox_id: inbox.id },
+        headers: admin.create_new_auth_token
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include('ready' => false)
+    expect(response.parsed_body['conflicts']).to include(
+      'kind' => 'public_ai_release_closed',
+      'record_id' => nil,
+      'blocking' => true
+    )
+
+    post "#{base_path}/assistants/#{assistant.id}/bind",
+         params: { inbox_id: inbox.id },
+         headers: admin.create_new_auth_token
+
+    expect(response).to have_http_status(:conflict)
+    expect(response.parsed_body).to include('code' => 'public_ai_release_closed')
+    expect(inbox.reload.agent_bot).to be_nil
+    expect(assistant.inbox_bindings).to be_empty
   end
 
   it 'rotates the native managed AgentBot secret without returning it' do
@@ -182,6 +210,7 @@ RSpec.describe 'ChatRing Assistant administration API', type: :request do
   end
 
   it 'reports the native drain impact before switching Assistants' do
+    stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', true)
     original = published_assistant
     replacement = published_assistant(name: 'Replacement Sales')
     inbox = create(:inbox, account: account)

@@ -6,6 +6,7 @@ module ChatRing::AssistantManagementSerialization
       id: assistant.id,
       name: assistant.name,
       state: assistant_display_state(assistant),
+      public_ai_release_ready: ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY,
       current_version: serialize_assistant_version(assistant.current_version),
       bindings: assistant.inbox_bindings.where(status: %i[active draining]).order(:chatwoot_inbox_id).map do |binding|
         serialize_binding(binding)
