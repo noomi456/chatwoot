@@ -14,7 +14,7 @@ class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
 
   def initialize(turn, provider: nil)
     @turn = turn
-    @provider = provider || ChatRing::Brain::RubyLlmProvider.new(turn.assistant_version)
+    @provider = provider || ChatRing::Brain::RubyLlmProvider.new(turn.assistant_version, deadline_at: turn.deadline_at)
   end
 
   def call

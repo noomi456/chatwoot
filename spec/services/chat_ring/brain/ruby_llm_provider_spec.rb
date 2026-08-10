@@ -15,12 +15,15 @@ RSpec.describe ChatRing::Brain::RubyLlmProvider do
   let(:context) { instance_double(RubyLLM::Context) }
   let(:chat) { instance_double(RubyLLM::Chat) }
   let(:configuration) { instance_double(RubyLLM::Configuration) }
+  let(:deadline_at) { 20.seconds.from_now }
 
   before do
     allow(configuration).to receive(:openai_api_key=)
     allow(configuration).to receive(:openai_api_base=)
     allow(configuration).to receive(:model_registry_file=)
     allow(configuration).to receive(:logger=)
+    allow(configuration).to receive(:request_timeout=)
+    allow(configuration).to receive(:max_retries=)
     allow(RubyLLM).to receive(:context) do |&block|
       block.call(configuration)
       context
@@ -43,7 +46,7 @@ RSpec.describe ChatRing::Brain::RubyLlmProvider do
     allow(chat).to receive(:ask).with('turn context').and_return(response)
 
     with_modified_env CHATRING_LLM_API_KEY: 'secret', CHATRING_LLM_API_BASE: 'https://llm.example/v1' do
-      result = described_class.new(version).call(
+      result = described_class.new(version, deadline_at: deadline_at).call(
         messages: [{ role: 'system', content: 'system policy' }, { role: 'user', content: 'turn context' }]
       )
 
@@ -51,6 +54,8 @@ RSpec.describe ChatRing::Brain::RubyLlmProvider do
       expect(result).to have_attributes(input_tokens: 20, output_tokens: 8)
       expect(configuration).to have_received(:openai_api_key=).with('secret')
       expect(configuration).to have_received(:openai_api_base=).with('https://llm.example/v1')
+      expect(configuration).to have_received(:request_timeout=).with(be_between(1, 20))
+      expect(configuration).to have_received(:max_retries=).with(0)
     end
   end
 
@@ -64,5 +69,19 @@ RSpec.describe ChatRing::Brain::RubyLlmProvider do
     end
 
     expect(RubyLLM).not_to have_received(:context)
+  end
+
+  it 'maps a transport deadline to a typed provider timeout without an internal retry' do
+    allow(chat).to receive(:ask).and_raise(Faraday::TimeoutError, 'execution expired')
+
+    with_modified_env CHATRING_LLM_API_KEY: 'secret' do
+      expect do
+        described_class.new(version, deadline_at: deadline_at).call(
+          messages: [{ role: 'system', content: 'system policy' }, { role: 'user', content: 'turn context' }]
+        )
+      end.to raise_error(described_class::Error) { |error| expect(error.code).to eq('provider_timeout') }
+    end
+
+    expect(configuration).to have_received(:max_retries=).with(0)
   end
 end

@@ -1,6 +1,4 @@
 class ChatRing::AiTurnJob < ApplicationJob
-  class CommitEnqueueError < StandardError; end
-
   queue_as :high
 
   retry_on ChatRing::Brain::Runner::RetryableError,
@@ -8,15 +6,13 @@ class ChatRing::AiTurnJob < ApplicationJob
            attempts: 3 do |job, error|
     ChatRing::Brain::FailureFinalizer.call(job.arguments.first, error.code)
   end
-  retry_on CommitEnqueueError, wait: :polynomially_longer, attempts: 3
-
   def perform(turn_id)
     turn = ChatRing::AiTurn.find_by(id: turn_id)
     return unless turn
     return cancel_gate_closed_turn(turn) unless ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY
 
     ChatRing::Brain::Runner.new(turn).call
-    enqueue_commit!(turn.reload)
+    ChatRing::OutboundCommitDispatcher.call(turn.id)
   end
 
   private
@@ -42,13 +38,5 @@ class ChatRing::AiTurnJob < ApplicationJob
         completed_at: Time.current
       )
     end
-  end
-
-  def enqueue_commit!(turn)
-    return unless ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY
-    return unless turn.status_ready_to_commit?
-
-    job = ChatRing::OutboundCommitJob.perform_later(turn.id)
-    raise CommitEnqueueError unless job&.successfully_enqueued?
   end
 end
