@@ -8,7 +8,7 @@ RSpec.describe ChatRing::Knowledge::Retriever do
 
   it 'uses the same account Knowledge Base from two different inbox contexts' do
     index, = active_index
-    allow(described_class).to receive(:provider).with(index).and_return(provider)
+    allow(described_class).to receive(:provider).with(index, timeout_seconds: 10).and_return(provider)
     evidence_set = ChatRing::Knowledge::EvidenceSet.new(
       knowledge_index_id: index.id.to_s,
       provider: 'docs_gpt',
@@ -59,7 +59,7 @@ RSpec.describe ChatRing::Knowledge::Retriever do
   it 'retrieves from the turn-pinned retired index after a newer active pointer is selected' do
     index, = active_index
     provider = instance_double(ChatRing::Knowledge::DocsGptProvider)
-    allow(described_class).to receive(:provider).with(index).and_return(provider)
+    allow(described_class).to receive(:provider).with(index, timeout_seconds: 10).and_return(provider)
     allow(provider).to receive(:retrieve).and_return(
       ChatRing::Knowledge::EvidenceSet.new(
         knowledge_index_id: index.id.to_s, provider: 'docs_gpt', provider_release: index.provider_release,
