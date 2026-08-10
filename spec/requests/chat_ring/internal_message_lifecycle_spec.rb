@@ -371,6 +371,34 @@ RSpec.describe 'ChatRing internal Web Widget message lifecycle', type: :request 
     expect(ChatRing::AiTurnJob).not_to have_been_enqueued
   end
 
+  it 'retains a committed Automation response when a native post-persistence callback raises' do
+    create(
+      :automation_rule,
+      account: account,
+      event_name: 'message_created',
+      conditions: incoming_message_conditions,
+      actions: [{ 'action_name' => 'send_message', 'action_params' => ['Committed Automation reply'] }]
+    )
+    allow(Messages::MessageBuilder).to receive(:new).and_wrap_original do |original, *arguments|
+      builder = original.call(*arguments)
+      next builder unless arguments.third[:content] == 'Committed Automation reply'
+
+      allow(builder).to receive(:perform).and_wrap_original do |perform, *perform_arguments|
+        perform.call(*perform_arguments)
+        raise ActiveJob::EnqueueError
+      end
+      builder
+    end
+
+    message = post_widget_message('Can Automation answer even if delivery enqueue raises?')
+    complete_automation_for(message)
+    turn = ChatRing::AiTurn.find_by!(trigger_message: message)
+
+    expect(message.conversation.messages.where(content: 'Committed Automation reply', private: false)).to exist
+    expect(turn).to have_attributes(status: 'ineligible', decision_type: 'native_automation_response')
+    expect(ChatRing::AiTurnJob).not_to have_been_enqueued
+  end
+
   it 'suppresses AI after an actual native team assignment' do
     team = create(:team, account: account)
     create(
@@ -386,6 +414,27 @@ RSpec.describe 'ChatRing internal Web Widget message lifecycle', type: :request 
     turn = ChatRing::AiTurn.find_by!(trigger_message: message)
 
     expect(message.conversation.reload.team).to eq(team)
+    expect(turn).to have_attributes(status: 'ineligible', decision_type: 'native_automation_lifecycle_change')
+    expect(ChatRing::AiTurnJob).not_to have_been_enqueued
+  end
+
+  it 'suppresses AI when opposite lifecycle actions return the Conversation to its original state' do
+    create(
+      :automation_rule,
+      account: account,
+      event_name: 'message_created',
+      conditions: incoming_message_conditions,
+      actions: [
+        { 'action_name' => 'open_conversation', 'action_params' => [] },
+        { 'action_name' => 'pending_conversation', 'action_params' => [] }
+      ]
+    )
+
+    message = post_widget_message('Keep the actual lifecycle effects authoritative')
+    complete_automation_for(message)
+    turn = ChatRing::AiTurn.find_by!(trigger_message: message)
+
+    expect(message.conversation.reload).to be_pending
     expect(turn).to have_attributes(status: 'ineligible', decision_type: 'native_automation_lifecycle_change')
     expect(ChatRing::AiTurnJob).not_to have_been_enqueued
   end

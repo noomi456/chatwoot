@@ -32,7 +32,7 @@ class ChatRing::NativeHandling::AutomationEffectPolicy
     effects.any? do |effect|
       before = effect[:before].to_h.with_indifferent_access
       after = effect[:after].to_h.with_indifferent_access
-      before[:observation_error].present? || after[:observation_error].present?
+      effect[:lifecycle_observation_error].present? || before[:observation_error].present? || after[:observation_error].present?
     end
   end
 
@@ -44,6 +44,8 @@ class ChatRing::NativeHandling::AutomationEffectPolicy
 
   def lifecycle_changed?
     effects.any? do |effect|
+      next true if effect[:lifecycle_changed] == true
+
       before = effect[:before].to_h.with_indifferent_access
       after = effect[:after].to_h.with_indifferent_access
       LIFECYCLE_ATTRIBUTES.any? { |attribute| before[attribute] != after[attribute] }

@@ -40,6 +40,18 @@ RSpec.describe ChatRing::NativeHandling::AutomationEffectPolicy do
     expect(terminal_reason).to eq('native_automation_lifecycle_change')
   end
 
+  it 'suppresses AI when lifecycle actions changed state even if the final state returned to its original value' do
+    snapshot[:effects].first[:lifecycle_changed] = true
+
+    expect(terminal_reason).to eq('native_automation_lifecycle_change')
+  end
+
+  it 'fails closed when action-level lifecycle observation fails' do
+    snapshot[:effects].first[:lifecycle_observation_error] = 'ActiveRecord::ConnectionNotEstablished'
+
+    expect(terminal_reason).to eq('automation_observation_failed')
+  end
+
   it 'allows priority, label and private-note effects to coexist' do
     after[:priority] = 'high'
     after[:labels] = ['qualified']
