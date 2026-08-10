@@ -41,3 +41,5 @@ class MessageTemplates::Template::EmailCollect
     }
   end
 end
+
+MessageTemplates::Template::EmailCollect.prepend(ChatRing::MessageTemplates::Template::EmailCollect)

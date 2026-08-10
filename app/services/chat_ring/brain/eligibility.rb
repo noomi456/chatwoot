@@ -36,6 +36,7 @@ class ChatRing::Brain::Eligibility
     return binding_failure if binding_failure
     return assistant_failure if assistant_failure
     return policy_failure if policy_failure
+    return template_effect_failure if template_effect_failure
     return 'outside_inbox_hours' if turn.conversation.inbox.out_of_office?
 
     automation_failure
@@ -80,6 +81,12 @@ class ChatRing::Brain::Eligibility
     ChatRing::NativeHandling::AutomationEffectPolicy.terminal_reason(
       turn.native_handling_snapshot['automation']
     )
+  end
+
+  def template_effect_failure
+    return unless turn.runtime_mode_internal?
+
+    ChatRing::NativeHandling::TemplateEffectPolicy.terminal_reason(turn.native_handling_snapshot)
   end
 
   def automation_failure

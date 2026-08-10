@@ -4,8 +4,12 @@ class ChatRing::NativeHandling::CompletionRecorder
       new(message).start
     end
 
-    def record_template(message:, template_ids_before:)
-      new(message).record_template(template_ids_before)
+    def template_observation(message)
+      new(message).template_observation
+    end
+
+    def record_template(message:, observation:, effects:)
+      new(message).record_template(observation, effects)
     end
 
     def record_automation(message:, effects:)
@@ -15,6 +19,10 @@ class ChatRing::NativeHandling::CompletionRecorder
     def candidate?(message)
       new(message).candidate?
     end
+
+    def potential_candidate?(message)
+      new(message).potential_candidate?
+    end
   end
 
   def initialize(message)
@@ -22,19 +30,29 @@ class ChatRing::NativeHandling::CompletionRecorder
   end
 
   def start
-    return unless runtime_open?
-    return unless customer_widget_message?(message.conversation)
+    return unless potential_candidate?
 
     find_or_create_completion
   end
 
-  def record_template(template_ids_before)
+  def template_observation
+    return unless candidate?
+
+    inbox = message.conversation.inbox
+    {
+      template_ids_before: conversation_template_ids,
+      inbox_out_of_office: inbox.out_of_office?,
+      email_collection_required: email_collection_required?
+    }
+  end
+
+  def record_template(observation, effects)
     return unless candidate?
 
     record_once(
       completed_attribute: :template_completed_at,
       snapshot_attribute: :template_snapshot,
-      snapshot: template_snapshot(template_ids_before)
+      snapshot: template_snapshot(observation, effects)
     )
   end
 
@@ -53,7 +71,11 @@ class ChatRing::NativeHandling::CompletionRecorder
   end
 
   def candidate?
-    runtime_open? && ChatRing::NativeHandlingCompletion.exists?(trigger_message: message)
+    potential_candidate? && ChatRing::NativeHandlingCompletion.exists?(trigger_message: message)
+  end
+
+  def potential_candidate?
+    runtime_open? && customer_widget_message?
   end
 
   private
@@ -64,11 +86,14 @@ class ChatRing::NativeHandling::CompletionRecorder
     ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY && !ChatRing::AssistantSpike::EXTERNAL_RUNTIME_ENABLED
   end
 
-  def customer_widget_message?(conversation)
+  def customer_widget_message?
+    conversation = message.conversation
+    agent_bot = conversation.assignee_agent_bot
     message.incoming? &&
       !message.private? &&
       message.sender_type == 'Contact' &&
-      conversation.inbox.channel_type == 'Channel::WebWidget'
+      conversation.inbox.channel_type == 'Channel::WebWidget' &&
+      agent_bot&.chatring_assistant?
   end
 
   def record_once(completed_attribute:, snapshot_attribute:, snapshot:)
@@ -111,33 +136,30 @@ class ChatRing::NativeHandling::CompletionRecorder
     completion.template_snapshot.merge('automation' => completion.automation_snapshot)
   end
 
-  def template_snapshot(template_ids_before)
-    templates = message.conversation.messages.template.reorder(:id).to_a
-    current_ids = templates.map(&:id)
-    delta = templates.reject { |template| template_ids_before.include?(template.id) }
+  def template_snapshot(observation, effects)
+    current_ids = conversation_template_ids
+    template_ids_before = observation.fetch(:template_ids_before)
     {
       trigger_message_id: message.id,
       template_ids_before: template_ids_before,
       template_ids_after: current_ids,
       template_delta_ids: current_ids - template_ids_before
-    }.merge(template_outcomes(templates, delta))
+    }.merge(template_outcomes(observation, effects))
   end
 
-  def template_outcomes(templates, delta)
-    inbox = message.conversation.inbox
+  def template_outcomes(observation, effects)
     {
-      greeting_message_ids: matching_template_ids(delta, inbox.greeting_message),
-      email_input_message_ids: templates.select(&:input_email?).map(&:id),
-      out_of_office_message_ids: matching_template_ids(delta, inbox.out_of_office_message),
-      inbox_out_of_office: inbox.out_of_office?,
-      email_collection_required: email_collection_required?
+      greeting_message_ids: effects.fetch(:greeting_message_ids),
+      email_input_message_ids: effects.fetch(:email_input_message_ids),
+      out_of_office_message_ids: effects.fetch(:out_of_office_message_ids),
+      template_observation_error: effects[:observation_error],
+      inbox_out_of_office: observation[:inbox_out_of_office],
+      email_collection_required: observation[:email_collection_required]
     }
   end
 
-  def matching_template_ids(templates, content)
-    return [] if content.blank?
-
-    templates.select { |template| template.content == content }.map(&:id)
+  def conversation_template_ids
+    message.conversation.messages.template.reorder(:id).pluck(:id)
   end
 
   def email_collection_required?

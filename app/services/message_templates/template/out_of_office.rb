@@ -34,3 +34,5 @@ class MessageTemplates::Template::OutOfOffice
     }
   end
 end
+
+MessageTemplates::Template::OutOfOffice.prepend(ChatRing::MessageTemplates::Template::OutOfOffice)

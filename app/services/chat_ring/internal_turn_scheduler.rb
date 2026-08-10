@@ -117,8 +117,10 @@ class ChatRing::InternalTurnScheduler
     )
     return automation_reason if automation_reason
     return 'automation_conflict' if automation_conflict?
+
+    template_reason = ChatRing::NativeHandling::TemplateEffectPolicy.terminal_reason(native_handling_snapshot)
+    return template_reason if template_reason
     return 'native_out_of_office' if message.conversation.inbox.out_of_office?
-    return 'native_email_collection' if email_collection_required?
   end
 
   def automation_conflict?
@@ -126,10 +128,5 @@ class ChatRing::InternalTurnScheduler
       account: message.conversation.account,
       inbox: message.conversation.inbox
     ).conflicting?
-  end
-
-  def email_collection_required?
-    inbox = message.conversation.inbox
-    inbox.enable_email_collect? && inbox.web_widget? && message.conversation.contact.email.blank?
   end
 end

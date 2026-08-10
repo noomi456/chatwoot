@@ -245,6 +245,36 @@ describe AutomationRuleListener do
           { message: message, changed_attributes: { content: %w[nil Hi] } }
         )
       end
+
+      it 'runs non-Widget native Automation without querying ChatRing completion state' do
+        stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', true)
+        stub_const('ChatRing::AssistantSpike::EXTERNAL_RUNTIME_ENABLED', false)
+
+        channel = create(:channel_email, account: account)
+        inbox = create(:inbox, channel: channel, account: account)
+        email_conversation = create(:conversation, inbox: inbox, account: account)
+        email_message = create(:message, conversation: email_conversation, account: account)
+        email_event = Events::Base.new('message_created', Time.zone.now, { message: email_message })
+        allow(condition_match).to receive(:present?).and_return(true)
+
+        expect(ChatRing::NativeHandling::CompletionRecorder).not_to receive(:candidate?)
+
+        listener.message_created(email_event)
+
+        expect(AutomationRules::ActionService).to have_received(:new).with(automation_rule, account, email_conversation).once
+      end
+
+      it 'does not query ChatRing completion state for an unowned Web Widget conversation' do
+        stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', true)
+        stub_const('ChatRing::AssistantSpike::EXTERNAL_RUNTIME_ENABLED', false)
+        allow(condition_match).to receive(:present?).and_return(true)
+
+        expect(ChatRing::NativeHandlingCompletion).not_to receive(:exists?)
+
+        listener.message_created(event)
+
+        expect(AutomationRules::ActionService).to have_received(:new).with(automation_rule, account, conversation).once
+      end
     end
   end
 end

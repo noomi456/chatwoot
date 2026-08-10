@@ -134,6 +134,42 @@ RSpec.describe 'ChatRing internal Web Widget message lifecycle', type: :request 
     expect(ChatRing::AiTurnJob).to have_been_enqueued.once.with(turn.id)
   end
 
+  it 'keeps an identical-text native greeting distinct from out-of-office handling' do
+    inbox.update!(
+      greeting_enabled: true,
+      greeting_message: 'Same configured text',
+      out_of_office_message: 'Same configured text',
+      enable_email_collect: false
+    )
+
+    message = post_widget_message('What plans do you offer?')
+    complete_automation_for(message)
+    turn = ChatRing::AiTurn.find_by!(trigger_message: message)
+    greeting = message.conversation.messages.template.find_by!(content: 'Same configured text')
+
+    expect(turn).to be_status_received
+    expect(turn.native_handling_snapshot.fetch('greeting_message_ids')).to eq([greeting.id])
+    expect(turn.native_handling_snapshot.fetch('out_of_office_message_ids')).to be_empty
+    expect(ChatRing::Brain::Eligibility.check(turn)).to have_attributes(eligible: true, reason: nil)
+    expect(ChatRing::AiTurnJob).to have_been_enqueued.with(turn.id)
+  end
+
+  it 'fails AI closed when typed template provenance observation fails after native persistence' do
+    inbox.update!(greeting_enabled: true, greeting_message: 'Native greeting', enable_email_collect: false)
+    allow(ChatRing::MessageTemplates::TemplateEffectCollector).to receive(:snapshot_rows).and_raise(
+      ActiveRecord::ConnectionNotEstablished
+    )
+
+    message = post_widget_message('Native greeting must still persist')
+    complete_automation_for(message)
+    turn = ChatRing::AiTurn.find_by!(trigger_message: message)
+
+    expect(message.conversation.messages.template.where(content: 'Native greeting').count).to eq(1)
+    expect(turn).to have_attributes(status: 'ineligible', decision_type: 'native_template_observation_failed')
+    expect(turn.native_handling_snapshot.fetch('template_observation_error')).to eq('ActiveRecord::ConnectionNotEstablished')
+    expect(ChatRing::AiTurnJob).not_to have_been_enqueued
+  end
+
   it 'waits for template completion when native Automation finishes first' do
     automation_finished_before_template = false
     allow(EventDispatcherJob).to receive(:perform_later).and_wrap_original do |original, event_name, timestamp, data|
@@ -265,6 +301,25 @@ RSpec.describe 'ChatRing internal Web Widget message lifecycle', type: :request 
     expect(ChatRing::AiTurnJob).not_to have_been_enqueued
   end
 
+  it 'keeps the pinned email-collection outcome after the Contact supplies an email' do
+    contact.update!(email: nil)
+    inbox.update!(enable_email_collect: true)
+    allow(ChatRing::NativeHandling::CompletionRecorder).to receive(:record_template).and_wrap_original do |method, *args, **kwargs|
+      contact.update!(email: 'visitor@example.com')
+      method.call(*args, **kwargs)
+    end
+
+    message = post_widget_message('I need help')
+    complete_automation_for(message)
+    turn = ChatRing::AiTurn.find_by!(trigger_message: message)
+
+    expect(turn).to have_attributes(status: 'ineligible', decision_type: 'native_email_collection')
+    expect(turn.native_handling_snapshot.fetch('email_collection_required')).to be(true)
+    expect(turn.native_handling_snapshot.fetch('email_input_message_ids')).not_to be_empty
+    expect(ChatRing::Brain::Eligibility.check(turn).reason).to eq('native_email_collection')
+    expect(ChatRing::AiTurnJob).not_to have_been_enqueued
+  end
+
   it 'records native out-of-office handling and does not enqueue inference' do
     inbox.update!(working_hours_enabled: true, out_of_office_message: 'We are currently closed')
     inbox.working_hours.find_by!(day_of_week: Time.zone.today.wday).update!(closed_all_day: true, open_all_day: false)
@@ -280,6 +335,114 @@ RSpec.describe 'ChatRing internal Web Widget message lifecycle', type: :request 
     expect(turn.decision_type).to eq('native_out_of_office')
     expect(turn.native_handling_snapshot.fetch('out_of_office_message_ids')).to eq([out_of_office.id])
     expect(ChatRing::AiTurnJob).not_to have_been_enqueued
+  end
+
+  it 'keeps the pinned out-of-office outcome after native hours reopen' do
+    inbox.update!(working_hours_enabled: true, out_of_office_message: 'We are currently closed')
+    hours = inbox.working_hours.find_by!(day_of_week: Time.zone.today.wday)
+    hours.update!(closed_all_day: true, open_all_day: false)
+    allow(ChatRing::NativeHandling::CompletionRecorder).to receive(:record_template).and_wrap_original do |method, *args, **kwargs|
+      hours.update!(closed_all_day: false, open_all_day: true)
+      inbox.update!(out_of_office_message: 'Changed after native response')
+      method.call(*args, **kwargs)
+    end
+
+    message = post_widget_message('What plans do you offer?')
+    complete_automation_for(message)
+    turn = ChatRing::AiTurn.find_by!(trigger_message: message)
+
+    expect(turn).to have_attributes(status: 'ineligible', decision_type: 'native_out_of_office')
+    expect(turn.native_handling_snapshot.fetch('inbox_out_of_office')).to be(true)
+    expect(ChatRing::Brain::Eligibility.check(turn).reason).to eq('native_out_of_office')
+    expect(ChatRing::AiTurnJob).not_to have_been_enqueued
+  end
+
+  it 'runs native templates when ChatRing pre-observation fails' do
+    inbox.update!(greeting_enabled: true, greeting_message: 'Native greeting')
+    allow(ChatRing::NativeHandling::CompletionRecorder).to receive(:template_observation).and_raise(
+      ActiveRecord::ConnectionNotEstablished
+    )
+
+    message = post_widget_message('Native handling must run first')
+
+    expect(message.conversation.messages.template.where(content: 'Native greeting')).to exist
+    completion = ChatRing::NativeHandlingCompletion.find_by!(trigger_message: message)
+    expect(completion.template_completed_at).to be_nil
+    expect(completion.released_at).to be_nil
+    expect(ChatRing::AiTurn.where(trigger_message: message)).not_to exist
+  end
+
+  it 'runs native templates when ChatRing candidate classification fails' do
+    inbox.update!(greeting_enabled: true, greeting_message: 'Native greeting')
+    allow(ChatRing::NativeHandling::CompletionRecorder).to receive(:potential_candidate?).and_raise(
+      ActiveRecord::ConnectionNotEstablished
+    )
+
+    message = post_widget_message('Native handling still runs')
+
+    expect(message.conversation.messages.template.where(content: 'Native greeting')).to exist
+    expect(ChatRing::AiTurn.where(trigger_message: message)).not_to exist
+  end
+
+  it 'runs native Automation when candidate pre-observation fails' do
+    create(
+      :automation_rule,
+      account: account,
+      event_name: 'message_created',
+      conditions: incoming_message_conditions,
+      actions: [{ 'action_name' => 'add_label', 'action_params' => ['native_pre_observation_effect'] }]
+    )
+    message = post_widget_message('Keep the native Automation')
+    allow(ChatRing::NativeHandling::CompletionRecorder).to receive(:candidate?).and_raise(
+      ActiveRecord::ConnectionNotEstablished
+    )
+
+    expect { complete_automation_for(message) }.not_to raise_error
+
+    expect(message.conversation.reload.label_list).to include('native_pre_observation_effect')
+    completion = ChatRing::NativeHandlingCompletion.find_by!(trigger_message: message)
+    expect(completion.automation_completed_at).to be_nil
+    expect(ChatRing::AiTurn.where(trigger_message: message)).not_to exist
+  end
+
+  it 'runs native Automation when ChatRing candidate classification fails' do
+    create(
+      :automation_rule,
+      account: account,
+      event_name: 'message_created',
+      conditions: incoming_message_conditions,
+      actions: [{ 'action_name' => 'add_label', 'action_params' => ['native_candidate_fallback'] }]
+    )
+    message = post_widget_message('Keep native Automation available')
+    allow(ChatRing::NativeHandling::CompletionRecorder).to receive(:potential_candidate?).and_raise(
+      ActiveRecord::ConnectionNotEstablished
+    )
+
+    expect { complete_automation_for(message) }.not_to raise_error
+
+    expect(message.conversation.reload.label_list).to include('native_candidate_fallback')
+    expect(ChatRing::AiTurn.where(trigger_message: message)).not_to exist
+  end
+
+  it 'runs native Automation once when collector setup fails before yielding' do
+    create(
+      :automation_rule,
+      account: account,
+      event_name: 'message_created',
+      conditions: incoming_message_conditions,
+      actions: [{ 'action_name' => 'add_label', 'action_params' => ['native_collector_fallback'] }]
+    )
+    message = post_widget_message('Keep the native Automation once')
+    allow(ChatRing::NativeHandling::AutomationEffectCollector).to receive(:capture).and_raise(
+      ActiveRecord::ConnectionNotEstablished
+    )
+
+    expect { complete_automation_for(message) }.not_to raise_error
+
+    expect(message.conversation.reload.label_list).to include('native_collector_fallback')
+    completion = ChatRing::NativeHandlingCompletion.find_by!(trigger_message: message)
+    expect(completion.automation_completed_at).to be_nil
+    expect(ChatRing::AiTurn.where(trigger_message: message)).not_to exist
   end
 
   it 'does not affect an unbound native Web Widget inbox' do
