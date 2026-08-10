@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_08_10_004000) do
+ActiveRecord::Schema[7.1].define(version: 2026_08_10_005000) do
   # These extensions should be enabled to support this database
   enable_extension "pg_stat_statements"
   enable_extension "pg_trgm"
@@ -763,6 +763,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_10_004000) do
     t.index ["assistant_version_id"], name: "index_chat_ring_ai_turns_on_assistant_version_id"
     t.index ["inbox_assistant_binding_id"], name: "idx_chatring_turns_on_inbox_binding"
     t.index ["knowledge_index_id"], name: "index_chat_ring_ai_turns_on_knowledge_index_id"
+    t.index ["status", "deadline_at", "updated_at"], name: "idx_chatring_ai_turns_recovery_due", where: "(status = ANY (ARRAY[0, 1, 2, 3, 4]))"
     t.index ["workspace_id", "chatwoot_conversation_id", "trigger_message_id"], name: "idx_chatring_turns_one_per_trigger", unique: true
     t.index ["workspace_id"], name: "index_chat_ring_ai_turns_on_workspace_id"
   end

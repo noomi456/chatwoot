@@ -15,6 +15,7 @@ Own ChatRing installation identity defaults while preserving configuration compa
 - Preserve upstream environment-variable names and configuration keys unless an explicit migration is implemented and tested.
 - Phase 1 configuration must not enable Enterprise or Captain features.
 - `ChatRing::AssistantSpike` contains compile-time gates only. CE-owned internal scheduling extensions may register through source-verified native seams, but no deterministic responder or Enterprise runtime may be activated.
+- `config/schedule.yml` may trigger the bounded ChatRing AI recovery sweep. The sweep only redelivers persisted execution/outcome records through existing ActiveJob and native commit paths; it may not decide customer content, Conversation state, assignment or delivery.
 
 ## Work Guidance
 

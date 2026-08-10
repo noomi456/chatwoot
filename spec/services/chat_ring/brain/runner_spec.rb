@@ -58,15 +58,15 @@ RSpec.describe ChatRing::Brain::Runner do
   end
 
   it 'records a failed attempt and releases the turn for a bounded retry after a provider failure' do
-    allow(provider).to receive(:call).and_raise(ChatRing::Brain::RubyLlmProvider::Error.new('provider_failed'))
+    allow(provider).to receive(:call).and_raise(ChatRing::Brain::RubyLlmProvider::Error.new('provider_unavailable'))
 
     expect { described_class.new(turn, provider: provider).call }.to raise_error do |error|
       expect(error.class.name).to eq('ChatRing::Brain::Runner::RetryableError')
-      expect(error.message).to eq('provider_failed')
+      expect(error.message).to eq('provider_unavailable')
     end
 
     expect(turn.reload).to be_status_received
-    expect(turn.failure_code).to eq('provider_failed')
+    expect(turn.failure_code).to eq('provider_unavailable')
     expect(turn.attempts.first).to be_status_failed
   end
 
@@ -109,6 +109,31 @@ RSpec.describe ChatRing::Brain::Runner do
 
     expect(turn.reload).to have_attributes(status: 'failed', failure_code: 'provider_configuration_error')
     expect(turn.attempts.count).to eq(1)
+  end
+
+  it 'enforces one durable provider-attempt cap across delayed and recovery job chains' do
+    capped_turn = build_turn(handoff_on_provider_failure: true)
+    2.times do |position|
+      capped_turn.attempts.create!(
+        attempt_number: position + 1,
+        provider: 'openai',
+        model: 'gpt-5.4',
+        status: :failed,
+        request_digest: Digest::SHA256.hexdigest("prior-attempt-#{position}"),
+        started_at: 1.minute.ago,
+        completed_at: 1.minute.ago,
+        failure_code: 'provider_unavailable'
+      )
+    end
+    allow(provider).to receive(:call).and_raise(ChatRing::Brain::RubyLlmProvider::Error.new('provider_unavailable'))
+
+    expect { described_class.new(capped_turn, provider: provider).call }.to raise_error(ChatRing::Brain::Runner::RetryableError)
+    expect { described_class.new(capped_turn.reload, provider: provider).call }.not_to raise_error
+
+    expect(provider).to have_received(:call).once
+    expect(capped_turn.reload.attempts.count).to eq(ChatRing::AiTurn::MAX_PROVIDER_ATTEMPTS)
+    expect(capped_turn).to be_status_ready_to_commit
+    expect(capped_turn.outbound_commit).to have_attributes(status: 'pending', outcome_type: 'handoff')
   end
 
   it 'terminalizes a retrieval configuration failure instead of stranding a running turn' do
@@ -198,13 +223,14 @@ RSpec.describe ChatRing::Brain::Runner do
     expect(provider).not_to have_received(:call)
   end
 
-  def build_turn
+  def build_turn(handoff_on_provider_failure: false)
     account = create(:account)
     workspace = account.chat_ring_workspace
     inbox = create(:channel_widget, account: account).inbox
     assistant = ChatRing::Assistant.create!(workspace: workspace, name: 'Support')
     scope = workspace.knowledge_scopes.find_by!(business_wide: true)
-    ChatRing::AssistantVersions::Publisher.new(assistant: assistant, knowledge_scope: scope).call
+    configuration = handoff_on_provider_failure ? { handoff_policy: { 'on_provider_failure' => 'handoff' } } : {}
+    ChatRing::AssistantVersions::Publisher.new(assistant: assistant, knowledge_scope: scope, configuration: configuration).call
     connection = ChatRing::AssistantProvisioning::AgentBotProvisioner.new(assistant: assistant).call
     ChatRing::AssistantProvisioning::InboxBindingActivator.new(assistant: assistant, inbox: inbox).call
     conversation = create(:conversation, account: account, inbox: inbox, status: :pending,
