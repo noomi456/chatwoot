@@ -41,7 +41,10 @@ vi.mock('dashboard/composables', () => ({
 vi.mock('dashboard/composables/store', () => ({
   useStore: () => ({ dispatch: mocks.dispatch }),
   useMapGetter: () => ({
-    value: [{ id: 7, name: 'Website', channel_type: 'Channel::WebWidget' }],
+    value: [
+      { id: 7, name: 'Website', channel_type: 'Channel::WebWidget' },
+      { id: 9, name: 'Product Demo', channel_type: 'Channel::WebWidget' },
+    ],
   }),
 }));
 
@@ -63,14 +66,16 @@ vi.mock('dashboard/api/chatRingAssistants', () => ({
 }));
 
 const assistant = ({
+  id = 3,
+  name = 'Website Sales',
   state = 'draft',
   currentVersion = null,
   bindings = [],
   lockVersion = 0,
   releaseReady = false,
 } = {}) => ({
-  id: 3,
-  name: 'Website Sales',
+  id,
+  name,
   state,
   public_ai_release_ready: releaseReady,
   current_version: currentVersion,
@@ -92,8 +97,11 @@ const assistant = ({
   },
 });
 
-const mountPage = async (detail = assistant()) => {
-  mocks.list.mockResolvedValue({ data: [{ ...detail, draft: undefined }] });
+const mountPage = async (
+  detail = assistant(),
+  summaries = [{ ...detail, draft: undefined }]
+) => {
+  mocks.list.mockResolvedValue({ data: summaries });
   mocks.show.mockResolvedValue({ data: detail });
   mocks.turns.mockResolvedValue({ data: [] });
   const wrapper = mount(AssistantsIndex, {
@@ -185,6 +193,28 @@ describe('ChatRing Assistant administration page', () => {
     expect(mocks.show).toHaveBeenCalledTimes(1);
   });
 
+  it('preserves the draft and requires reload when publish detects a stale version', async () => {
+    mocks.publish.mockRejectedValue({ response: { status: 409 } });
+    const wrapper = await mountPage(
+      assistant({
+        state: 'published_unbound',
+        releaseReady: true,
+        currentVersion: { id: 10, version: 1, llm_model: 'gpt-5.4' },
+        lockVersion: 4,
+      })
+    );
+
+    const publishButton = wrapper
+      .findAll('button')
+      .find(item => item.text().includes('CHATRING_ASSISTANTS.PUBLISH'));
+    await publishButton.trigger('click');
+    await flushPromises();
+
+    expect(mocks.publish).toHaveBeenCalledWith(3, 4);
+    expect(wrapper.text()).toContain('CHATRING_ASSISTANTS.RELOAD_DRAFT');
+    expect(mocks.show).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps new Inbox connection controls closed with the public release gate', async () => {
     const wrapper = await mountPage(
       assistant({
@@ -214,6 +244,7 @@ describe('ChatRing Assistant administration page', () => {
     mocks.bindingPreflight.mockResolvedValue({
       data: {
         ready: true,
+        current_binding: null,
         conflicts: [],
         impact: {
           pending_conversations: 0,
@@ -250,5 +281,142 @@ describe('ChatRing Assistant administration page', () => {
     await disableButton.trigger('click');
     await flushPromises();
     expect(mocks.disableBinding).toHaveBeenCalledWith(44);
+  });
+
+  it('renders and independently disables every active or draining Inbox binding', async () => {
+    const detail = assistant({
+      state: 'active',
+      releaseReady: true,
+      currentVersion: { id: 10, version: 1, llm_model: 'gpt-5.4' },
+      bindings: [
+        { id: 44, inbox_id: 7, status: 'active' },
+        { id: 45, inbox_id: 9, status: 'draining' },
+      ],
+    });
+    const wrapper = await mountPage(detail);
+
+    expect(wrapper.text()).toContain('Website');
+    expect(wrapper.text()).toContain('Product Demo');
+    expect(wrapper.text()).toContain('status:draining');
+
+    vi.spyOn(window, 'confirm').mockReturnValueOnce(true);
+    mocks.disableBinding.mockResolvedValue({});
+    mocks.show.mockResolvedValueOnce({ data: detail });
+    const disableButtons = wrapper
+      .findAll('button')
+      .filter(item => item.text().includes('CHATRING_ASSISTANTS.DISABLE'));
+    await disableButtons[1].trigger('click');
+    await flushPromises();
+
+    expect(mocks.disableBinding).toHaveBeenCalledWith(45);
+  });
+
+  it('uses the selected Inbox preflight binding to label a switch and rechecks after conflict', async () => {
+    const detail = assistant({
+      state: 'published_unbound',
+      releaseReady: true,
+      currentVersion: { id: 10, version: 1, llm_model: 'gpt-5.4' },
+    });
+    mocks.bindingPreflight.mockResolvedValue({
+      data: {
+        ready: true,
+        current_binding: { id: 88, assistant_id: 99, inbox_id: 9 },
+        conflicts: [],
+        impact: {
+          pending_conversations: 0,
+          non_pending_conversations: 0,
+          nonterminal_turns: 0,
+        },
+      },
+    });
+    mocks.bind.mockRejectedValue({ response: { status: 409 } });
+    const wrapper = await mountPage(detail);
+
+    await wrapper.findAll('select')[2].setValue('9');
+    const checkButton = wrapper
+      .findAll('button')
+      .find(item => item.text().includes('CHATRING_ASSISTANTS.CHECK_INBOX'));
+    await checkButton.trigger('click');
+    await flushPromises();
+
+    const switchButton = wrapper
+      .findAll('button')
+      .find(item => item.text().includes('CHATRING_ASSISTANTS.SWITCH'));
+    expect(switchButton).toBeDefined();
+    await switchButton.trigger('click');
+    await flushPromises();
+
+    expect(mocks.bind).toHaveBeenCalledWith(3, 9);
+    expect(wrapper.text()).not.toContain('CHATRING_ASSISTANTS.PREFLIGHT_READY');
+    expect(mocks.show).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores a stale Assistant response after a newer selection wins', async () => {
+    const first = assistant({ id: 3, name: 'Website Sales' });
+    const second = assistant({ id: 4, name: 'Demo Sales' });
+    const wrapper = await mountPage(first, [
+      { ...first, draft: undefined },
+      { ...second, draft: undefined },
+    ]);
+
+    let resolveSecond;
+    let resolveSecondTurns;
+    mocks.show
+      .mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            resolveSecond = resolve;
+          })
+      )
+      .mockResolvedValueOnce({ data: first });
+    mocks.turns
+      .mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            resolveSecondTurns = resolve;
+          })
+      )
+      .mockResolvedValueOnce({ data: [] });
+
+    const assistantButtons = wrapper.findAll('aside button');
+    await assistantButtons[1].trigger('click');
+    await assistantButtons[0].trigger('click');
+    await flushPromises();
+    resolveSecond({ data: second });
+    resolveSecondTurns({ data: [] });
+    await flushPromises();
+
+    expect(wrapper.find('h2').text()).toContain('Website Sales');
+  });
+
+  it('serializes effectful operations and blocks archive with unsaved changes', async () => {
+    const detail = assistant({
+      state: 'published_unbound',
+      releaseReady: true,
+      currentVersion: { id: 10, version: 1, llm_model: 'gpt-5.4' },
+    });
+    let resolveRotation;
+    mocks.rotateManagedSecret.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          resolveRotation = resolve;
+        })
+    );
+    const wrapper = await mountPage(detail);
+    const rotateButton = wrapper
+      .findAll('button')
+      .find(item => item.text().includes('CHATRING_ASSISTANTS.ROTATE_SECRET'));
+
+    await rotateButton.trigger('click');
+    await rotateButton.trigger('click');
+    expect(mocks.rotateManagedSecret).toHaveBeenCalledTimes(1);
+    resolveRotation({});
+    await flushPromises();
+
+    await wrapper.findAll('textarea')[1].setValue('Unsaved instructions');
+    const archiveButton = wrapper
+      .findAll('button')
+      .find(item => item.text().includes('CHATRING_ASSISTANTS.ARCHIVE'));
+    expect(archiveButton.attributes('disabled')).toBeDefined();
   });
 });
