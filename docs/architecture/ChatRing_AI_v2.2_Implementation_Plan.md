@@ -1,10 +1,12 @@
 # ChatRing AI v2.2 implementation plan
 
-**Authority:** `ChatRing_AI_Chatwoot_Integration_Contract_v2.2.md`
+**PR #17 authority:** `ChatRing_AI_Chatwoot_Integration_Contract_v2.2.md`
+
+**Post-PR #17 production authority:** `ChatRing_Complete_Production_Foundation_Direction.md`
 
 **Base tree:** deployed-equivalent `0309e77ea7954dec5185dc480f31dab610b468d4`
 
-**Release rule:** `PUBLIC_AI_RELEASE_READY` remains `false` until every v2.2 Section 13 gate passes on the exact deployed image.
+**Release rule:** `PUBLIC_AI_RELEASE_READY` remains `false` until every v2.2 Section 13 gate and the complete production-foundation release gate pass on the exact deployed paths.
 
 ## 1. Verified integration map
 
@@ -287,9 +289,12 @@ Run, in order:
 8. clean Rails/Sidekiq/DocsGPT security/error scan;
 9. manual fresh-widget supported, unsupported and immediate-takeover scenarios.
 
-Only a separate final commit changes `PUBLIC_AI_RELEASE_READY` to true. That commit is
-deployed by immutable digest and the manual widget checks are repeated. Any failed gate
-returns the constant to false; no partial public rollout is claimed.
+PR D does not open `PUBLIC_AI_RELEASE_READY`. It proves the bounded v2.2 lifecycle and
+execution path only. A separate final release commit may change the gate to true only
+after the complete production foundation in
+`ChatRing_Complete_Production_Foundation_Direction.md` is implemented and proven. Any
+failed gate leaves the constant false; no partial public rollout is claimed as product
+completion.
 
 ## 5. Migration and deployment safety
 
@@ -319,17 +324,21 @@ returns the constant to false; no partial public rollout is claimed.
 - Confirm public AI remains disabled unless Batch 7 is complete.
 - Update DOX only when a durable contract changed.
 
-## 7. Definition of implementation completion
+## 7. PR #17 and v2.2 completion boundary
 
-The work has three explicit gates:
+The work has three distinct checkpoints:
 
 1. **Architecture frozen:** PR #17 passes its five-question native-first review, CI and
    containment deployment. No new transport, ownership, assignment, handoff or delivery
    architecture is added afterward without runtime evidence disproving an invariant.
-2. **Core AI proven:** Follow-up PRs A–D pass the exact Web Widget production path and
-   every v2.2 Section 13 concurrency/reliability gate. At this point the AI core is done.
-3. **Channel certification:** each additional channel is a compatibility project against
-   the frozen core and its own native lifecycle; it is not unfinished core architecture.
+2. **v2.2 Web Widget path proven:** Follow-up PRs A–D pass the exact Web Widget path and
+   every v2.2 Section 13 concurrency/reliability gate. This proves the bounded native
+   lifecycle; it is not ChatRing v1 product completion and does not open the public gate.
+3. **ChatRing v1 production foundation proven:** the BrainInvocation/context boundary,
+   native Automation/action integration, enabled-channel certification, one real external
+   capability, trusted business events, transactional and AI-assisted outbound, and full
+   production proof pass the release definition in
+   `ChatRing_Complete_Production_Foundation_Direction.md`.
 
 Green unit tests, service-only barriers or a single successful widget response are not
 sufficient completion evidence.
