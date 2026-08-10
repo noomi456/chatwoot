@@ -20,7 +20,7 @@ RSpec.describe ChatRing::Brain::FailureFinalizer do
   def build_turn
     account = create(:account)
     workspace = account.chat_ring_workspace
-    inbox = create(:inbox, account: account)
+    inbox = create(:channel_widget, account: account).inbox
     assistant = ChatRing::Assistant.create!(workspace: workspace, name: 'Support')
     scope = workspace.knowledge_scopes.find_by!(business_wide: true)
     ChatRing::AssistantVersions::Publisher.new(
@@ -32,8 +32,19 @@ RSpec.describe ChatRing::Brain::FailureFinalizer do
     ChatRing::AssistantProvisioning::InboxBindingActivator.new(assistant: assistant, inbox: inbox).call
     conversation = create(:conversation, account: account, inbox: inbox, status: :pending,
                                          assignee_agent_bot: connection.agent_bot)
-    message = create(:message, account: account, inbox: inbox, conversation: conversation,
-                               message_type: :incoming, sender: conversation.contact, private: false)
+    message = create_managed_message(account: account, inbox: inbox, conversation: conversation)
+    complete_native_automation(message)
     ChatRing::AiTurn.find_by!(workspace: workspace, conversation: conversation, trigger_message: message)
+  end
+
+  def create_managed_message(account:, inbox:, conversation:)
+    ChatRing::ConversationWriteBoundary.new(conversation: conversation).call do
+      create(:message, account: account, inbox: inbox, conversation: conversation,
+                       message_type: :incoming, sender: conversation.contact, private: false)
+    end
+  end
+
+  def complete_native_automation(message)
+    EventDispatcherJob.perform_now(Message::MESSAGE_CREATED, message.created_at, { message: message, performed_by: nil })
   end
 end
