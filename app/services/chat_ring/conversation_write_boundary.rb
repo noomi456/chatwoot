@@ -11,7 +11,10 @@ class ChatRing::ConversationWriteBoundary
       @locked_conversation = Conversation.lock.find(conversation.id) if managed_bindings.exists?
 
       message = perform_native_write(&)
-      complete_native_human_takeover(message) if @locked_conversation && managed_bindings.exists?
+      if @locked_conversation && managed_bindings.exists?
+        start_native_handling_completion(message)
+        complete_native_human_takeover(message)
+      end
       message
     ensure
       @locked_conversation = nil
@@ -50,6 +53,12 @@ class ChatRing::ConversationWriteBoundary
       assignee_id: message.sender_id
     ).perform
     message.association(:conversation).reset
+  end
+
+  def start_native_handling_completion(message)
+    ChatRing::NativeHandling::CompletionRecorder.start(message)
+  rescue StandardError => e
+    Rails.logger.error("[ChatRing] native handling start failed message_id=#{message.id} error=#{e.class.name}")
   end
 
   def authoritative_conversation

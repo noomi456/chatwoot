@@ -152,13 +152,20 @@ RSpec.describe ChatRing::AssistantProvisioning::InboxBindingActivator do
       status: :pending,
       assignee_agent_bot: connection.agent_bot
     )
-    trigger_message = create(
-      :message,
-      account: account,
-      inbox: inbox,
-      conversation: conversation,
-      sender: conversation.contact,
-      message_type: :incoming
+    trigger_message = ChatRing::ConversationWriteBoundary.new(conversation: conversation).call do
+      create(
+        :message,
+        account: account,
+        inbox: inbox,
+        conversation: conversation,
+        sender: conversation.contact,
+        message_type: :incoming
+      )
+    end
+    EventDispatcherJob.perform_now(
+      Message::MESSAGE_CREATED,
+      trigger_message.created_at,
+      { message: trigger_message, performed_by: nil }
     )
     turn = ChatRing::AiTurn.find_by!(trigger_message: trigger_message)
     replacement = ChatRing::Assistant.create!(workspace: workspace, name: 'Sales')

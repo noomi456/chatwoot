@@ -84,3 +84,5 @@ class AutomationRuleListener < BaseListener
     performed_by_automation?(event) || message.activity? || message.auto_reply_email?
   end
 end
+
+AutomationRuleListener.prepend(ChatRing::AutomationRuleListener)

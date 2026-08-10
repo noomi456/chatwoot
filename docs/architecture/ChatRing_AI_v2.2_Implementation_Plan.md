@@ -270,6 +270,18 @@ Work:
 This PR is required before Brain expansion. PR #17 freezes native authority and
 containment, not the current post-template scheduling location.
 
+Characterization selected the minimal durable record permitted above:
+`ChatRing::NativeHandlingCompletion`, uniquely keyed to the native trigger Message.
+The scoped Web Widget writer creates it only after the locked managed-binding recheck,
+so a pre-binding Message cannot be adopted by a later activation. It records the
+synchronous-template snapshot and immediate-Automation completion/effect snapshot,
+then links the single released `AiTurn`. It is a two-sided completion latch,
+not a responder or Conversation lifecycle state machine. The template extension calls
+the native template hook with `super`; the Automation extension wraps the native
+listener/action execution and observes its resulting rows without duplicating condition
+evaluation or action execution. Release rechecks the native managed relationship under
+the established Inbox then Conversation lock order.
+
 ### Follow-up PR B — BrainInvocation, context and policy
 
 Native authority reused: Account, Inbox, Contact/ContactInbox, Conversation, Message,

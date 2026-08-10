@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_08_09_003000) do
+ActiveRecord::Schema[7.1].define(version: 2026_08_10_000000) do
   # These extensions should be enabled to support this database
   enable_extension "pg_stat_statements"
   enable_extension "pg_trgm"
@@ -1037,6 +1037,20 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_09_003000) do
     t.check_constraint "status::text = ANY (ARRAY['mapping'::character varying, 'mapped'::character varying, 'extracting'::character varying, 'available'::character varying, 'refreshing'::character varying, 'refresh_failed'::character varying, 'failed'::character varying, 'deleted'::character varying]::text[])", name: "chatring_website_sources_status_check"
   end
 
+  create_table "chat_ring_native_handling_completions", force: :cascade do |t|
+    t.bigint "trigger_message_id", null: false
+    t.bigint "ai_turn_id"
+    t.jsonb "template_snapshot", default: {}, null: false
+    t.jsonb "automation_snapshot", default: {}, null: false
+    t.datetime "template_completed_at"
+    t.datetime "automation_completed_at"
+    t.datetime "released_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["ai_turn_id"], name: "idx_chatring_native_handling_one_per_turn", unique: true, where: "(ai_turn_id IS NOT NULL)"
+    t.index ["trigger_message_id"], name: "idx_chatring_native_handling_one_per_message", unique: true
+  end
+
   create_table "chat_ring_outbound_commits", force: :cascade do |t|
     t.bigint "ai_turn_id", null: false
     t.string "idempotency_key", null: false
@@ -1938,6 +1952,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_09_003000) do
   add_foreign_key "chat_ring_knowledge_scopes", "chat_ring_workspaces", column: "workspace_id", on_delete: :cascade
   add_foreign_key "chat_ring_knowledge_website_sources", "chat_ring_knowledge_bases", column: "knowledge_base_id", on_delete: :cascade
   add_foreign_key "chat_ring_knowledge_website_sources", "users", column: "created_by_id", on_delete: :nullify
+  add_foreign_key "chat_ring_native_handling_completions", "chat_ring_ai_turns", column: "ai_turn_id", on_delete: :nullify
+  add_foreign_key "chat_ring_native_handling_completions", "messages", column: "trigger_message_id", on_delete: :cascade
   add_foreign_key "chat_ring_outbound_commits", "chat_ring_ai_turns", column: "ai_turn_id", on_delete: :cascade
   add_foreign_key "chat_ring_outbound_commits", "messages", column: "chatwoot_message_id", on_delete: :restrict
   add_foreign_key "chat_ring_webhook_deliveries", "chat_ring_assistant_agent_bot_connections", column: "assistant_agent_bot_connection_id", on_delete: :cascade

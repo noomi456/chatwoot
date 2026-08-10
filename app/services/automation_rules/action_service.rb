@@ -65,3 +65,5 @@ class AutomationRules::ActionService < ActionService
     end
   end
 end
+
+AutomationRules::ActionService.prepend(ChatRing::AutomationRules::ActionService)
