@@ -18,7 +18,14 @@ class ChatRing::NativeHandlingCompletion < ApplicationRecord
   def enqueue_released_turn
     return unless ai_turn&.status_received?
 
-    job = ChatRing::AiTurnJob.perform_later(ai_turn_id)
-    ai_turn.update!(failure_code: 'turn_enqueue_failed') unless job&.successfully_enqueued?
+    result = ChatRing::AiTurnDispatcher.call(ai_turn)
+    failure_code = if result.primary_enqueued
+                     nil
+                   elsif result.recovery_enqueued
+                     'turn_enqueue_failed_recovery_scheduled'
+                   else
+                     'turn_enqueue_and_recovery_failed'
+                   end
+    ai_turn.update!(failure_code: failure_code)
   end
 end

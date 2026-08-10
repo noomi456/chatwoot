@@ -20,15 +20,26 @@ RSpec.describe ChatRing::Brain::FailureFinalizer do
     expect(turn.conversation.reload).to have_attributes(status: 'open', assignee_agent_bot_id: nil)
   end
 
-  it 'does not prepare a fallback outcome after the turn deadline' do
+  it 'still executes the configured native fallback handoff after the inference deadline' do
     turn = build_turn
+    allow(ChatRing::OutboundCommitJob).to receive(:perform_later).and_return(false)
     travel_to(turn.deadline_at + 1.second)
 
     described_class.call(turn.id, 'provider_failed')
 
-    expect(turn.reload).to be_status_ineligible
-    expect(turn.decision_type).to eq('turn_deadline_expired')
-    expect(turn.decision_payload).to eq({})
+    expect(turn.reload).to be_status_handed_off
+    expect(turn.outbound_commit).to have_attributes(status: 'committed', outcome_type: 'handoff')
+    expect(turn.conversation.reload).to have_attributes(status: 'open', assignee_agent_bot_id: nil)
+  end
+
+  it 'does not overwrite a terminal turn when an exhausted duplicate arrives late' do
+    turn = build_turn
+    turn.update!(status: :cancelled, failure_code: 'newer_customer_message', completed_at: Time.current)
+
+    described_class.call(turn.id, 'provider_failed')
+
+    expect(turn.reload).to have_attributes(status: 'cancelled', failure_code: 'newer_customer_message')
+    expect(turn.outbound_commit).to be_nil
   end
 
   def build_turn

@@ -3,7 +3,7 @@ require 'ruby_llm'
 
 class ChatRing::Brain::RubyLlmProvider
   MAX_REQUEST_TIMEOUT = 30
-  MIN_REQUEST_TIMEOUT = 1
+  OUTCOME_RESERVE = 2
 
   class Error < StandardError
     attr_reader :code
@@ -32,6 +32,8 @@ class ChatRing::Brain::RubyLlmProvider
     raise Error.new('provider_configuration_error', e.message)
   rescue JSON::ParserError, TypeError => e
     raise Error.new('provider_invalid_response', e.message)
+  rescue Error
+    raise
   rescue StandardError => e
     raise Error.new('provider_failed', e.message)
   end
@@ -54,8 +56,10 @@ class ChatRing::Brain::RubyLlmProvider
   def request_timeout
     return MAX_REQUEST_TIMEOUT if deadline_at.blank?
 
-    remaining = (deadline_at - Time.current).floor
-    remaining.clamp(MIN_REQUEST_TIMEOUT, MAX_REQUEST_TIMEOUT)
+    remaining = (deadline_at - Time.current - OUTCOME_RESERVE).floor
+    raise Error, 'provider_timeout' unless remaining.positive?
+
+    [remaining, MAX_REQUEST_TIMEOUT].min
   end
 
   def build_chat(credential, messages)

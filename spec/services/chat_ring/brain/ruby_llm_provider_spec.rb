@@ -84,4 +84,18 @@ RSpec.describe ChatRing::Brain::RubyLlmProvider do
 
     expect(configuration).to have_received(:max_retries=).with(0)
   end
+
+  it 'refuses to start a provider call when only the reserved outcome budget remains' do
+    allow(chat).to receive(:ask)
+
+    with_modified_env CHATRING_LLM_API_KEY: 'secret' do
+      expect do
+        described_class.new(version, deadline_at: 1.second.from_now).call(
+          messages: [{ role: 'system', content: 'system policy' }, { role: 'user', content: 'turn context' }]
+        )
+      end.to raise_error(described_class::Error) { |error| expect(error.code).to eq('provider_timeout') }
+    end
+
+    expect(chat).not_to have_received(:ask)
+  end
 end

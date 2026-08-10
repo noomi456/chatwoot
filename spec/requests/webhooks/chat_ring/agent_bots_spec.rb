@@ -257,10 +257,13 @@ RSpec.describe 'ChatRing managed AgentBot webhooks', type: :request do
     post_webhook(body, signed_headers(body))
     delivery = ChatRing::WebhookDelivery.last
     allow(ChatRing::AiTurnJob).to receive(:perform_later).and_return(false)
+    configured_recovery = instance_double(ActiveJob::ConfiguredJob)
+    allow(ChatRing::AiTurnRecoveryJob).to receive(:set).and_return(configured_recovery)
+    allow(configured_recovery).to receive(:perform_later).and_return(false)
 
     expect do
       ChatRing::WebhookDeliveryJob.perform_now(delivery.id)
-    end.to raise_error(RuntimeError, 'ChatRing AI turn could not be queued')
+    end.to raise_error(RuntimeError, 'ChatRing AI turn and recovery could not be queued')
 
     expect(delivery.reload).to be_received
     expect(ChatRing::AiTurn.find_by!(trigger_message: message)).to be_status_received

@@ -22,22 +22,21 @@ class ChatRing::Brain::FailureFinalizer
     dispatch_outcome = false
     turn.with_lock do
       turn.reload
-      next if terminal?
+      next unless recoverable_execution_state?
 
-      eligibility = ChatRing::Brain::Eligibility.check(turn)
+      eligibility = ChatRing::Brain::Eligibility.check(turn, enforce_deadline: false)
       unless eligibility.eligible
         mark_ineligible(eligibility.reason)
         next
       end
 
-      prepare_fallback
-      dispatch_outcome = true
+      dispatch_outcome = prepare_fallback
     end
     dispatch_outcome
   end
 
-  def terminal?
-    turn.status_ready_to_commit? || turn.status_committed? || turn.status_ineligible? || turn.status_superseded?
+  def recoverable_execution_state?
+    turn.status_received? || turn.status_eligible? || turn.status_running?
   end
 
   def mark_ineligible(reason)
@@ -46,6 +45,9 @@ class ChatRing::Brain::FailureFinalizer
 
   def prepare_fallback
     decision = ChatRing::Brain::FallbackPolicy.decision(turn.assistant_version, 'provider_failure')
+    return finish_without_customer_effect unless decision.decision_type == 'handoff'
+
+    ChatRing::OutboundCommitPreparer.call(turn, decision.decision_type)
     turn.update!(
       status: :ready_to_commit,
       decision_type: decision.decision_type,
@@ -53,5 +55,16 @@ class ChatRing::Brain::FailureFinalizer
       failure_code: failure_code,
       completed_at: Time.current
     )
+    true
+  end
+
+  def finish_without_customer_effect
+    turn.update!(
+      status: :failed,
+      decision_type: 'abstain',
+      failure_code: failure_code,
+      completed_at: Time.current
+    )
+    false
   end
 end

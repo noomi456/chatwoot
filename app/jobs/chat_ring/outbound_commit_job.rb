@@ -1,5 +1,3 @@
-require 'digest'
-
 class ChatRing::OutboundCommitJob < ApplicationJob
   queue_as :high
 
@@ -24,7 +22,7 @@ class ChatRing::OutboundCommitJob < ApplicationJob
   private
 
   def commit_reply(turn)
-    outbound_commit = find_or_create_outbound_commit(turn, :reply)
+    outbound_commit = required_outbound_commit(turn, :reply)
     result = Conversations::AgentBotConditionalCommitService.new(
       conversation: turn.conversation,
       agent_bot: turn.expected_agent_bot,
@@ -39,7 +37,7 @@ class ChatRing::OutboundCommitJob < ApplicationJob
   end
 
   def commit_handoff(turn)
-    outbound_commit = find_or_create_outbound_commit(turn, :handoff)
+    outbound_commit = required_outbound_commit(turn, :handoff)
     Conversations::AgentBotConditionalHandoffService.new(turn: turn, outbound_commit: outbound_commit).perform
     turn.update!(status: :handed_off, failure_code: nil)
   rescue Conversations::AgentBotConditionalCommitService::PreconditionFailed => e
@@ -51,21 +49,10 @@ class ChatRing::OutboundCommitJob < ApplicationJob
     turn.update!(status: status, failure_code: failure_code)
   end
 
-  def find_or_create_outbound_commit(turn, outcome_type)
-    idempotency_key = Digest::SHA256.hexdigest("chatring:#{outcome_type}:#{turn.workspace_id}:#{turn.id}")
-    outbound_commit = create_outbound_commit(turn, idempotency_key, outcome_type)
-    return outbound_commit if outbound_commit.idempotency_key == idempotency_key && outbound_commit.outcome_type == outcome_type.to_s
+  def required_outbound_commit(turn, outcome_type)
+    outbound_commit = turn.outbound_commit || ChatRing::OutboundCommitPreparer.call(turn, turn.decision_type)
+    return outbound_commit if outbound_commit&.outcome_type == outcome_type.to_s
 
-    outbound_commit.errors.add(:base, 'does not match the AI turn decision')
-    raise ActiveRecord::RecordInvalid, outbound_commit
-  end
-
-  def create_outbound_commit(turn, idempotency_key, outcome_type)
-    ChatRing::OutboundCommit.create!(ai_turn: turn, idempotency_key: idempotency_key, outcome_type: outcome_type)
-  rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid => e
-    existing = ChatRing::OutboundCommit.find_by(ai_turn: turn)
-    raise e unless existing
-
-    existing
+    raise ActiveRecord::RecordNotFound, 'Durable ChatRing outbound outcome is missing'
   end
 end

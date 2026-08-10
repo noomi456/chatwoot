@@ -6,15 +6,16 @@ class ChatRing::Knowledge::Retriever
     knowledge_base_for(inbox.account).active_knowledge_index_id
   end
 
+  # rubocop:disable Metrics/ParameterLists
   def self.retrieve(inbox:, query:, limit: ChatRing::Knowledge::DocsGptProvider::DEFAULT_EVIDENCE_LIMIT,
-                    knowledge_scope: nil, knowledge_index_id: ACTIVE_INDEX)
+                    knowledge_scope: nil, knowledge_index_id: ACTIVE_INDEX, timeout_seconds: 10)
     raise Error, 'Inbox must belong to an account' if inbox.account.blank?
 
     knowledge_base = knowledge_base_for(inbox.account)
     index = provider_index(knowledge_base, knowledge_index_id)
     return empty_set(query, limit) if index.blank? || knowledge_base.materials.retrievable.none?
 
-    evidence_set = provider(index).retrieve(
+    evidence_set = provider(index, timeout_seconds: timeout_seconds).retrieve(
       query: query,
       knowledge_index_id: index.id.to_s,
       source_manifest: source_manifest(index, knowledge_scope: knowledge_scope),
@@ -22,6 +23,7 @@ class ChatRing::Knowledge::Retriever
     )
     filter_live_evidence(evidence_set, index, knowledge_scope)
   end
+  # rubocop:enable Metrics/ParameterLists
 
   def self.knowledge_base_for(account)
     ChatRing::KnowledgeBase.for_account!(account)
@@ -111,7 +113,7 @@ class ChatRing::Knowledge::Retriever
   end
   private_class_method :filter_live_evidence
 
-  def self.provider(index)
+  def self.provider(index, timeout_seconds:)
     source_ids = index.documents.pluck(:provider_source_id).compact_blank.uniq
     raise Error, 'Active knowledge index must reference exactly one DocsGPT source' unless source_ids.one?
 
@@ -123,7 +125,8 @@ class ChatRing::Knowledge::Retriever
       binding_digest: index.provider_binding_digest,
       internal_key: ENV.fetch('DOCSGPT_INTERNAL_KEY'),
       service_secret: ENV.fetch('DOCSGPT_SERVICE_SECRET'),
-      score_threshold: index.config_snapshot.dig('retrieval', 'score_threshold') || ENV.fetch('DOCSGPT_SCORE_THRESHOLD')
+      score_threshold: index.config_snapshot.dig('retrieval', 'score_threshold') || ENV.fetch('DOCSGPT_SCORE_THRESHOLD'),
+      timeout_seconds: timeout_seconds
     )
   end
   private_class_method :provider
