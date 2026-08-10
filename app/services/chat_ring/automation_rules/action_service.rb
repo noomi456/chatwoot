@@ -34,6 +34,8 @@ module ChatRing::AutomationRules::ActionService
   end
 
   def observe_lifecycle_action
+    return yield unless ChatRing::NativeHandling::AutomationEffectCollector.active?
+
     before = ChatRing::NativeHandling::AutomationEffectCollector.lifecycle_snapshot(@conversation)
     yield
   ensure
