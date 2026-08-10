@@ -31,6 +31,7 @@ RSpec.describe ChatRing::Brain::Runner do
 
     expect(turn.reload).to be_status_ready_to_commit
     expect(turn.decision_payload).to include('decision_type' => 'reply', 'evidence_ids' => ['evidence-1'])
+    expect(turn.context_metadata).to include('projection_version' => 1, 'contact_fields_included' => [])
     expect(turn.evidence.first).to have_attributes(evidence_id: 'evidence-1', excerpt: 'Widgets are supported.')
     expect(turn.attempts.first).to be_status_succeeded
   end
@@ -66,6 +67,52 @@ RSpec.describe ChatRing::Brain::Runner do
     expect(turn.reload).to be_status_received
     expect(turn.failure_code).to eq('provider_failed')
     expect(turn.attempts.first).to be_status_failed
+  end
+
+  it 'does not retrieve or infer after the turn deadline expires' do
+    travel_to(turn.deadline_at + 1.second)
+
+    described_class.new(turn, provider: provider).call
+
+    expect(turn.reload).to be_status_ineligible
+    expect(turn.decision_type).to eq('turn_deadline_expired')
+    expect(ChatRing::Knowledge::Retriever).not_to have_received(:retrieve)
+    expect(provider).not_to have_received(:call)
+  end
+
+  it 'discards a provider result that arrives after the turn deadline' do
+    allow(provider).to receive(:call) do
+      travel_to(turn.deadline_at + 1.second)
+      ChatRing::Brain::RubyLlmProvider::Result.new(
+        payload: {
+          'decision_type' => 'reply', 'response_text' => 'Late reply',
+          'reason_code' => 'answered', 'evidence_ids' => ['evidence-1']
+        },
+        input_tokens: 10,
+        output_tokens: 5,
+        response_digest: Digest::SHA256.hexdigest('expired')
+      )
+    end
+
+    described_class.new(turn, provider: provider).call
+
+    expect(turn.reload).to be_status_ineligible
+    expect(turn.decision_type).to eq('turn_deadline_expired')
+    expect(turn.decision_payload).to eq({})
+    expect(turn.attempts.first).to have_attributes(status: 'failed', failure_code: 'turn_deadline_expired')
+  end
+
+  it 'respects native Inbox working hours' do
+    turn
+    inbox = turn.conversation.inbox
+    inbox.update!(working_hours_enabled: true)
+    inbox.working_hours.today.update!(closed_all_day: true, open_all_day: false)
+
+    described_class.new(turn, provider: provider).call
+
+    expect(turn.reload).to be_status_ineligible
+    expect(turn.decision_type).to eq('outside_inbox_hours')
+    expect(provider).not_to have_received(:call)
   end
 
   it 'suppresses a completed decision when a human takes ownership during inference' do
@@ -107,6 +154,19 @@ RSpec.describe ChatRing::Brain::Runner do
     expect(turn.reload).to be_status_ineligible
     expect(turn.decision_type).to eq('binding_inactive')
     expect(turn.decision_payload).to eq({})
+  end
+
+  it 'does not call the model when native ownership changes during retrieval' do
+    allow(ChatRing::Knowledge::Retriever).to receive(:retrieve) do
+      turn.conversation.update!(status: :open, assignee_agent_bot: nil)
+      evidence_set
+    end
+
+    described_class.new(turn, provider: provider).call
+
+    expect(turn.reload).to be_status_ineligible
+    expect(turn.decision_type).to eq('conversation_not_pending')
+    expect(provider).not_to have_received(:call)
   end
 
   def build_turn

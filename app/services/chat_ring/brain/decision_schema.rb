@@ -1,6 +1,6 @@
 class ChatRing::Brain::DecisionSchema < RubyLLM::Schema
   string :decision_type,
-         description: 'One of reply, clarification, handoff, abstain, or resolution_request.'
+         description: 'One of reply, clarification, handoff, or abstain.'
   string :response_text,
          description: 'Customer-facing plain text for reply or clarification; otherwise an empty string.',
          max_length: 4000

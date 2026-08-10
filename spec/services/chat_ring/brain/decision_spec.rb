@@ -33,4 +33,14 @@ RSpec.describe ChatRing::Brain::Decision do
       )
     end.to raise_error(described_class::Invalid, 'Brain cited evidence outside the supplied set')
   end
+
+  it 'rejects resolution requests until a native audited operation exists' do
+    expect do
+      described_class.from_payload(
+        { decision_type: 'resolution_request', response_text: '', reason_code: 'resolved', evidence_ids: [] },
+        allowed_evidence_ids: [],
+        evidence_status: 'insufficient_evidence'
+      )
+    end.to raise_error(described_class::Invalid, 'Unknown Brain decision type')
+  end
 end

@@ -15,6 +15,7 @@ class ChatRing::AssistantVersion < ApplicationRecord
   validates :published_at, presence: true
   validates :llm_provider, :llm_model, presence: true
   validate :configuration_shapes
+  validate :launch_policies_are_supported
   validate :knowledge_scope_belongs_to_workspace
   validate :published_snapshot_is_immutable, on: :update
 
@@ -23,6 +24,11 @@ class ChatRing::AssistantVersion < ApplicationRecord
   def configuration_shapes
     ARRAY_ATTRIBUTES.each { |attribute| errors.add(attribute, 'must be an array') unless public_send(attribute).is_a?(Array) }
     OBJECT_ATTRIBUTES.each { |attribute| errors.add(attribute, 'must be an object') unless public_send(attribute).is_a?(Hash) }
+  end
+
+  def launch_policies_are_supported
+    errors.add(:audience_policy, 'is not supported in this release') if audience_policy.present?
+    errors.add(:availability_policy, 'is not supported in this release') if availability_policy.present?
   end
 
   def knowledge_scope_belongs_to_workspace

@@ -1,6 +1,4 @@
 class ChatRing::InternalTurnScheduler
-  TURN_DEADLINE = 2.minutes
-
   def initialize(message:, native_handling_snapshot:)
     @message = message
     @native_handling_snapshot = native_handling_snapshot
@@ -104,11 +102,12 @@ class ChatRing::InternalTurnScheduler
       assistant: relationship.assistant,
       assistant_version: relationship.assistant_version,
       expected_agent_bot: relationship.agent_bot,
+      runtime_mode: :internal,
       status: reason ? :ineligible : :received,
       decision_type: reason,
       completed_at: reason ? Time.current : nil,
       native_handling_snapshot: native_handling_snapshot,
-      deadline_at: Time.current + TURN_DEADLINE
+      deadline_at: Time.current + ChatRing::AiTurn::DEFAULT_DEADLINE
     }
   end
 

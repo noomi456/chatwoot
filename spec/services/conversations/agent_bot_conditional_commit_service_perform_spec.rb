@@ -2,6 +2,10 @@ require 'rails_helper'
 require 'timeout'
 
 RSpec.describe Conversations::AgentBotConditionalCommitService, '#perform', :aggregate_failures do
+  before do
+    stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', true)
+  end
+
   let(:account) { create(:account) }
   let(:workspace) { account.chat_ring_workspace }
   let(:inbox) { create(:inbox, account: account, channel: create(:channel_widget, account: account)) }
@@ -34,6 +38,7 @@ RSpec.describe Conversations::AgentBotConditionalCommitService, '#perform', :agg
       assistant_version: version,
       expected_agent_bot: connection.agent_bot,
       status: :ready_to_commit,
+      deadline_at: 2.minutes.from_now,
       decision_type: 'reply',
       decision_payload: {
         'decision_type' => 'reply',

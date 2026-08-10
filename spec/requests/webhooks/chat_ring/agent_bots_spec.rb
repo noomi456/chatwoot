@@ -4,6 +4,7 @@ RSpec.describe 'ChatRing managed AgentBot webhooks', type: :request do
   include ActiveJob::TestHelper
 
   before do
+    stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', true)
     stub_const('ChatRing::AssistantSpike::EXTERNAL_RUNTIME_ENABLED', true)
     allow(ChatRing::AiTurnJob).to receive(:perform_later)
       .and_return(instance_double(ActiveJob::Base, successfully_enqueued?: true))
@@ -75,6 +76,19 @@ RSpec.describe 'ChatRing managed AgentBot webhooks', type: :request do
     expect(ChatRing::AiTurn.count).to eq(turn_count)
   end
 
+  it 'rejects a signed managed webhook while the public release gate is closed' do
+    stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', false)
+    body = payload_for
+
+    delivery_count = ChatRing::WebhookDelivery.count
+    turn_count = ChatRing::AiTurn.count
+    post_webhook(body, signed_headers(body))
+
+    expect(response).to have_http_status(:not_found)
+    expect(ChatRing::WebhookDelivery.count).to eq(delivery_count)
+    expect(ChatRing::AiTurn.count).to eq(turn_count)
+  end
+
   it 'accepts a signed delivery and creates one received AI turn from fresh Chatwoot state' do
     body = payload_for
 
@@ -86,10 +100,26 @@ RSpec.describe 'ChatRing managed AgentBot webhooks', type: :request do
     expect(response).to have_http_status(:ok)
     expect(ChatRing::WebhookDelivery.last).to be_processed
     turn = ChatRing::AiTurn.last
-    expect(turn).to be_status_received
-    expect(turn.trigger_message).to eq(message)
-    expect(turn.assistant_version).to eq(assistant.current_version)
-    expect(turn.expected_agent_bot).to eq(agent_bot)
+    expect(turn).to have_attributes(
+      status: 'received',
+      runtime_mode: 'external',
+      trigger_message: message,
+      assistant_version: assistant.current_version,
+      expected_agent_bot: agent_bot
+    )
+    expect(turn.deadline_at).to be_within(2.seconds).of(Time.current + ChatRing::AiTurn::DEFAULT_DEADLINE)
+  end
+
+  it 'ignores an already queued external delivery when either runtime gate closes' do
+    body = payload_for
+    post_webhook(body, signed_headers(body))
+    delivery = ChatRing::WebhookDelivery.last
+    stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', false)
+
+    ChatRing::WebhookDeliveryJob.perform_now(delivery.id)
+
+    expect(delivery.reload).to have_attributes(processing_status: 'ignored', error_code: 'external_runtime_disabled')
+    expect(ChatRing::AiTurn.where(trigger_message: message)).not_to exist
   end
 
   it 'deduplicates an identical retry by delivery ID and body hash' do

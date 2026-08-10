@@ -1,7 +1,7 @@
 class ChatRing::Brain::Decision
   class Invalid < StandardError; end
 
-  TYPES = %w[reply clarification handoff abstain resolution_request].freeze
+  TYPES = %w[reply clarification handoff abstain].freeze
   MAX_RESPONSE_LENGTH = 4000
 
   attr_reader :decision_type, :response_text, :reason_code, :evidence_ids

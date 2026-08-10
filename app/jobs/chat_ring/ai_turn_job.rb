@@ -24,7 +24,17 @@ class ChatRing::AiTurnJob < ApplicationJob
   def cancel_gate_closed_turn(turn)
     turn.with_lock do
       turn.reload
-      next unless turn.status_received? && turn.started_at.nil?
+      next unless ChatRing::AiTurn::NONTERMINAL_STATUSES.include?(turn.status)
+
+      committed_outcome = turn.outbound_commit
+      if committed_outcome&.status_committed?
+        turn.update!(
+          status: committed_outcome.outcome_type_handoff? ? :handed_off : :committed,
+          failure_code: nil,
+          completed_at: turn.completed_at || committed_outcome.committed_at || Time.current
+        )
+        next
+      end
 
       turn.update!(
         status: :cancelled,

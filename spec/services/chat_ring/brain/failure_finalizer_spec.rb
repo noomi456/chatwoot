@@ -17,6 +17,17 @@ RSpec.describe ChatRing::Brain::FailureFinalizer do
     expect(turn.failure_code).to eq('provider_failed')
   end
 
+  it 'does not prepare a fallback outcome after the turn deadline' do
+    turn = build_turn
+    travel_to(turn.deadline_at + 1.second)
+
+    described_class.call(turn.id, 'provider_failed')
+
+    expect(turn.reload).to be_status_ineligible
+    expect(turn.decision_type).to eq('turn_deadline_expired')
+    expect(turn.decision_payload).to eq({})
+  end
+
   def build_turn
     account = create(:account)
     workspace = account.chat_ring_workspace

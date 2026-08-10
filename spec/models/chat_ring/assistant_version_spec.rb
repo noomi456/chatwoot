@@ -42,4 +42,19 @@ RSpec.describe ChatRing::AssistantVersion do
     expect(version).to have_attributes(llm_provider: 'openai', llm_model: 'gpt-4.1-mini')
     expect(version.update(llm_model: 'another-model')).to be(false)
   end
+
+  it 'rejects audience and availability policies until their schemas are implemented' do
+    version = described_class.new(
+      assistant: assistant,
+      knowledge_scope: knowledge_scope,
+      version: 1,
+      published_at: Time.current,
+      audience_policy: { 'segment' => 'lead' },
+      availability_policy: { 'always_available' => true }
+    )
+
+    expect(version).not_to be_valid
+    expect(version.errors[:audience_policy]).to include('is not supported in this release')
+    expect(version.errors[:availability_policy]).to include('is not supported in this release')
+  end
 end

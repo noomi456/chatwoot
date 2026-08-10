@@ -63,6 +63,37 @@ RSpec.describe 'ChatRing internal Web Widget message lifecycle', type: :request 
     expect(turn.completed_at).to be_present
   end
 
+  it 'terminalizes every gate-closed nonterminal state without a committed outcome' do
+    message = post_widget_message('What plans do you offer?')
+    complete_automation_for(message)
+    turn = ChatRing::AiTurn.find_by!(trigger_message: message)
+    turn.update!(status: :ready_to_commit, started_at: Time.current)
+    stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', false)
+
+    ChatRing::AiTurnJob.perform_now(turn.id)
+
+    expect(turn.reload).to have_attributes(status: 'cancelled', failure_code: 'public_response_gate_closed')
+  end
+
+  it 'reconciles a gate-closed nonterminal turn from its already committed outcome' do
+    message = post_widget_message('Please connect me to a person')
+    complete_automation_for(message)
+    turn = ChatRing::AiTurn.find_by!(trigger_message: message)
+    turn.update!(status: :ready_to_commit, started_at: Time.current)
+    ChatRing::OutboundCommit.create!(
+      ai_turn: turn,
+      outcome_type: :handoff,
+      status: :committed,
+      idempotency_key: Digest::SHA256.hexdigest("gate-reconcile:#{turn.id}"),
+      committed_at: Time.current
+    )
+    stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', false)
+
+    ChatRing::AiTurnJob.perform_now(turn.id)
+
+    expect(turn.reload).to have_attributes(status: 'handed_off', failure_code: nil)
+  end
+
   it 'backfills an unstarted legacy received turn to cancelled' do
     message = post_widget_message('What plans do you offer?')
     complete_automation_for(message)

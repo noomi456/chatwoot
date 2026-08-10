@@ -1,6 +1,9 @@
 class ChatRing::AiTurn < ApplicationRecord
   self.table_name = 'chat_ring_ai_turns'
 
+  DEFAULT_DEADLINE = 2.minutes
+  NONTERMINAL_STATUSES = %w[received eligible running awaiting_tool ready_to_commit].freeze
+
   enum status: {
     received: 0,
     eligible: 1,
@@ -14,6 +17,8 @@ class ChatRing::AiTurn < ApplicationRecord
     failed: 9,
     cancelled: 10
   }, _prefix: true
+
+  enum runtime_mode: { internal: 0, external: 1, legacy: 2 }, _prefix: true
 
   belongs_to :workspace, class_name: 'ChatRing::Workspace', inverse_of: :ai_turns
   belongs_to :conversation, class_name: 'Conversation', foreign_key: :chatwoot_conversation_id, inverse_of: false
@@ -40,8 +45,10 @@ class ChatRing::AiTurn < ApplicationRecord
           dependent: :destroy
 
   validates :binding_version, numericality: { only_integer: true, greater_than: 0 }
+  validates :deadline_at, presence: true
   validates :context_digest, format: { with: /\A[0-9a-f]{64}\z/ }, allow_nil: true
   validate :decision_payload_shape
+  validate :context_metadata_shape
   validate :native_handling_snapshot_shape
   validate :conversation_ownership_matches
   validate :trigger_message_matches
@@ -57,6 +64,7 @@ class ChatRing::AiTurn < ApplicationRecord
                 :assistant_id,
                 :assistant_version_id,
                 :expected_agent_bot_id,
+                :runtime_mode,
                 :native_handling_snapshot,
                 :deadline_at
 
@@ -96,6 +104,10 @@ class ChatRing::AiTurn < ApplicationRecord
 
   def decision_payload_shape
     errors.add(:decision_payload, 'must be an object') unless decision_payload.is_a?(Hash)
+  end
+
+  def context_metadata_shape
+    errors.add(:context_metadata, 'must be an object') unless context_metadata.is_a?(Hash)
   end
 
   def native_handling_snapshot_shape

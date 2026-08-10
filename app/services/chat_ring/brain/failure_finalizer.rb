@@ -7,6 +7,12 @@ class ChatRing::Brain::FailureFinalizer
       turn.reload
       next if turn.status_ready_to_commit? || turn.status_committed? || turn.status_ineligible? || turn.status_superseded?
 
+      eligibility = ChatRing::Brain::Eligibility.check(turn)
+      unless eligibility.eligible
+        turn.update!(status: :ineligible, decision_type: eligibility.reason, failure_code: failure_code, completed_at: Time.current)
+        next
+      end
+
       decision = ChatRing::Brain::FallbackPolicy.decision(turn.assistant_version, 'provider_failure')
       turn.update!(
         status: :ready_to_commit,
