@@ -9,6 +9,7 @@ require 'fileutils'
 require 'json'
 require 'net/http'
 require 'securerandom'
+require 'timeout'
 require 'uri'
 
 class ChatRingWebWidgetProof
@@ -174,8 +175,8 @@ class ChatRingWebWidgetProof
   def run_writer_before_first_binding!(endpoint)
     fixture = create_binding_fixture!("#{endpoint}-writer-first")
     lock_connection, lock_pid = checkout_record_lock!('accounts', account.id)
-    binder = start_binding(fixture)
-    binder_pid = wait_for_blocked_backend!(lock_pid, 'accounts')
+    binder, binder_pid = start_binding(fixture)
+    wait_for_backend_blocked_by!(binder_pid, lock_pid, 'accounts')
     message = post_first_widget(fixture, endpoint, "First native message before binding #{run_id}")
     wait_for('pre-binding native Automation completion') do
       message.conversation.reload.label_list.include?(fixture_label(fixture))
@@ -198,8 +199,8 @@ class ChatRingWebWidgetProof
   def run_binding_before_first_writer!(endpoint)
     fixture = create_binding_fixture!("#{endpoint}-binding-first")
     lock_connection, lock_pid = checkout_record_lock!('inboxes', fixture.inbox.id)
-    binder = start_binding(fixture)
-    binder_pid = wait_for_blocked_backend!(lock_pid, 'inboxes')
+    binder, binder_pid = start_binding(fixture)
+    wait_for_backend_blocked_by!(binder_pid, lock_pid, 'inboxes')
     writer = Thread.new do
       ActiveRecord::Base.connection_pool.with_connection do
         post_first_widget(
@@ -734,8 +735,10 @@ class ChatRingWebWidgetProof
   end
 
   def start_binding(fixture)
-    Thread.new do
-      ActiveRecord::Base.connection_pool.with_connection do
+    ready = Queue.new
+    thread = Thread.new do
+      ActiveRecord::Base.connection_pool.with_connection do |database_connection|
+        ready << database_connection.select_value('SELECT pg_backend_pid()')
         fixture_assistant = ChatRing::Assistant.find(fixture.assistant.id)
         fixture_inbox = Inbox.find(fixture.inbox.id)
         ChatRing::AssistantProvisioning::InboxBindingActivator.new(
@@ -744,6 +747,8 @@ class ChatRingWebWidgetProof
         ).call
       end
     end
+    backend_pid = Timeout.timeout(10) { ready.pop }
+    [thread, Integer(backend_pid)]
   end
 
   def post_first_widget(fixture, endpoint, content)
@@ -812,6 +817,20 @@ class ChatRingWebWidgetProof
           AND #{Integer(blocker_pid)} = ANY(pg_blocking_pids(pid))
           AND query ILIKE '%#{relation_name}%'
         ORDER BY query_start
+        LIMIT 1
+      SQL
+    end
+  end
+
+  def wait_for_backend_blocked_by!(backend_pid, blocker_pid, relation_name)
+    wait_for("#{relation_name} PID #{backend_pid} to block behind PID #{blocker_pid}", timeout: 30) do
+      ActiveRecord::Base.connection.select_value(<<~SQL.squish)
+        SELECT pid
+        FROM pg_stat_activity
+        WHERE pid = #{Integer(backend_pid)}
+          AND wait_event_type = 'Lock'
+          AND #{Integer(blocker_pid)} = ANY(pg_blocking_pids(pid))
+          AND query ILIKE '%#{relation_name}%'
         LIMIT 1
       SQL
     end
