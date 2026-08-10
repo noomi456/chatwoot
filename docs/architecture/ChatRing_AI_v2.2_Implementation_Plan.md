@@ -360,8 +360,14 @@ resulting native Message and Conversation state.
 
 ### Follow-up PR F — basic Assistant administration
 
-- Provide account-scoped administrator API/UI for create, immutable publish, Inbox bind,
-  switch, disable/archive, managed secret rotation and failure inspection.
+- Deliver this as two reviewable layers. The backend layer provides an optimistic-locking
+  mutable draft, immutable publish, Inbox bind/switch/preflight, disable/archive, managed
+  secret rotation and privacy-minimized failure inspection through account-scoped
+  administrator APIs. The frontend layer consumes those APIs without mutating native
+  AgentBot, Inbox, Conversation or Message state directly.
+- Serialize backend mutations in Account → Assistant → Draft/Connection order, recheck
+  archive state inside that boundary, keep new Assistants on the locked release model,
+  and preserve only the exact historical model of an already-published legacy version.
 - Reuse the existing provisioning/binding services and Chatwoot permissions; do not make
   the UI a second authority.
 - Keep advanced analytics, marketplaces and design tooling outside this bounded PR.

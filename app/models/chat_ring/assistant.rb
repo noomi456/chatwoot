@@ -13,6 +13,10 @@ class ChatRing::Assistant < ApplicationRecord
           class_name: 'ChatRing::AssistantAgentBotConnection',
           inverse_of: :assistant,
           dependent: :destroy
+  has_one :configuration_draft,
+          class_name: 'ChatRing::AssistantDraft',
+          inverse_of: :assistant,
+          dependent: :destroy
   has_many :inbox_bindings,
            class_name: 'ChatRing::InboxAssistantBinding',
            inverse_of: :assistant,

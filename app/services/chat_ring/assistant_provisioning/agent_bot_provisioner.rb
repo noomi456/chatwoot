@@ -53,8 +53,8 @@ class ChatRing::AssistantProvisioning::AgentBotProvisioner
 
   def verify_existing_connection!
     connection = assistant.agent_bot_connection
-    connection.validate!
     disconnect_public_webhook!(connection)
+    connection.validate!
     return connection if connection.active?
 
     connection.update!(status: :active, last_verified_at: Time.current)

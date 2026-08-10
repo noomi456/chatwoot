@@ -103,6 +103,18 @@ Rails.application.routes.draw do
             end
           end
           namespace :chat_ring do
+            resources :assistants, only: [:index, :show, :create] do
+              member do
+                patch :update_draft
+                post :publish
+                post :archive
+                get :binding_preflight
+                post :bind
+                post :rotate_managed_secret
+              end
+            end
+            resources :assistant_bindings, only: [:destroy]
+            resources :ai_turns, only: [:index, :show]
             namespace :knowledge do
               resources :websites, only: [:create]
               resources :webpages, only: [:create]

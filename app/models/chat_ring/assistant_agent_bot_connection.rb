@@ -21,6 +21,7 @@ class ChatRing::AssistantAgentBotConnection < ApplicationRecord
   validates :webhook_key, presence: true, uniqueness: true
   validate :ownership_matches
   validate :managed_agent_bot_required
+  validate :managed_agent_bot_uses_internal_runtime
   validate :active_connection_has_secret_references
 
   def webhook_url
@@ -47,6 +48,12 @@ class ChatRing::AssistantAgentBotConnection < ApplicationRecord
     return if agent_bot.blank? || agent_bot.chatring_assistant?
 
     errors.add(:agent_bot, 'must be a managed ChatRing Assistant identity')
+  end
+
+  def managed_agent_bot_uses_internal_runtime
+    return if agent_bot.blank? || agent_bot.outgoing_url.blank?
+
+    errors.add(:agent_bot, 'must not use an outgoing webhook in the internal runtime')
   end
 
   def active_connection_has_secret_references
