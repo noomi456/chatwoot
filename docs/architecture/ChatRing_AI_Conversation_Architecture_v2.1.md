@@ -2,8 +2,10 @@
 
 ## Implementation Specification v2.1
 
-**Status:** Implementation Ready - Locked Architecture Boundary  
-**Architecture mode:** External ChatRing AI runtime integrated with Chatwoot AgentBot, with a Chatwoot-side conditional commit and shared per-conversation serialization boundary  
+**Status:** Superseded for Chatwoot runtime integration by [Architecture Reconciliation v2.2](ChatRing_AI_Chatwoot_Integration_Contract_v2.2.md)
+
+**Architecture mode:** Historical v2.1 design. Do not implement or enable public responses from this document without applying the v2.2 native-lifecycle corrections.
+
 **Verified against:** `chatwoot/chatwoot` `develop` at commit `f12529105bff8b16793c836bde5bfe1ba7e2f470`  
 **Verification date:** 2026-08-07  
 

@@ -109,6 +109,42 @@ describe Conversations::AssignmentService do
         expect(conversation.status).to eq('pending')
         expect(conversation.snoozed_until).to be_nil
       end
+
+      it 'rejects a managed Assistant bot that is not the active Inbox connection' do
+        managed_bot = create(:agent_bot, account: account, bot_type: :chatring_assistant)
+
+        expect do
+          described_class.new(
+            conversation: conversation,
+            assignee_id: managed_bot.id,
+            assignee_type: 'AgentBot'
+          ).perform
+        end.to raise_error(ActiveRecord::RecordInvalid, /active managed Assistant/)
+
+        expect(conversation.reload.assignee_agent_bot).not_to eq(managed_bot)
+      end
+
+      it 'assigns the exact managed Assistant bot connected through the active Inbox binding' do
+        workspace = account.chat_ring_workspace
+        assistant = ChatRing::Assistant.create!(workspace: workspace, name: 'Support')
+        ChatRing::AssistantVersions::Publisher.new(
+          assistant: assistant,
+          knowledge_scope: workspace.knowledge_scopes.find_by!(business_wide: true),
+          configuration: { instructions: 'Answer from evidence.' }
+        ).call
+        connection = ChatRing::AssistantProvisioning::AgentBotProvisioner.new(assistant: assistant).call
+        ChatRing::AssistantProvisioning::InboxBindingActivator.new(assistant: assistant, inbox: conversation.inbox).call
+
+        result = described_class.new(
+          conversation: conversation,
+          assignee_id: connection.agent_bot_id,
+          assignee_type: 'AgentBot'
+        ).perform
+
+        expect(result).to eq(connection.agent_bot)
+        expect(conversation.reload.assignee_agent_bot).to eq(connection.agent_bot)
+        expect(conversation).to be_pending
+      end
     end
   end
 end

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_08_08_006000) do
+ActiveRecord::Schema[7.1].define(version: 2026_08_09_003000) do
   # These extensions should be enabled to support this database
   enable_extension "pg_stat_statements"
   enable_extension "pg_trgm"
@@ -755,6 +755,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_08_006000) do
     t.bigint "knowledge_index_id"
     t.string "context_digest"
     t.jsonb "decision_payload", default: {}, null: false
+    t.jsonb "native_handling_snapshot", default: {}, null: false
+    t.datetime "deadline_at"
     t.index ["assistant_id"], name: "index_chat_ring_ai_turns_on_assistant_id"
     t.index ["assistant_version_id"], name: "index_chat_ring_ai_turns_on_assistant_version_id"
     t.index ["inbox_assistant_binding_id"], name: "idx_chatring_turns_on_inbox_binding"
@@ -1045,6 +1047,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_08_006000) do
     t.string "failure_code"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.integer "outcome_type", default: 0, null: false
     t.index ["ai_turn_id"], name: "index_chat_ring_outbound_commits_on_ai_turn_id", unique: true
     t.index ["idempotency_key"], name: "index_chat_ring_outbound_commits_on_idempotency_key", unique: true
   end

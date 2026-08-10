@@ -452,6 +452,17 @@ RSpec.describe Conversation do
         .with(described_class::CONVERSATION_BOT_HANDOFF, anything, hash_including(conversation: conversation))
       conversation.bot_handoff!
     end
+
+    it 'supports a caller-controlled post-commit handoff event' do
+      conversation
+      allow(Rails.configuration.dispatcher).to receive(:dispatch)
+      expect(Rails.configuration.dispatcher).not_to receive(:dispatch)
+        .with(described_class::CONVERSATION_BOT_HANDOFF, anything, anything)
+
+      conversation.bot_handoff!(dispatch_event: false)
+
+      expect(conversation.reload).to be_open
+    end
   end
 
   describe '#toggle_priority' do

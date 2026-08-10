@@ -11,6 +11,7 @@ on:
       - codex/phase2a-file-ingestion
       - codex/phase2a-account-knowledge
       - codex/chatring-layered-build
+      - codex/chatring-integration-contract-v2-2
   workflow_dispatch:
 
 concurrency:
@@ -124,7 +125,6 @@ jobs:
         run: >-
           bundle exec rspec
           spec/configs/schedule_spec.rb
-          spec/jobs/chat_ring/assistant_spike/response_job_spec.rb
           spec/models/chat_ring/knowledge_document_spec.rb
           spec/models/chat_ring/knowledge/scope_cleanup_spec.rb
           spec/models/chat_ring/workspace_spec.rb
@@ -156,18 +156,14 @@ jobs:
       - name: Run Phase 2A Ruby lint
         run: >-
           bundle exec rubocop
-          app/models/concerns/chat_ring/assistant_spike
           app/models/chat_ring
           app/models/concerns/chat_ring/knowledge
           app/controllers/api/v1/accounts/chat_ring/knowledge
           app/controllers/concerns/chat_ring
           app/policies/chat_ring
-          app/services/chat_ring/assistant_spike
           app/services/chat_ring/knowledge
           app/services/chat_ring/assistant_spike.rb
-          app/jobs/chat_ring/assistant_spike
           app/jobs/chat_ring/knowledge
-          config/initializers/chat_ring_assistant_spike.rb
           config/initializers/chat_ring_knowledge_cleanup.rb
           lib/tasks/chat_ring_knowledge.rake
           db/migrate/20260805000000_create_chat_ring_knowledge_foundation.rb
@@ -179,7 +175,6 @@ jobs:
           db/migrate/20260808000000_rebuild_chat_ring_knowledge_as_workspace_catalog.rb
           spec/models/chat_ring
           spec/configs/schedule_spec.rb
-          spec/jobs/chat_ring/assistant_spike
           spec/jobs/chat_ring/knowledge
           spec/services/chat_ring/knowledge
 

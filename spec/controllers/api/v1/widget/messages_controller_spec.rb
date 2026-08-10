@@ -54,7 +54,7 @@ RSpec.describe '/api/v1/widget/messages', type: :request do
         expect(response).to have_http_status(:success)
         json_response = response.parsed_body
         expect(json_response['content']).to eq(message_params[:content])
-        expect(Message.find(json_response['id'])).to be_supersedes_ai_turn
+        expect(Message.find(json_response['id'])).to have_attributes(message_type: 'incoming', sender_type: 'Contact', private: false)
       end
 
       it 'creates conversation with custom_attributes when first message is sent' do

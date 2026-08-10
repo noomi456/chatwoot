@@ -64,7 +64,7 @@ class ConversationReplyMailer < ApplicationMailer
 
   def init_conversation_attributes(conversation)
     @conversation = conversation
-    @account = @conversation.account
+    @account = Account.find(@conversation.account_id)
     @contact = @conversation.contact
     @agent = @conversation.assignee
     @inbox = @conversation.inbox

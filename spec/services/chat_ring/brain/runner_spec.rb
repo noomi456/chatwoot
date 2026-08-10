@@ -6,6 +6,7 @@ RSpec.describe ChatRing::Brain::Runner do
   let(:evidence_set) { accepted_evidence_set }
 
   before do
+    stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', true)
     allow(ChatRing::Knowledge::Retriever).to receive(:active_index_id).and_return(nil)
     allow(ChatRing::Knowledge::Retriever).to receive(:retrieve).and_return(evidence_set)
     allow(provider).to receive(:call)
@@ -114,18 +115,15 @@ RSpec.describe ChatRing::Brain::Runner do
     inbox = create(:inbox, account: account)
     assistant = ChatRing::Assistant.create!(workspace: workspace, name: 'Support')
     scope = workspace.knowledge_scopes.find_by!(business_wide: true)
-    version = ChatRing::AssistantVersions::Publisher.new(assistant: assistant, knowledge_scope: scope).call
+    ChatRing::AssistantVersions::Publisher.new(assistant: assistant, knowledge_scope: scope).call
     connection = ChatRing::AssistantProvisioning::AgentBotProvisioner.new(assistant: assistant).call
-    binding = ChatRing::AssistantProvisioning::InboxBindingActivator.new(assistant: assistant, inbox: inbox).call
+    ChatRing::AssistantProvisioning::InboxBindingActivator.new(assistant: assistant, inbox: inbox).call
     conversation = create(:conversation, account: account, inbox: inbox, status: :pending,
                                          assignee_agent_bot: connection.agent_bot)
     message = create(:message, account: account, inbox: inbox, conversation: conversation,
                                message_type: :incoming, sender: conversation.contact, private: false,
                                content: 'Do you support widgets?')
-    ChatRing::AiTurn.create!(workspace: workspace, conversation: conversation, trigger_message: message,
-                             inbox_assistant_binding: binding, binding_version: binding.binding_version,
-                             assistant: assistant, assistant_version: version,
-                             expected_agent_bot: connection.agent_bot, status: :received)
+    ChatRing::AiTurn.find_by!(workspace: workspace, conversation: conversation, trigger_message: message)
   end
 
   def accepted_evidence_set

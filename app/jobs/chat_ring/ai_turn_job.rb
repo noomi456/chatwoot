@@ -13,12 +13,26 @@ class ChatRing::AiTurnJob < ApplicationJob
   def perform(turn_id)
     turn = ChatRing::AiTurn.find_by(id: turn_id)
     return unless turn
+    return cancel_gate_closed_turn(turn) unless ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY
 
     ChatRing::Brain::Runner.new(turn).call
     enqueue_commit!(turn.reload)
   end
 
   private
+
+  def cancel_gate_closed_turn(turn)
+    turn.with_lock do
+      turn.reload
+      next unless turn.status_received? && turn.started_at.nil?
+
+      turn.update!(
+        status: :cancelled,
+        failure_code: 'public_response_gate_closed',
+        completed_at: Time.current
+      )
+    end
+  end
 
   def enqueue_commit!(turn)
     return unless ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY

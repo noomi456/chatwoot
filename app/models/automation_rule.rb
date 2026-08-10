@@ -20,6 +20,7 @@
 class AutomationRule < ApplicationRecord
   include Rails.application.routes.url_helpers
   include Reauthorizable
+  include ChatRing::AutomationConflictGuard
 
   belongs_to :account
   has_many_attached :files

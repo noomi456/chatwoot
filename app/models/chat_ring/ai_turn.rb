@@ -42,6 +42,7 @@ class ChatRing::AiTurn < ApplicationRecord
   validates :binding_version, numericality: { only_integer: true, greater_than: 0 }
   validates :context_digest, format: { with: /\A[0-9a-f]{64}\z/ }, allow_nil: true
   validate :decision_payload_shape
+  validate :native_handling_snapshot_shape
   validate :conversation_ownership_matches
   validate :trigger_message_matches
   validate :binding_ownership_matches
@@ -55,7 +56,9 @@ class ChatRing::AiTurn < ApplicationRecord
                 :binding_version,
                 :assistant_id,
                 :assistant_version_id,
-                :expected_agent_bot_id
+                :expected_agent_bot_id,
+                :native_handling_snapshot,
+                :deadline_at
 
   private
 
@@ -93,5 +96,11 @@ class ChatRing::AiTurn < ApplicationRecord
 
   def decision_payload_shape
     errors.add(:decision_payload, 'must be an object') unless decision_payload.is_a?(Hash)
+  end
+
+  def native_handling_snapshot_shape
+    return if native_handling_snapshot.is_a?(Hash)
+
+    errors.add(:native_handling_snapshot, 'must be an object')
   end
 end

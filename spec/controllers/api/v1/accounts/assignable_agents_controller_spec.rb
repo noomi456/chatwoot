@@ -79,6 +79,33 @@ RSpec.describe 'Assignable Agents API', type: :request do
           expect(response_data.pluck('assignee_type')).to include('User', 'AgentBot')
           expect(response_data.pluck('name')).to include(agent1.name, admin.name, account_bot.name, global_bot.name)
         end
+
+        it 'hides managed Assistant bots unless the same active bot is connected to every selected Inbox' do
+          workspace = account.chat_ring_workspace
+          assistant = ChatRing::Assistant.create!(workspace: workspace, name: 'Support')
+          ChatRing::AssistantVersions::Publisher.new(
+            assistant: assistant,
+            knowledge_scope: workspace.knowledge_scopes.find_by!(business_wide: true),
+            configuration: { instructions: 'Answer from evidence.' }
+          ).call
+          connection = ChatRing::AssistantProvisioning::AgentBotProvisioner.new(assistant: assistant).call
+          ChatRing::AssistantProvisioning::InboxBindingActivator.new(assistant: assistant, inbox: inbox1).call
+
+          get "/api/v1/accounts/#{account.id}/assignable_agents",
+              params: { inbox_ids: [inbox1.id, inbox2.id], include_agent_bots: true },
+              headers: agent1.create_new_auth_token,
+              as: :json
+
+          expect(response.parsed_body['payload'].pluck('id')).not_to include(connection.agent_bot_id)
+
+          ChatRing::AssistantProvisioning::InboxBindingActivator.new(assistant: assistant, inbox: inbox2).call
+          get "/api/v1/accounts/#{account.id}/assignable_agents",
+              params: { inbox_ids: [inbox1.id, inbox2.id], include_agent_bots: true },
+              headers: agent1.create_new_auth_token,
+              as: :json
+
+          expect(response.parsed_body['payload'].pluck('id')).to include(connection.agent_bot_id)
+        end
       end
     end
   end

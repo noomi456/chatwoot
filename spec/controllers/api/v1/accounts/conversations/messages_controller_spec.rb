@@ -36,14 +36,65 @@ RSpec.describe 'Conversation Messages API', type: :request do
         expect(conversation.messages.first.content).to eq(params[:content])
       end
 
-      it 'marks a public human reply as superseding an in-flight AI turn' do
+      it 'keeps native public human-reply semantics' do
         post api_v1_account_conversation_messages_url(account_id: account.id, conversation_id: conversation.display_id),
              params: { content: 'I will take this', private: false },
              headers: agent.create_new_auth_token,
              as: :json
 
         expect(response).to have_http_status(:success)
-        expect(conversation.messages.last).to be_supersedes_ai_turn
+        expect(conversation.messages.last).to be_public_human_reply
+      end
+
+      it 'completes native human takeover before a public reply in an Assistant-bound Widget Inbox' do
+        workspace = account.chat_ring_workspace
+        assistant = ChatRing::Assistant.create!(workspace: workspace, name: 'Support')
+        scope = workspace.knowledge_scopes.find_by!(business_wide: true)
+        ChatRing::AssistantVersions::Publisher.new(assistant: assistant, knowledge_scope: scope).call
+        connection = ChatRing::AssistantProvisioning::AgentBotProvisioner.new(assistant: assistant).call
+        ChatRing::AssistantProvisioning::InboxBindingActivator.new(assistant: assistant, inbox: inbox).call
+        conversation.update!(status: :pending, assignee: nil, assignee_agent_bot: connection.agent_bot)
+        observed_events = []
+        allow(Rails.configuration.dispatcher).to receive(:dispatch).and_wrap_original do |original, event, *arguments|
+          observed_events << event
+          original.call(event, *arguments)
+        end
+
+        post api_v1_account_conversation_messages_url(account_id: account.id, conversation_id: conversation.display_id),
+             params: { content: 'I will take this', private: false },
+             headers: agent.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(conversation.reload).to have_attributes(status: 'open', assignee: agent, assignee_agent_bot: nil)
+        expect(conversation.messages.last).to be_public_human_reply
+        expect(observed_events.count(Conversation::CONVERSATION_OPENED)).to eq(1)
+        expect(observed_events.count(Conversation::CONVERSATION_STATUS_CHANGED)).to eq(1)
+        expect(observed_events.count(Events::Types::ASSIGNEE_CHANGED)).to eq(1)
+      end
+
+      it 'takes over from the exact draining managed bot during an Assistant rebind' do
+        workspace = account.chat_ring_workspace
+        scope = workspace.knowledge_scopes.find_by!(business_wide: true)
+        original_assistant = ChatRing::Assistant.create!(workspace: workspace, name: 'Original')
+        ChatRing::AssistantVersions::Publisher.new(assistant: original_assistant, knowledge_scope: scope).call
+        ChatRing::AssistantProvisioning::AgentBotProvisioner.new(assistant: original_assistant).call
+        original_binding = ChatRing::AssistantProvisioning::InboxBindingActivator.new(
+          assistant: original_assistant,
+          inbox: inbox
+        ).call
+        original_bot = original_binding.assistant_agent_bot_connection.agent_bot
+        conversation.update!(status: :pending, assignee: nil, assignee_agent_bot: original_bot)
+        original_binding.draining!
+
+        post api_v1_account_conversation_messages_url(account_id: account.id, conversation_id: conversation.display_id),
+             params: { content: 'I will take this', private: false },
+             headers: agent.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(original_binding.reload).to be_draining
+        expect(conversation.reload).to have_attributes(status: 'open', assignee: agent, assignee_agent_bot: nil)
       end
 
       it 'does not create the message' do
@@ -114,6 +165,7 @@ RSpec.describe 'Conversation Messages API', type: :request do
         let(:conversation) { create(:conversation, inbox: api_inbox, account: account) }
 
         it 'reopens the conversation with new incoming message' do
+          expect(Inbox).not_to receive(:lock)
           create(:message, conversation: conversation, account: account)
           conversation.resolved!
 
@@ -190,6 +242,7 @@ RSpec.describe 'Conversation Messages API', type: :request do
       end
 
       it 'conditionally commits through an authenticated account-owned managed AgentBot' do
+        stub_const('ChatRing::AssistantSpike::EXTERNAL_RUNTIME_ENABLED', true)
         workspace = account.chat_ring_workspace
         assistant = ChatRing::Assistant.create!(workspace: workspace, name: 'Support')
         scope = workspace.knowledge_scopes.find_by!(business_wide: true)
@@ -228,6 +281,17 @@ RSpec.describe 'Conversation Messages API', type: :request do
           'conversation_status' => 'pending',
           'assignee_agent_bot_id' => connection.agent_bot.id
         )
+      end
+
+      it 'does not expose the external conditional commit endpoint in internal runtime mode' do
+        agent_bot.update!(account: account)
+
+        post "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/messages/conditional_create",
+             params: {},
+             headers: { api_access_token: agent_bot.access_token.token },
+             as: :json
+
+        expect(response).to have_http_status(:not_found)
       end
     end
   end
