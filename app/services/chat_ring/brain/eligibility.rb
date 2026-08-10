@@ -37,7 +37,8 @@ class ChatRing::Brain::Eligibility
     return assistant_failure if assistant_failure
     return policy_failure if policy_failure
     return 'outside_inbox_hours' if turn.conversation.inbox.out_of_office?
-    return 'automation_conflict' if automation_conflict?
+
+    automation_failure
   end
 
   def binding_failure
@@ -71,6 +72,18 @@ class ChatRing::Brain::Eligibility
       account: turn.conversation.account,
       inbox: turn.conversation.inbox
     ).conflicting?
+  end
+
+  def automation_effect_failure
+    return unless turn.runtime_mode_internal?
+
+    ChatRing::NativeHandling::AutomationEffectPolicy.terminal_reason(
+      turn.native_handling_snapshot['automation']
+    )
+  end
+
+  def automation_failure
+    automation_effect_failure || ('automation_conflict' if automation_conflict?)
   end
 
   def freshness_failure

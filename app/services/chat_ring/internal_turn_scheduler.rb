@@ -112,7 +112,10 @@ class ChatRing::InternalTurnScheduler
   end
 
   def native_terminal_reason
-    return 'automation_observation_failed' if automation_observation_failed?
+    automation_reason = ChatRing::NativeHandling::AutomationEffectPolicy.terminal_reason(
+      native_handling_snapshot['automation']
+    )
+    return automation_reason if automation_reason
     return 'automation_conflict' if automation_conflict?
     return 'native_out_of_office' if message.conversation.inbox.out_of_office?
     return 'native_email_collection' if email_collection_required?
@@ -123,12 +126,6 @@ class ChatRing::InternalTurnScheduler
       account: message.conversation.account,
       inbox: message.conversation.inbox
     ).conflicting?
-  end
-
-  def automation_observation_failed?
-    Array(native_handling_snapshot.dig('automation', 'effects')).any? do |effect|
-      effect.dig('before', 'observation_error').present? || effect.dig('after', 'observation_error').present?
-    end
   end
 
   def email_collection_required?

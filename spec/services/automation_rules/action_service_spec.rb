@@ -33,6 +33,11 @@ RSpec.describe AutomationRules::ActionService do
       end
 
       it 'will send attachment' do
+        expect(Messages::MessageBuilder).to receive(:new).with(
+          nil,
+          conversation,
+          hash_including(content_attributes: { automation_rule_id: rule.id })
+        ).and_return(message_builder)
         expect(message_builder).to receive(:perform)
         described_class.new(rule, account, conversation).perform
       end
@@ -101,6 +106,15 @@ RSpec.describe AutomationRules::ActionService do
       end
 
       it 'removes assignee and team from the conversation' do
+        described_class.new(rule, account, conversation).perform
+
+        expect(conversation.reload.assignee).to be_nil
+        expect(conversation.team).to be_nil
+      end
+
+      it 'does not run ChatRing lifecycle observation outside a managed completion' do
+        expect(ChatRing::NativeHandling::AutomationEffectCollector).not_to receive(:lifecycle_snapshot)
+
         described_class.new(rule, account, conversation).perform
 
         expect(conversation.reload.assignee).to be_nil

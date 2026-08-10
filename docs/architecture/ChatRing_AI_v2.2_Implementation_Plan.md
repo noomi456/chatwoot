@@ -328,13 +328,35 @@ Work:
   OutboundCommit and final native Message/handoff.
 - Prove cleanup cannot invalidate running inference or retained audit evidence.
 
-### Follow-up PR E — native actions, Automation coexistence and memory
+### Follow-up PR E1 — actual Automation-effect arbitration
 
-- Extend actual native-effect observation from PR A into deterministic arbitration.
-- Authorize AI-requested effects server-side, then invoke native Message, assignment,
-  status, labels, priority and note behavior; do not clone native actions.
-- Add a governed memory record only where native private notes cannot meet provenance and
-  retention requirements; human-visible projections use native notes.
+Native authority reused: `AutomationRuleListener`,
+`AutomationRules::ConditionsFilterService`, `AutomationRules::ActionService`, and the
+resulting native Message and Conversation state.
+
+- Observe only the effects already executed for the pinned incoming trigger; never
+  re-evaluate conditions or execute an action again.
+- An actual public Message/attachment or Conversation status/owner/team change owns the
+  trigger and suppresses AI. Label, priority and private-note-only effects may coexist.
+- Preserve the pinned effect decision through final eligibility, even if the Automation
+  rule is later disabled or deleted.
+- Allow directly observed `message_created` responder/lifecycle rules only when their
+  native conditions prove they apply exclusively to incoming messages. Keep indirect
+  webhook actions, unconstrained message rules and other native event types blocked.
+- Treat observation errors as terminal fail-closed outcomes. Do not add another action
+  engine, Automation state or responder lifecycle.
+
+### Tool-bound native actions and governed memory — later bounded PRs
+
+- Do not add an AI native-action executor before the bounded Tool decision, grant,
+  authorization and idempotency contract has a real consumer.
+- When Tools begin, invoke ordinary Message behavior, `Conversations::AssignmentService`,
+  native status/label/priority/note behavior and the existing guarded handoff seam; do
+  not use `AutomationRules::ActionService` as a general AI authorization gateway.
+- Do not create a governed memory record until Sales Core locks its first producer,
+  consumer, allowed categories, provenance visibility and retention policy. Approved
+  current sales fields remain native Contact custom attributes; human-visible output
+  remains a native private Message/note.
 
 ### Follow-up PR F — basic Assistant administration
 

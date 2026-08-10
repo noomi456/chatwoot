@@ -34,6 +34,7 @@ RSpec.describe ChatRing::OutboundCommitJob, type: :job do
       assistant_version: version,
       expected_agent_bot: connection.agent_bot,
       status: :ready_to_commit,
+      native_handling_snapshot: { 'automation' => { 'completed' => true, 'effects' => [] } },
       deadline_at: 2.minutes.from_now,
       decision_type: 'reply',
       decision_payload: {
