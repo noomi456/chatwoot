@@ -120,6 +120,80 @@ The source-verified classification is:
 | Cloudflare RealtimeKit | NATIVE + bounded EXTEND/ADAPT | Reuse native meeting, integration Message and participant-token flow after authorization, credential, timeout, role and takeover hardening. |
 | Twilio PSTN Voice | ADAPT + NEW missing CE capability | Independently implement only the absent provider/call boundary from public Twilio contracts; preserve native Chatwoot Contact, Conversation, Message and assignment authority. |
 
+## Locked development model, human-request and appointment behavior — 2026-08-10
+
+Development and pre-production testing use `gpt-5.4`. The designated testing
+credential lives only in the deployment secret store. It is never written to this
+document, Git, Assistant/Draft/Version records, logs, prompts, fixtures or UI responses.
+New Assistant drafts use `gpt-5.4`; a previously published legacy version may preserve
+only its exact historical model until republished under the supported-model contract.
+
+Chatwoot remains authoritative for human availability and transfer. The native inputs are:
+
+```text
+Inbox#out_of_office? / Inbox working hours
++ Inbox#available_agents
++ native Inbox membership, team and assignment-capacity policy
++ native Conversation ownership/assignment state
+```
+
+ChatRing must not create a second presence, roster, availability or assignment model.
+An hours-only check is insufficient. A visitor may be told that a transfer completed
+only after the guarded native Chatwoot path records the corresponding human assignment.
+
+For a free-form explicit human request:
+
+```text
+inside native Inbox hours
++ at least one eligible online human
+        ->
+guarded native handoff / assignment
+        ->
+cancel or supersede the pending AI turn
+        ->
+human continues in the same native Conversation
+
+outside hours OR no eligible online human
+        ->
+state the current unavailability truthfully
+        ->
+offer an appointment, callback request or approved calendar link
+        ->
+preserve the request in native Chatwoot Messages / approved Contact fields / private note
+```
+
+Availability is rechecked inside the final Conversation serialization boundary. A stale
+precheck never authorizes a transfer claim. Native `Conversation#bot_handoff!`,
+`Conversations::AssignmentService` and Chatwoot auto-assignment remain the mutation
+authorities; ChatRing contributes only policy, guarded orchestration and audit.
+
+An active Playbook normally continues its published goal, required questions, branches,
+lead fields and next action. A side question is answered through the shared Business
+Knowledge path, after which the exact pending Playbook step resumes. A repeated explicit
+human request overrides the guided step: transfer only when native hours and eligible
+human availability both pass; otherwise request any information required for follow-up
+and offer the configured appointment/callback path.
+
+Appointment intent is channel-neutral:
+
+```text
+Brain / Playbook -> request_appointment
+        ->
+Inbox capability renderer
+        ->
+embedded calendar only on an explicitly certified surface
+OR approved calendar link
+OR approved appointment-request form
+```
+
+The configured URL/provider and renderer belong to the Inbox Tool policy, not Assistant
+prompt prose. The cqalerts3-code calendar URL fields, Playbook editor affordances,
+`@share_booking_link` UX and form/modal patterns are product donors only. No donor
+storage, Supabase orchestration, fixed URL, credential or React component is copied until
+file-level license/provenance and native-boundary review permits it. Current source has
+no native general calendar-booking runtime, so the bounded Tool configuration/renderer
+is genuinely missing; all resulting customer/lead state remains native Chatwoot state.
+
 The sequencing rule is:
 
 ```text
@@ -553,6 +627,8 @@ active Playbook turns
 Playbook side questions
 
 human-call offers or escalation decisions
+
+explicit human requests and appointment decisions
 ```
 
 The Brain is not split into WebsiteBrain, WhatsAppBrain, EmailBrain or PlaybookBrain.
@@ -620,7 +696,7 @@ The Brain requests semantic capabilities such as:
 ```text
 show_options
 show_contact_form
-share_booking_link
+request_appointment
 request_human_call
 ```
 
@@ -650,7 +726,6 @@ The later AI Navigator phase may register additional Tools such as:
 generate_microsite
 show_microsite
 share_microsite
-show_embedded_calendar
 website_add_to_cart
 ```
 
@@ -1366,7 +1441,7 @@ trigger_playbook
 
 ```text
 show_contact_form
-share_booking_link
+request_appointment
 recommend_page
 request_human_call
 ```
@@ -1379,7 +1454,6 @@ Use Chatwoot's native interactive Message types where they fit.
 generate_microsite
 show_microsite
 share_microsite
-show_embedded_calendar
 website_add_to_cart
 ```
 
@@ -1489,8 +1563,9 @@ show_contact_form
 -> native Widget form when supported
 -> otherwise ask fields sequentially through the Playbook
 
-share_booking_link
--> approved link on every suitable text channel
+request_appointment
+-> certified embedded calendar on supported Website surfaces
+-> otherwise approved link or appointment-request form
 
 request_human_call
 -> Website call CTA when supported
@@ -1765,6 +1840,20 @@ The Playbook controls required fields, branch choices and completion.
 
 The Brain controls natural language and grounded explanation.
 
+## 15.6 Human requests during free-form and Playbook execution
+
+An explicit human request is policy input, not permission for the model to mutate
+ownership. The server evaluates native Inbox hours and eligible online humans. If both
+pass, the guarded native handoff/assignment path supersedes the AI turn and the Playbook
+pauses or terminates according to its published policy. If either fails, the AI must not
+claim a transfer; it explains current unavailability, collects any approved follow-up
+fields, and requests an appointment/callback through the channel-neutral Tool.
+
+A Playbook may ask for information required by the selected handoff/appointment path,
+but it may not ignore repeated human requests merely to finish its qualification goal.
+Every utterance remains an ordinary native Chatwoot Message and the human continues in
+the same Conversation after native takeover.
+
 ---
 
 # 16. InboxPlaybook validation, execution and transitions
@@ -1942,8 +2031,8 @@ show_contact_form
 -> native form / approved pre-chat fields when appropriate
 -> otherwise sequential Playbook questions
 
-share_booking_link
--> approved link
+request_appointment
+-> certified embedded calendar, approved link or appointment-request form
 
 request_human_call
 -> Website Voice CTA
@@ -2261,6 +2350,7 @@ Sales Core v1 Website-only capabilities:
 Engagement starter pills
 native Widget forms/cards/options
 RealtimeKit call surface
+certified appointment renderer for an Inbox-approved calendar/form
 ```
 
 Later Visual Sales Website-only capabilities:
@@ -2269,7 +2359,7 @@ Later Visual Sales Website-only capabilities:
 AI Navigator
 explicit Playbook buttons
 inline Microsites
-embedded visual calendars
+embedded calendars inside Microsites
 Website host actions
 ```
 
@@ -3206,7 +3296,10 @@ The Sales Core Voice adapter is deliberately bounded to one selected provider.
 
 When Visual Sales adds Website add-to-cart, use a narrow configured host adapter rather than a generic ecommerce integration platform.
 
-Sales Core booking begins with approved links. Embedded calendars belong to the later Visual Sales stage unless a separate product decision promotes them.
+Sales Core appointment handling uses the channel-neutral `request_appointment` Tool.
+The certified Website renderer may embed an Inbox-approved calendar; other channels use
+an approved link or appointment-request form. Calendar composition inside a generated
+Microsite remains part of the later Visual Sales stage.
 
 The goal is complete necessary Sales primitives, not speculative infrastructure.
 
@@ -3269,6 +3362,8 @@ Tool retry creates one idempotent effect
 
 renderer fallback selected for current Inbox/provider
 
+request_appointment embeds only on a certified Website surface and otherwise uses an approved link/form
+
 Inbox Tool policy change detects invalid published Playbooks
 ```
 
@@ -3301,6 +3396,14 @@ sequential steps and branches
 
 side question answered from Knowledge, then pending step resumes
 
+repeated explicit human request overrides the pending step according to native availability policy
+
+inside hours plus eligible online human produces native assignment and supersedes the AI turn
+
+inside hours with no eligible human never claims transfer and offers appointment/callback
+
+outside hours never claims transfer and preserves the follow-up request in Chatwoot
+
 field collection writes approved native Contact state
 
 invalid Tool/capability blocks publication
@@ -3325,7 +3428,7 @@ native input_select/form/card paths work where used
 
 Engagements and Playbook options render correctly
 
-booking link and human-call CTA fall back safely
+appointment embed/link/form and human-call CTA fall back safely
 
 no AI Navigator or Microsite dependency
 ```
@@ -3410,7 +3513,9 @@ Run representative concurrency across free-form AI, Playbook execution, native a
 
 ## 30.11 Separate Visual Sales test gate
 
-AI Navigator, media extraction, Sales Entities, Microsites, sharing, calendar and cart actions are tested under their own later release gate.
+AI Navigator, media extraction, Sales Entities, Microsites, sharing, Microsite calendar
+composition and cart actions are tested under their own later release gate. The bounded
+Sales Core `request_appointment` renderer is tested in the Sales Core gate instead.
 
 Sales Core tests must not pretend those features exist.
 
@@ -3468,7 +3573,7 @@ Sales Core v1 does not claim:
 AI Navigator
 Microsites
 image-aware Knowledge
-embedded visual calendars
+embedded calendars inside generated Microsites
 website add to cart
 AI voice
 external event outbound

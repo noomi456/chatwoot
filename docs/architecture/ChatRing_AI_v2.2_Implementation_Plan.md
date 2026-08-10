@@ -115,6 +115,9 @@ Changes:
 - Rotate deployed managed webhook secrets after deployment.
 - Retain the designated testing model key in the deployment secret store throughout
   pre-production testing; never commit or log it. Rotate it only at production cutover.
+- Use `gpt-5.4` for new development/pre-production Assistant drafts and model calls.
+  Never persist the credential in Assistant configuration or reproduce it in fixtures,
+  documentation, logs or UI responses.
 
 Proof:
 
@@ -413,6 +416,16 @@ Web Widget proof
 -> independently implemented Twilio PSTN Voice CE capability
 -> consolidated Sales administration, analytics and full production proof
 ```
+
+The Tool/Playbook stages include the locked human-request contract. Native Inbox working
+hours and `Inbox#available_agents`/assignment policy are both required before a transfer
+may be claimed. Final native assignment is rechecked under serialization; otherwise the
+same Conversation receives an appointment, callback or approved-link fallback. The
+shared semantic Tool is `request_appointment`: an explicitly certified Website renderer
+may embed the Inbox-approved calendar, while other channels render an approved link or
+appointment-request form. During a Playbook, Knowledge side questions return to the
+exact pending step; repeated explicit human requests override the guided step according
+to this native availability policy.
 
 Native action authorization/Automation coexistence and basic Assistant administration
 precede Web Widget proof and the Tool/Playbook stages. Feature-specific administration
