@@ -270,4 +270,49 @@ describe MessageTemplates::HookExecutionService do
       expect(out_of_office_service).not_to receive(:perform)
     end
   end
+
+  context 'with ChatRing internal observation enabled' do
+    it 'does not query ChatRing completion state for an unowned Web Widget conversation' do
+      stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', true)
+      stub_const('ChatRing::AssistantSpike::EXTERNAL_RUNTIME_ENABLED', false)
+
+      contact = create(:contact, email: nil)
+      conversation = create(:conversation, contact: contact)
+      conversation.inbox.update!(greeting_enabled: true, greeting_message: 'Native Widget greeting')
+      greeting_service = instance_double(MessageTemplates::Template::Greeting, perform: true)
+
+      allow(MessageTemplates::Template::Greeting).to receive(:new).and_return(greeting_service)
+      expect(ChatRing::NativeHandlingCompletion).not_to receive(:exists?)
+
+      create(:message, conversation: conversation, account: conversation.account, sender: contact, message_type: :incoming)
+
+      expect(greeting_service).to have_received(:perform).once
+    end
+
+    it 'runs non-Widget native templates without querying ChatRing completion state' do
+      stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', true)
+      stub_const('ChatRing::AssistantSpike::EXTERNAL_RUNTIME_ENABLED', false)
+
+      account = create(:account)
+      contact = create(:contact, account: account, email: nil)
+      channel = create(:channel_email, account: account)
+      inbox = create(
+        :inbox,
+        account: account,
+        channel: channel,
+        greeting_enabled: true,
+        greeting_message: 'Native email greeting',
+        enable_email_collect: false
+      )
+      conversation = create(:conversation, account: account, contact: contact, inbox: inbox)
+      greeting_service = instance_double(MessageTemplates::Template::Greeting, perform: true)
+
+      allow(MessageTemplates::Template::Greeting).to receive(:new).and_return(greeting_service)
+      expect(ChatRing::NativeHandling::CompletionRecorder).not_to receive(:candidate?)
+
+      create(:message, conversation: conversation, account: account, sender: contact, message_type: :incoming)
+
+      expect(greeting_service).to have_received(:perform).once
+    end
+  end
 end

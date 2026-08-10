@@ -26,3 +26,5 @@ class MessageTemplates::Template::Greeting
     }
   end
 end
+
+MessageTemplates::Template::Greeting.prepend(ChatRing::MessageTemplates::Template::Greeting)
