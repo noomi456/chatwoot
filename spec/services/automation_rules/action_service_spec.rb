@@ -33,6 +33,11 @@ RSpec.describe AutomationRules::ActionService do
       end
 
       it 'will send attachment' do
+        expect(Messages::MessageBuilder).to receive(:new).with(
+          nil,
+          conversation,
+          hash_including(content_attributes: { automation_rule_id: rule.id })
+        ).and_return(message_builder)
         expect(message_builder).to receive(:perform)
         described_class.new(rule, account, conversation).perform
       end

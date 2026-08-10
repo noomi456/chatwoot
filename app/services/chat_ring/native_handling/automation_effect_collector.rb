@@ -4,10 +4,10 @@ class ChatRing::NativeHandling::AutomationEffectCollector
   class << self
     def capture
       previous = Thread.current[THREAD_KEY]
-      effects = []
-      Thread.current[THREAD_KEY] = effects
+      state = { effects: [], public_message_ids: [], private_message_ids: [] }
+      Thread.current[THREAD_KEY] = state
       yield
-      effects
+      state[:effects]
     ensure
       Thread.current[THREAD_KEY] = previous
     end
@@ -19,12 +19,19 @@ class ChatRing::NativeHandling::AutomationEffectCollector
     def record(rule:, before:, after:)
       return unless active?
 
-      Thread.current[THREAD_KEY] << {
+      Thread.current[THREAD_KEY][:effects] << {
         rule_id: rule.id,
         action_names: Array(rule.actions).map { |action| action.with_indifferent_access[:action_name].to_s },
         before: before,
         after: after
       }
+    end
+
+    def record_message(message)
+      return unless active? && message.is_a?(Message)
+
+      key = message.private? ? :private_message_ids : :public_message_ids
+      Thread.current[THREAD_KEY][key] << message.id
     end
 
     def conversation_snapshot(conversation)
@@ -44,15 +51,9 @@ class ChatRing::NativeHandling::AutomationEffectCollector
         team_id: conversation.team_id,
         priority: conversation.priority,
         labels: conversation.label_list.sort,
-        automation_message_ids: automation_message_ids(conversation)
+        automation_public_message_ids: Thread.current[THREAD_KEY][:public_message_ids].dup,
+        automation_private_message_ids: Thread.current[THREAD_KEY][:private_message_ids].dup
       }
-    end
-
-    def automation_message_ids(conversation)
-      conversation.messages
-                  .where("content_attributes ->> 'automation_rule_id' IS NOT NULL")
-                  .reorder(:id)
-                  .pluck(:id)
     end
   end
 end

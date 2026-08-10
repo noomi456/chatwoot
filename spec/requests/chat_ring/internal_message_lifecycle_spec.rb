@@ -154,13 +154,17 @@ RSpec.describe 'ChatRing internal Web Widget message lifecycle', type: :request 
     expect(ChatRing::AiTurnJob).to have_been_enqueued.once.with(turn.id)
   end
 
-  it 'records actual benign Automation effects without re-running the rule' do
+  it 'allows actual label, priority and private-note effects without re-running the rule', :aggregate_failures do
     rule = create(
       :automation_rule,
       account: account,
       event_name: 'message_created',
-      conditions: [inbox_condition],
-      actions: [{ 'action_name' => 'add_label', 'action_params' => ['priority_customer'] }]
+      conditions: incoming_message_conditions,
+      actions: [
+        { 'action_name' => 'add_label', 'action_params' => ['priority_customer'] },
+        { 'action_name' => 'change_priority', 'action_params' => ['high'] },
+        { 'action_name' => 'add_private_note', 'action_params' => ['Qualified by Automation'] }
+      ]
     )
 
     message = post_widget_message('Please label this conversation')
@@ -174,10 +178,16 @@ RSpec.describe 'ChatRing internal Web Widget message lifecycle', type: :request 
     expect(message.conversation.reload.label_list).to include('priority_customer')
     expect(effect).to include(
       'rule_id' => rule.id,
-      'action_names' => ['add_label']
+      'action_names' => %w[add_label change_priority add_private_note]
     )
     expect(effect.dig('before', 'labels')).not_to include('priority_customer')
     expect(effect.dig('after', 'labels')).to include('priority_customer')
+    expect(effect.dig('after', 'priority')).to eq('high')
+    expect(effect.dig('before', 'automation_private_message_ids')).to be_empty
+    expect(effect.dig('after', 'automation_private_message_ids')).to contain_exactly(
+      message.conversation.messages.find_by!(private: true, content: 'Qualified by Automation').id
+    )
+    expect(turn).to be_status_received
   end
 
   it 'releases one turn when native completion is delivered more than once' do
@@ -207,7 +217,7 @@ RSpec.describe 'ChatRing internal Web Widget message lifecycle', type: :request 
       :automation_rule,
       account: account,
       event_name: 'message_created',
-      conditions: [inbox_condition],
+      conditions: incoming_message_conditions,
       actions: [{ 'action_name' => 'add_label', 'action_params' => ['native_effect'] }]
     )
     message = post_widget_message('Keep the native effect')
@@ -300,15 +310,17 @@ RSpec.describe 'ChatRing internal Web Widget message lifecycle', type: :request 
     expect(ChatRing::AiTurn.where(trigger_message: message)).not_to exist
   end
 
-  it 'fails closed at scheduling when a conflicting automation bypasses binding validation' do
+  it 'keeps the actual public Automation response and suppresses AI even if the rule is later deleted' do
     rule = create(
       :automation_rule,
       account: account,
       event_name: 'message_created',
-      active: false,
-      actions: [{ 'action_name' => 'send_message', 'action_params' => ['Automation reply'] }]
+      conditions: incoming_message_conditions,
+      actions: [
+        { 'action_name' => 'send_message', 'action_params' => ['Automation reply'] },
+        { 'action_name' => 'add_label', 'action_params' => ['automation_answered'] }
+      ]
     )
-    rule.update_columns(active: true, updated_at: Time.current) # rubocop:disable Rails/SkipsModelValidations
     clear_enqueued_jobs
 
     message = post_widget_message('Can the Assistant answer this?')
@@ -316,9 +328,134 @@ RSpec.describe 'ChatRing internal Web Widget message lifecycle', type: :request 
 
     complete_automation_for(message)
     turn = ChatRing::AiTurn.find_by!(trigger_message: message)
+    automation_message = message.conversation.messages.find_by!(
+      content: 'Automation reply',
+      private: false
+    )
 
     expect(turn).to be_status_ineligible
-    expect(turn.decision_type).to eq('automation_conflict')
+    expect(turn.decision_type).to eq('native_automation_response')
+    expect(automation_message.content_attributes['automation_rule_id']).to eq(rule.id)
+    expect(message.conversation.reload.label_list).to include('automation_answered')
+    expect(ChatRing::AiTurnJob).not_to have_been_enqueued
+
+    rule.destroy!
+    expect(ChatRing::Brain::Eligibility.check(turn).reason).to eq('native_automation_response')
+  end
+
+  it 'records an Automation attachment as the native public response' do
+    rule = create(
+      :automation_rule,
+      account: account,
+      event_name: 'message_created',
+      conditions: incoming_message_conditions,
+      actions: []
+    )
+    rule.files.attach(
+      io: Rails.root.join('spec/assets/avatar.png').open,
+      filename: 'avatar.png',
+      content_type: 'image/png'
+    )
+    rule.update!(actions: [{ 'action_name' => 'send_attachment', 'action_params' => [rule.files.first.blob_id] }])
+
+    message = post_widget_message('Please send the brochure')
+    complete_automation_for(message)
+    turn = ChatRing::AiTurn.find_by!(trigger_message: message)
+    automation_message = message.conversation.messages.where(private: false).detect do |candidate|
+      candidate.content_attributes['automation_rule_id'] == rule.id
+    end
+
+    expect(automation_message).to be_present
+    expect(automation_message.attachments).to be_present
+    expect(turn).to have_attributes(status: 'ineligible', decision_type: 'native_automation_response')
+    expect(ChatRing::AiTurnJob).not_to have_been_enqueued
+  end
+
+  it 'suppresses AI after an actual native team assignment' do
+    team = create(:team, account: account)
+    create(
+      :automation_rule,
+      account: account,
+      event_name: 'message_created',
+      conditions: incoming_message_conditions,
+      actions: [{ 'action_name' => 'assign_team', 'action_params' => [team.id] }]
+    )
+
+    message = post_widget_message('Route this request')
+    complete_automation_for(message)
+    turn = ChatRing::AiTurn.find_by!(trigger_message: message)
+
+    expect(message.conversation.reload.team).to eq(team)
+    expect(turn).to have_attributes(status: 'ineligible', decision_type: 'native_automation_lifecycle_change')
+    expect(ChatRing::AiTurnJob).not_to have_been_enqueued
+  end
+
+  it 'allows AI when a public-response Automation does not match the trigger' do
+    create(
+      :automation_rule,
+      account: account,
+      event_name: 'message_created',
+      conditions: [
+        {
+          'values' => ['only this exact phrase'],
+          'attribute_key' => 'content',
+          'query_operator' => 'AND',
+          'filter_operator' => 'equal_to'
+        },
+        incoming_message_condition
+      ],
+      actions: [{ 'action_name' => 'send_message', 'action_params' => ['Automation reply'] }]
+    )
+
+    message = post_widget_message('A different question')
+    complete_automation_for(message)
+    turn = ChatRing::AiTurn.find_by!(trigger_message: message)
+
+    expect(turn).to be_status_received
+    expect(message.conversation.messages.where(content: 'Automation reply')).to be_empty
+    expect(ChatRing::AiTurnJob).to have_been_enqueued.once.with(turn.id)
+  end
+
+  it 'rejects indirect and unobserved Automation rules while the Assistant binding is active', :aggregate_failures do
+    webhook_rule = build(
+      :automation_rule,
+      account: account,
+      event_name: 'message_created',
+      conditions: incoming_message_conditions,
+      actions: [{ 'action_name' => 'send_webhook_event', 'action_params' => ['https://example.com/hook'] }]
+    )
+    conversation_rule = build(
+      :automation_rule,
+      account: account,
+      event_name: 'conversation_updated',
+      conditions: [inbox_condition],
+      actions: [{ 'action_name' => 'send_message', 'action_params' => ['Automation reply'] }]
+    )
+
+    expect(webhook_rule).not_to be_valid
+    expect(conversation_rule).not_to be_valid
+    expect(webhook_rule.errors[:base]).to include('Automation conflicts with the active ChatRing Assistant')
+    expect(conversation_rule.errors[:base]).to include('Automation conflicts with the active ChatRing Assistant')
+  end
+
+  it 'fails closed when native Automation effect observation fails' do
+    create(
+      :automation_rule,
+      account: account,
+      event_name: 'message_created',
+      conditions: incoming_message_conditions,
+      actions: [{ 'action_name' => 'add_label', 'action_params' => ['native_effect'] }]
+    )
+    allow(ChatRing::NativeHandling::AutomationEffectCollector).to receive(:conversation_snapshot).and_return(
+      { observation_error: 'ActiveRecord::ConnectionNotEstablished' }
+    )
+
+    message = post_widget_message('Keep the native effect but suppress AI')
+    complete_automation_for(message)
+    turn = ChatRing::AiTurn.find_by!(trigger_message: message)
+
+    expect(message.conversation.reload.label_list).to include('native_effect')
+    expect(turn).to have_attributes(status: 'ineligible', decision_type: 'automation_observation_failed')
     expect(ChatRing::AiTurnJob).not_to have_been_enqueued
   end
 
@@ -534,5 +671,18 @@ RSpec.describe 'ChatRing internal Web Widget message lifecycle', type: :request 
       'query_operator' => nil,
       'filter_operator' => 'equal_to'
     }
+  end
+
+  def incoming_message_condition
+    {
+      'values' => ['incoming'],
+      'attribute_key' => 'message_type',
+      'query_operator' => nil,
+      'filter_operator' => 'equal_to'
+    }
+  end
+
+  def incoming_message_conditions
+    [inbox_condition.merge('query_operator' => 'AND'), incoming_message_condition]
   end
 end

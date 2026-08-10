@@ -100,7 +100,34 @@ RSpec.describe ChatRing::AssistantProvisioning::InboxBindingActivator do
     end.to raise_error(ChatRing::AssistantProvisioning::AgentBotConnector::ConflictError)
   end
 
-  it 'rejects binding when a potentially matching automation can send a public reply' do
+  it 'allows binding when message-created Automation effects use the native completion barrier' do
+    publish
+    provision
+    create(
+      :automation_rule,
+      account: account,
+      event_name: 'message_created',
+      conditions: [
+        {
+          'attribute_key' => 'inbox_id',
+          'filter_operator' => 'equal_to',
+          'values' => [inbox.id],
+          'query_operator' => 'AND'
+        },
+        {
+          'attribute_key' => 'message_type',
+          'filter_operator' => 'equal_to',
+          'values' => ['incoming'],
+          'query_operator' => nil
+        }
+      ],
+      actions: [{ 'action_name' => 'send_message', 'action_params' => ['Automation reply'] }]
+    )
+
+    expect(described_class.new(assistant: assistant, inbox: inbox).call).to be_active
+  end
+
+  it 'rejects binding when message-created responder rules can match outgoing messages' do
     publish
     provision
     create(
@@ -114,6 +141,48 @@ RSpec.describe ChatRing::AssistantProvisioning::InboxBindingActivator do
         'query_operator' => nil
       }],
       actions: [{ 'action_name' => 'send_message', 'action_params' => ['Automation reply'] }]
+    )
+
+    expect do
+      described_class.new(assistant: assistant, inbox: inbox).call
+    end.to raise_error(ChatRing::AssistantProvisioning::AgentBotConnector::ConflictError)
+  end
+
+  it 'rejects binding when an unobserved Automation event can send a public reply' do
+    publish
+    provision
+    create(
+      :automation_rule,
+      account: account,
+      event_name: 'conversation_updated',
+      conditions: [{
+        'attribute_key' => 'inbox_id',
+        'filter_operator' => 'equal_to',
+        'values' => [inbox.id],
+        'query_operator' => nil
+      }],
+      actions: [{ 'action_name' => 'send_message', 'action_params' => ['Automation reply'] }]
+    )
+
+    expect do
+      described_class.new(assistant: assistant, inbox: inbox).call
+    end.to raise_error(ChatRing::AssistantProvisioning::AgentBotConnector::ConflictError)
+  end
+
+  it 'rejects binding when message-created Automation invokes an indirect webhook' do
+    publish
+    provision
+    create(
+      :automation_rule,
+      account: account,
+      event_name: 'message_created',
+      conditions: [{
+        'attribute_key' => 'inbox_id',
+        'filter_operator' => 'equal_to',
+        'values' => [inbox.id],
+        'query_operator' => nil
+      }],
+      actions: [{ 'action_name' => 'send_webhook_event', 'action_params' => ['https://example.com/hook'] }]
     )
 
     expect do

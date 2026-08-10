@@ -13,6 +13,7 @@ class ChatRing::AutomationConflictClassifier
     pending_conversation
     snooze_conversation
   ].freeze
+  INDIRECT_ACTIONS = %w[send_webhook_event].freeze
 
   def self.rule_conflicts?(rule, inbox)
     new(account: rule.account, inbox: inbox).rule_conflicts?(rule)
@@ -40,9 +41,25 @@ class ChatRing::AutomationConflictClassifier
   attr_reader :account, :inbox
 
   def conflicting_action?(rule)
-    Array(rule.actions).any? do |action|
-      CONFLICTING_ACTIONS.include?(action.with_indifferent_access[:action_name].to_s)
-    end
+    action_names = Array(rule.actions).map { |action| action.with_indifferent_access[:action_name].to_s }
+    return action_names.intersect?(CONFLICTING_ACTIONS) unless rule.event_name == 'message_created'
+    return true if action_names.intersect?(INDIRECT_ACTIONS)
+    return false unless action_names.intersect?(CONFLICTING_ACTIONS)
+
+    !incoming_message_only?(rule.conditions)
+  end
+
+  def incoming_message_only?(conditions)
+    normalized = Array(conditions).map(&:with_indifferent_access)
+    return false if normalized.any? { |condition| condition[:query_operator].to_s.casecmp('OR').zero? }
+
+    normalized.any? { |condition| incoming_message_condition?(condition) }
+  end
+
+  def incoming_message_condition?(condition)
+    condition[:attribute_key] == 'message_type' &&
+      condition[:filter_operator] == 'equal_to' &&
+      Array(condition[:values]).flatten.map(&:to_s) == ['incoming']
   end
 
   def potentially_matches_inbox?(rule)
