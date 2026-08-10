@@ -20,6 +20,8 @@ class ChatRing::Brain::Eligibility
 
   def runtime_failure
     return 'public_response_gate_closed' unless ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY
+    return 'legacy_runtime_mode' if turn.runtime_mode_legacy?
+    return 'runtime_mode_changed' if turn.runtime_mode_external? != ChatRing::AssistantSpike::EXTERNAL_RUNTIME_ENABLED
   end
 
   def deadline_failure

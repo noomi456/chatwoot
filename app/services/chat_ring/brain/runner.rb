@@ -40,13 +40,14 @@ class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
   def execute_claimed_turn
     invocation = ChatRing::Brain::InboundInvocationBuilder.new(turn).build
     persist_invocation_metadata!(invocation)
-    ensure_within_deadline!
+    return unless recheck_eligibility!
+
     evidence_set = retrieve_evidence(invocation)
-    ensure_within_deadline!
     raise RetryableError, evidence_set.error_code || 'knowledge_provider_failed' if evidence_set.status == 'provider_error'
 
     persist_evidence!(evidence_set)
     return complete_without_evidence!(invocation.digest) if evidence_set.status != 'accepted'
+    return unless recheck_eligibility!
 
     run_inference(invocation, evidence_set)
   end
@@ -58,17 +59,14 @@ class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
 
   def run_inference(invocation, evidence_set)
     ensure_within_deadline!
-    messages = ChatRing::Brain::PromptBuilder.messages(context: invocation.model_context, evidence_set: evidence_set)
-    @attempt = start_attempt!(messages)
-    result = provider.call(messages: messages)
+    result = ChatRing::Brain::Reasoner.new(
+      invocation: invocation,
+      evidence_set: evidence_set,
+      provider: provider
+    ).call { |messages| @attempt = start_attempt!(messages) }
     ensure_within_deadline!
-    decision = ChatRing::Brain::Decision.from_payload(
-      result.payload,
-      allowed_evidence_ids: evidence_set.items.map(&:id),
-      evidence_status: evidence_set.status
-    )
-    complete_attempt!(attempt, result)
-    complete!(decision, context_digest: invocation.digest)
+    complete_attempt!(attempt, result.provider_result)
+    complete!(result.decision, context_digest: invocation.digest)
   end
 
   def handle_provider_failure(attempt, code)
@@ -121,6 +119,22 @@ class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
 
   def ensure_within_deadline!
     raise DeadlineExpired if deadline_expired?
+  end
+
+  def recheck_eligibility!
+    eligible = false
+    turn.with_lock do
+      turn.reload
+      next unless turn.status_running?
+
+      eligibility = ChatRing::Brain::Eligibility.check(turn)
+      if eligibility.eligible
+        eligible = true
+      else
+        mark_ineligible!(eligibility.reason)
+      end
+    end
+    eligible
   end
 
   def deadline_expired?

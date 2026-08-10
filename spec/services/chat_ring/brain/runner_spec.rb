@@ -156,6 +156,19 @@ RSpec.describe ChatRing::Brain::Runner do
     expect(turn.decision_payload).to eq({})
   end
 
+  it 'does not call the model when native ownership changes during retrieval' do
+    allow(ChatRing::Knowledge::Retriever).to receive(:retrieve) do
+      turn.conversation.update!(status: :open, assignee_agent_bot: nil)
+      evidence_set
+    end
+
+    described_class.new(turn, provider: provider).call
+
+    expect(turn.reload).to be_status_ineligible
+    expect(turn.decision_type).to eq('conversation_not_pending')
+    expect(provider).not_to have_received(:call)
+  end
+
   def build_turn
     account = create(:account)
     workspace = account.chat_ring_workspace

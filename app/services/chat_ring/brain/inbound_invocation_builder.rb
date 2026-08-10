@@ -2,6 +2,7 @@ class ChatRing::Brain::InboundInvocationBuilder
   MAX_HISTORY_MESSAGES = 20
   MAX_HISTORY_CHARACTERS = 16_000
   MAX_MESSAGE_CHARACTERS = 4000
+  MAX_RETRIEVAL_QUERY_CHARACTERS = ChatRing::Knowledge::DocsGptProvider::MAX_QUERY_LENGTH
 
   def initialize(turn)
     @turn = turn
@@ -11,13 +12,16 @@ class ChatRing::Brain::InboundInvocationBuilder
     validate_supported_policies!
     history, provenance = bounded_history
     trigger = project_message(turn.trigger_message)
+    native_messages, native_provenance = current_turn_native_messages
+    provenance.concat(native_provenance)
     provenance << provenance_for(turn.trigger_message, trigger.fetch('speaker'))
 
     ChatRing::Brain::Invocation.new(
+      kind: 'inbound_conversation',
       trusted_context: trusted_context,
-      model_context: model_context(history, trigger),
+      model_context: model_context(history, trigger, native_messages),
       audit_metadata: audit_metadata(provenance),
-      query: trigger.fetch('content'),
+      query: trigger.fetch('content').first(MAX_RETRIEVAL_QUERY_CHARACTERS),
       deadline_at: turn.deadline_at
     )
   end
@@ -51,7 +55,7 @@ class ChatRing::Brain::InboundInvocationBuilder
     }
   end
 
-  def model_context(history, trigger)
+  def model_context(history, trigger, native_messages)
     version = turn.assistant_version
     {
       'assistant' => {
@@ -67,6 +71,7 @@ class ChatRing::Brain::InboundInvocationBuilder
         'channel_type' => turn.conversation.inbox.channel_type,
         'history' => history
       },
+      'current_turn_native_messages' => native_messages,
       'trigger_message' => trigger
     }
   end
@@ -102,6 +107,19 @@ class ChatRing::Brain::InboundInvocationBuilder
     [selected, provenance]
   end
 
+  def current_turn_native_messages
+    messages = turn.conversation.messages
+                   .where(id: current_turn_template_ids, message_type: :template, private: false)
+                   .reorder(:id)
+    projected = messages.map { |message| project_message(message) }
+    provenance = messages.zip(projected).map { |message, item| provenance_for(message, item.fetch('speaker')) }
+    [projected, provenance]
+  end
+
+  def current_turn_template_ids
+    Array(turn.native_handling_snapshot['template_delta_ids']).map(&:to_i).uniq
+  end
+
   def project_message(message)
     speaker = speaker_for(message)
     {
@@ -135,7 +153,20 @@ class ChatRing::Brain::InboundInvocationBuilder
       'message_id' => message.id,
       'speaker' => speaker,
       'sender_type' => message.sender_type,
-      'sender_id' => message.sender_id
+      'sender_id' => message.sender_id,
+      'automation_rule_id' => message.content_attributes['automation_rule_id'],
+      'template_kind' => template_kind(message)
     }.compact
+  end
+
+  def template_kind(message)
+    return unless message.template?
+
+    snapshot = turn.native_handling_snapshot
+    return 'greeting' if Array(snapshot['greeting_message_ids']).include?(message.id)
+    return 'email_collection' if Array(snapshot['email_input_message_ids']).include?(message.id)
+    return 'out_of_office' if Array(snapshot['out_of_office_message_ids']).include?(message.id)
+
+    'native_template'
   end
 end

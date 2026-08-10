@@ -1,9 +1,11 @@
 require 'digest'
 
 class ChatRing::Brain::Invocation
-  attr_reader :trusted_context, :model_context, :audit_metadata, :query, :deadline_at
+  attr_reader :kind, :trusted_context, :model_context, :audit_metadata, :query, :deadline_at
 
-  def initialize(trusted_context:, model_context:, audit_metadata:, query:, deadline_at:)
+  # rubocop:disable Metrics/ParameterLists
+  def initialize(kind:, trusted_context:, model_context:, audit_metadata:, query:, deadline_at:)
+    @kind = kind.to_s.dup.freeze
     @trusted_context = deep_freeze(trusted_context)
     @model_context = deep_freeze(model_context)
     @audit_metadata = deep_freeze(audit_metadata)
@@ -11,12 +13,14 @@ class ChatRing::Brain::Invocation
     @deadline_at = deadline_at
     freeze
   end
+  # rubocop:enable Metrics/ParameterLists
 
   def digest
     Digest::SHA256.hexdigest(
       JSON.generate(
         'trusted_context' => trusted_context,
         'model_context' => model_context,
+        'kind' => kind,
         'deadline_at' => deadline_at&.iso8601
       )
     )

@@ -257,6 +257,7 @@ RSpec.describe 'Conversation Messages API', type: :request do
                                         inbox_assistant_binding: binding, binding_version: binding.binding_version,
                                         assistant: assistant, assistant_version: version,
                                         expected_agent_bot: connection.agent_bot, status: :ready_to_commit,
+                                        runtime_mode: :external,
                                         deadline_at: 2.minutes.from_now,
                                         decision_type: 'reply',
                                         decision_payload: { 'decision_type' => 'reply', 'response_text' => 'Grounded answer',
@@ -286,6 +287,19 @@ RSpec.describe 'Conversation Messages API', type: :request do
       end
 
       it 'does not expose the external conditional commit endpoint in internal runtime mode' do
+        agent_bot.update!(account: account)
+
+        post "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/messages/conditional_create",
+             params: {},
+             headers: { api_access_token: agent_bot.access_token.token },
+             as: :json
+
+        expect(response).to have_http_status(:not_found)
+      end
+
+      it 'does not expose the external conditional commit endpoint while the public gate is closed' do
+        stub_const('ChatRing::AssistantSpike::EXTERNAL_RUNTIME_ENABLED', true)
+        stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', false)
         agent_bot.update!(account: account)
 
         post "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/messages/conditional_create",

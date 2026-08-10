@@ -18,7 +18,7 @@ class Api::V1::Accounts::Conversations::MessagesController < Api::V1::Accounts::
   end
 
   def conditional_create
-    return head :not_found unless ChatRing::AssistantSpike::EXTERNAL_RUNTIME_ENABLED
+    return head :not_found unless external_public_runtime_enabled?
 
     result = Conversations::AgentBotConditionalCommitService.new(
       conversation: @conversation,
@@ -80,6 +80,10 @@ class Api::V1::Accounts::Conversations::MessagesController < Api::V1::Accounts::
   end
 
   private
+
+  def external_public_runtime_enabled?
+    ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY && ChatRing::AssistantSpike::EXTERNAL_RUNTIME_ENABLED
+  end
 
   def message
     @message ||= @conversation.messages.find(permitted_params[:id])

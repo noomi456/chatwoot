@@ -102,6 +102,7 @@ class ChatRing::InternalTurnScheduler
       assistant: relationship.assistant,
       assistant_version: relationship.assistant_version,
       expected_agent_bot: relationship.agent_bot,
+      runtime_mode: :internal,
       status: reason ? :ineligible : :received,
       decision_type: reason,
       completed_at: reason ? Time.current : nil,

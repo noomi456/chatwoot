@@ -3,6 +3,8 @@ class ChatRing::WebhookDeliveryJob < ApplicationJob
 
   def perform(delivery_id)
     delivery = ChatRing::WebhookDelivery.find(delivery_id)
+    return disable_delivery!(delivery) unless external_runtime_open?
+
     turn = delivery.with_lock do
       next unless delivery.received?
 
@@ -17,6 +19,14 @@ class ChatRing::WebhookDeliveryJob < ApplicationJob
   end
 
   private
+
+  def external_runtime_open?
+    ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY && ChatRing::AssistantSpike::EXTERNAL_RUNTIME_ENABLED
+  end
+
+  def disable_delivery!(delivery)
+    delivery.with_lock { ignore!(delivery, 'external_runtime_disabled') if delivery.received? }
+  end
 
   def process_delivery!(delivery)
     return ignore!(delivery, 'unsupported_event') unless delivery.event_type == 'message_created'
@@ -71,6 +81,7 @@ class ChatRing::WebhookDeliveryJob < ApplicationJob
       turn.assistant = assistant
       turn.assistant_version = assistant_version
       turn.expected_agent_bot = delivery.assistant_agent_bot_connection.agent_bot
+      turn.runtime_mode = :external
       turn.deadline_at = Time.current + ChatRing::AiTurn::DEFAULT_DEADLINE
       turn.status = eligible ? :received : :ineligible
       turn.decision_type = reason unless eligible

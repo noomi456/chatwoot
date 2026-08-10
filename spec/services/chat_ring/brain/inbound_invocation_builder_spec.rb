@@ -40,6 +40,41 @@ RSpec.describe ChatRing::Brain::InboundInvocationBuilder do
     )
   end
 
+  it 'includes only snapshot-authorized native templates created for the current trigger' do
+    current_template = create(
+      :message,
+      account: turn.conversation.account,
+      inbox: turn.conversation.inbox,
+      conversation: turn.conversation,
+      message_type: :template,
+      content: 'Greeting sent for this question'
+    )
+    turn.class.where(id: turn.id).update_all( # rubocop:disable Rails/SkipsModelValidations -- immutable snapshot characterization
+      native_handling_snapshot: turn.native_handling_snapshot.merge(
+        'template_delta_ids' => [current_template.id],
+        'greeting_message_ids' => [current_template.id]
+      )
+    ) # rubocop:enable Rails/SkipsModelValidations
+
+    invocation = described_class.new(turn.reload).build
+
+    expect(invocation.model_context.fetch('current_turn_native_messages')).to contain_exactly(
+      include('speaker' => 'native_template', 'content' => 'Greeting sent for this question')
+    )
+    expect(invocation.audit_metadata.fetch('speaker_provenance')).to include(
+      include('message_id' => current_template.id, 'speaker' => 'native_template', 'template_kind' => 'greeting')
+    )
+  end
+
+  it 'keeps the model-visible trigger bounded while limiting the retrieval query to the DocsGPT contract' do
+    turn.trigger_message.update!(content: 'x' * 5000)
+
+    invocation = described_class.new(turn.reload).build
+
+    expect(invocation.model_context.dig('trigger_message', 'content').length).to eq(4000)
+    expect(invocation.query.length).to eq(ChatRing::Knowledge::DocsGptProvider::MAX_QUERY_LENGTH)
+  end
+
   def build_turn
     context = build_context
     create_history(context)
