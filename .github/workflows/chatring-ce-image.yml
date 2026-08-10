@@ -12,6 +12,7 @@ on:
       - codex/phase2a-account-knowledge
       - codex/chatring-layered-build
       - codex/chatring-integration-contract-v2-2
+      - codex/web-widget-core-production-proof
   workflow_dispatch:
 
 concurrency:

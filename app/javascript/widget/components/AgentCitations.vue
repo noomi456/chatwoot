@@ -26,7 +26,7 @@ export default {
 <template>
   <ul
     v-if="safeCitations.length"
-    aria-label="Sources"
+    :aria-label="$t('SOURCES')"
     class="flex flex-wrap gap-1.5 mt-2"
   >
     <li

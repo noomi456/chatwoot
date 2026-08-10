@@ -14,7 +14,10 @@ image must never be promoted or deployed.
 Create a root-owned `0600` environment file from `.env.example`. Generate new
 database, Redis, Rails, encryption and DocsGPT secrets for every run. Copy only the
 approved development OpenAI key from the secret store; do not print or commit it.
-Pin all source images by digest.
+Pin all source images by digest. `PROOF_RUN_ID` must be a unique lowercase
+letters/digits/hyphens value; it becomes the Compose project boundary so two runs
+cannot remove each other's containers or volumes. Concurrent runs must also use
+different loopback `PROOF_RAILS_PORT` values.
 
 Run from the repository root:
 
@@ -29,3 +32,16 @@ records grounded reply/citation persistence and refresh, native handoff, native
 template precedence, concurrency, human takeover, AI-first serialization, provider
 recovery, unbound Widget behavior and KnowledgeIndex pin protection. Staging's public
 gate remains closed.
+
+The JSON result explicitly records the proof boundary. This server lane covers the
+real Widget HTTP writers and the native ActionCable payload across processes. A
+connected browser rendering check, non-Widget channel certifications, paid-provider
+fault drills and the final public release decision remain separate gates; this
+harness must not be used to imply that they passed.
+
+`run.sh` refuses a dirty `deploy/proof` tree or a `PROOF_COMMIT` that differs from the
+checked-out commit. It hashes that commit's `deploy/proof` Git tree and verifies the
+source/proof/manifest image labels after building. This binds the copied proof harness
+to the reviewed Git commit instead of trusting a caller-supplied label alone. It also
+fails if runtime logs contain configured secrets, raw proof prompts, fatal Ruby errors
+or uninitialized constants.

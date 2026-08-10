@@ -14,6 +14,8 @@ require 'uri'
 class ChatRingWebWidgetProof
   class Failure < StandardError; end
 
+  BindingFixture = Data.define(:assistant, :connection, :channel, :inbox, :contact, :contact_inbox, :token)
+
   WAIT_TIMEOUT = 300
   POLL_INTERVAL = 0.25
   AI_INSERT_ADVISORY_LOCK = 7_260_813
@@ -32,7 +34,9 @@ class ChatRingWebWidgetProof
 
   def call
     setup!
+    run_first_binding_linearization!
     run_supported_lifecycle!
+    run_committed_outcome_recovery!
     run_unsupported_handoff!
     run_native_template_arbitration!
     run_concurrency_ten!
@@ -159,8 +163,74 @@ class ChatRingWebWidgetProof
     assert!(knowledge_index.documents.exists?(provider_status: 'ready'), 'active index has no ready provider document')
   end
 
+  def run_first_binding_linearization!
+    outcomes = {}
+    %i[conversations messages].each do |endpoint|
+      outcomes["#{endpoint}_writer_first"] = run_writer_before_first_binding!(endpoint)
+      outcomes["#{endpoint}_binding_first"] = run_binding_before_first_writer!(endpoint)
+    end
+    results[:first_binding_linearization] = outcomes
+  end
+
+  def run_writer_before_first_binding!(endpoint)
+    fixture = create_binding_fixture!("#{endpoint}-writer-first")
+    lock_connection, lock_pid = checkout_record_lock!('accounts', account.id)
+    binder = start_binding(fixture)
+    binder_pid = wait_for_blocked_backend!(lock_pid, 'accounts')
+    message = post_first_widget(fixture, endpoint, "First native message before binding #{run_id}")
+    wait_for('pre-binding native Automation completion') do
+      message.conversation.reload.label_list.include?(fixture_label(fixture))
+    end
+    release_record_lock!(lock_connection)
+    lock_connection = nil
+    binder.value
+
+    assert!(ChatRing::NativeHandlingCompletion.where(trigger_message: message).none?,
+            'first Message committed before binding was adopted by ChatRing')
+    assert!(ChatRing::AiTurn.where(trigger_message: message).none?,
+            'first Message committed before binding created an AITurn')
+    assert!(message.conversation.reload.assignee_agent_bot_id.nil?,
+            'first Conversation committed before binding acquired an AgentBot later')
+    { writer_won: true, binder_waiter_pid: binder_pid, adopted_turns: 0 }
+  ensure
+    release_record_lock!(lock_connection) if defined?(lock_connection) && lock_connection
+  end
+
+  def run_binding_before_first_writer!(endpoint)
+    fixture = create_binding_fixture!("#{endpoint}-binding-first")
+    lock_connection, lock_pid = checkout_record_lock!('inboxes', fixture.inbox.id)
+    binder = start_binding(fixture)
+    binder_pid = wait_for_blocked_backend!(lock_pid, 'inboxes')
+    writer = Thread.new do
+      ActiveRecord::Base.connection_pool.with_connection do
+        post_first_widget(
+          fixture,
+          endpoint,
+          "[[PROOF_LOCAL_REPLY]] First managed message after binding #{run_id}"
+        )
+      end
+    end
+    writer_pid = wait_for_blocked_backend!(lock_pid, 'inboxes', exclude_pids: [binder_pid])
+    release_record_lock!(lock_connection)
+    lock_connection = nil
+    binder.value
+    message = writer.value
+    turn = wait_for_terminal_turn(message)
+
+    assert!(message.conversation.reload.assignee_agent_bot_id == fixture.connection.agent_bot_id,
+            'binding-first Conversation did not retain the managed native AgentBot')
+    assert!(ChatRing::NativeHandlingCompletion.where(trigger_message: message).one?,
+            'binding-first Message did not create exactly one completion record')
+    assert!(turn.status_committed?, "binding-first turn ended as #{turn.status}")
+    { binding_won: true, binder_waiter_pid: binder_pid, writer_waiter_pid: writer_pid, turns: 1 }
+  ensure
+    release_record_lock!(lock_connection) if defined?(lock_connection) && lock_connection
+  end
+
   def run_supported_lifecycle!
     visitor = create_visitor(email: "supported-#{run_id}@example.invalid")
+    cable_messages = Queue.new
+    cable_callback = subscribe_to_action_cable!(visitor.fetch(:contact_inbox), cable_messages)
     message = post_widget(visitor, "What pricing plans does ChatRing offer? proof #{run_id}")
     turn = wait_for_terminal_turn(message)
     outgoing = wait_for_bot_message(turn)
@@ -179,6 +249,9 @@ class ChatRingWebWidgetProof
     assert!(citations.any? { |citation| citation['url']&.start_with?('https://proof.invalid/') },
             'supported reply has no visitor-safe citation')
     assert_widget_refresh_includes_citations!(visitor, outgoing, citations)
+    assert_action_cable_citations!(cable_messages, outgoing, turn, citations)
+    @supported_turn = turn
+    @supported_outgoing = outgoing
 
     results[:supported] = {
       turn_status: turn.status,
@@ -188,6 +261,29 @@ class ChatRingWebWidgetProof
       input_tokens_recorded: attempt.input_tokens.to_i.positive?,
       output_tokens_recorded: attempt.output_tokens.to_i.positive?,
       outbound_messages: turn.conversation.messages.outgoing.where(sender: connection.agent_bot).count
+    }
+  ensure
+    unsubscribe_from_action_cable(visitor&.dig(:contact_inbox), cable_callback)
+  end
+
+  def run_committed_outcome_recovery!
+    original_message_id = @supported_outgoing.id
+    original_message_count = @supported_turn.conversation.messages.where(source_id: @supported_outgoing.source_id).count
+    @supported_turn.update!(status: :ready_to_commit, completed_at: nil)
+    job = ChatRing::AiTurnRecoverySweepJob.perform_later
+    assert!(job.respond_to?(:successfully_enqueued?) && job.successfully_enqueued?,
+            'recovery sweep could not be queued')
+    wait_for('committed outcome recovery') { @supported_turn.reload.status_committed? }
+
+    recovered_commit = @supported_turn.outbound_commit.reload
+    assert!(recovered_commit.message_id == original_message_id, 'recovery changed the committed native Message')
+    assert!(
+      @supported_turn.conversation.messages.where(source_id: @supported_outgoing.source_id).count == original_message_count,
+      'recovery duplicated the committed native Message'
+    )
+    results[:committed_outcome_recovery] = {
+      recovered_same_message: true,
+      message_count: original_message_count
     }
   end
 
@@ -217,12 +313,54 @@ class ChatRingWebWidgetProof
     run_greeting_case!
     run_email_collection_case!
     run_out_of_office_case!
+    run_benign_automation_case!
+    run_public_automation_case!
   ensure
     inbox.update!(
       greeting_enabled: false,
       enable_email_collect: false,
       working_hours_enabled: false
     )
+  end
+
+  def run_benign_automation_case!
+    rule = create_incoming_automation!(
+      name: "Proof benign Automation #{run_id}",
+      actions: [{ 'action_name' => 'add_label', 'action_params' => ["proof-benign-#{run_id}"] }]
+    )
+    visitor = create_visitor(email: "benign-automation-#{run_id}@example.invalid")
+    message = post_widget(visitor, "[[PROOF_LOCAL_REPLY]] What pricing plans are available? benign #{run_id}")
+    turn = wait_for_terminal_turn(message)
+    wait_for_bot_message(turn)
+
+    assert!(turn.status_committed?, "benign Automation turn ended as #{turn.status}")
+    assert!(turn.conversation.reload.label_list.include?("proof-benign-#{run_id}"),
+            'benign native Automation label was not applied')
+    results[:benign_automation] = { native_label_applied: true, turn_status: turn.status }
+  ensure
+    rule&.destroy!
+  end
+
+  def run_public_automation_case!
+    response_text = "Native Automation answered proof #{run_id}"
+    rule = create_incoming_automation!(
+      name: "Proof public Automation #{run_id}",
+      actions: [{ 'action_name' => 'send_message', 'action_params' => [response_text] }]
+    )
+    visitor = create_visitor(email: "public-automation-#{run_id}@example.invalid")
+    message = post_widget(visitor, "Automation should answer this proof #{run_id}")
+    turn = wait_for_turn(message)
+    wait_for('public Automation terminalization') { turn.reload.status_ineligible? }
+    native_responses = turn.conversation.messages.where(content: response_text, private: false)
+
+    assert!(turn.decision_type == 'native_automation_response',
+            "public Automation decision is #{turn.decision_type.inspect}")
+    assert!(native_responses.one?, "public Automation produced #{native_responses.count} responses")
+    assert!(turn.attempts.none?, 'public Automation response started inference')
+    assert!(turn.outbound_commit.nil?, 'public Automation response created an AI outbound ledger')
+    results[:public_automation] = { native_responses: 1, inference_attempts: 0 }
+  ensure
+    rule&.destroy!
   end
 
   def run_greeting_case!
@@ -302,12 +440,10 @@ class ChatRingWebWidgetProof
     end
     committed = turns.select(&:status_committed?)
     bot_messages = visitor.fetch(:conversation).reload.messages.outgoing.where(sender: connection.agent_bot)
-    assert!(committed.size <= 1, "concurrency produced #{committed.size} committed turns")
-    assert!(bot_messages.count <= 1, "concurrency produced #{bot_messages.count} bot replies")
-    if committed.one?
-      assert!(committed.first.trigger_message_id == messages.last.id,
-              'a stale burst turn committed instead of the newest turn')
-    end
+    assert!(committed.size == 1, "concurrency produced #{committed.size} committed turns instead of one")
+    assert!(bot_messages.count == 1, "concurrency produced #{bot_messages.count} bot replies instead of one")
+    assert!(committed.first.trigger_message_id == messages.last.id,
+            'a stale burst turn committed instead of the newest turn')
     assert!(turns.none? { |turn| ChatRing::AiTurn::NONTERMINAL_STATUSES.include?(turn.status) }, 'burst left a nonterminal turn')
 
     results[:concurrency_ten] = {
@@ -344,36 +480,69 @@ class ChatRingWebWidgetProof
   end
 
   def run_ai_first_serialization_race!
-    visitor = create_visitor(email: "ai-first-#{run_id}@example.invalid", conversation: true)
+    results[:ai_first_serialization] = {
+      customer_writer: run_ai_first_serialization_case!(:customer),
+      human_writer: run_ai_first_serialization_case!(:human)
+    }
+  end
+
+  def run_ai_first_serialization_case!(writer_kind)
+    visitor = create_visitor(email: "ai-first-#{writer_kind}-#{run_id}@example.invalid", conversation: true)
     reset_provider_barrier!
     install_ai_insert_barrier!
     lock_connection = checkout_ai_insert_lock!
-    trigger = post_widget(visitor, "[[PROOF_HOLD]] [[PROOF_LOCAL_REPLY]] Explain pricing first #{run_id}")
+    trigger = post_widget(
+      visitor,
+      "[[PROOF_HOLD]] [[PROOF_LOCAL_REPLY]] Explain pricing before #{writer_kind} writer #{run_id}"
+    )
     turn = wait_for_turn(trigger)
     wait_for_provider_barrier!
     FileUtils.touch(File.join(state_dir, 'release_provider'))
-    wait_for_ai_insert_lock!
+    ai_insert_pid = wait_for_ai_insert_lock!
 
     writer = Thread.new do
       ActiveRecord::Base.connection_pool.with_connection do
-        post_widget(visitor, "[[PROOF_LOCAL_REPLY]] One follow-up after the reply #{run_id}")
+        if writer_kind == :human
+          post_dashboard_reply(visitor.fetch(:conversation), "Human takes over after AI commit #{run_id}")
+        else
+          post_widget(visitor, "[[PROOF_LOCAL_REPLY]] One follow-up after the reply #{run_id}")
+        end
       end
     end
-    sleep 1
-    assert!(writer.alive?, 'Widget writer interleaved while the guarded AI insert held native locks')
+    writer_pid = wait_for_native_writer_blocked_by!(ai_insert_pid)
+    assert!(writer.alive?, "#{writer_kind} writer completed while the guarded AI insert held native locks")
+    duplicate_jobs = if writer_kind == :customer
+                       Array.new(9) { ChatRing::OutboundCommitJob.perform_later(turn.id) }
+                     else
+                       []
+                     end
+    assert!(duplicate_jobs.all? { |job| job.respond_to?(:successfully_enqueued?) && job.successfully_enqueued? },
+            'duplicate commit deliveries could not all be queued')
     release_ai_insert_lock!(lock_connection)
     lock_connection = nil
     writer_message = writer.value
     ai_message = wait_for_bot_message(wait_for_terminal_turn(trigger))
-    follow_up_turn = wait_for_terminal_turn(writer_message)
 
     assert!(turn.reload.status_committed?, "AI-first turn ended as #{turn.status}")
-    assert!(ai_message.id < writer_message.id, 'competing Widget Message committed before the guarded AI insert')
-    assert!(follow_up_turn.status_committed?, "post-AI follow-up ended as #{follow_up_turn.status}")
-    results[:ai_first_serialization] = {
+    assert!(turn.conversation.messages.where(source_id: ai_message.source_id).one?,
+            'duplicate commit deliveries created more than one native Message')
+    assert!(ai_message.id < writer_message.id, "competing #{writer_kind} Message committed before the guarded AI insert")
+    if writer_kind == :human
+      conversation = turn.conversation.reload
+      assert!(conversation.open? && conversation.assignee == human && conversation.assignee_agent_bot_id.nil?,
+              'AI-first dashboard reply did not complete native human takeover')
+      assert!(ChatRing::AiTurn.where(trigger_message: writer_message).none?, 'human reply created an AITurn')
+    else
+      follow_up_turn = wait_for_terminal_turn(writer_message)
+      assert!(follow_up_turn.status_committed?, "post-AI follow-up ended as #{follow_up_turn.status}")
+    end
+    {
       ai_message_id: ai_message.id,
-      later_widget_message_id: writer_message.id,
-      writer_blocked_until_ai_commit: true
+      later_writer_message_id: writer_message.id,
+      writer_backend_pid: writer_pid,
+      writer_blocked_until_ai_commit: true,
+      duplicate_commit_deliveries: duplicate_jobs.size + 1,
+      committed_messages: 1
     }
   ensure
     release_ai_insert_lock!(lock_connection) if defined?(lock_connection) && lock_connection
@@ -442,16 +611,23 @@ class ChatRingWebWidgetProof
       turn.reload.knowledge_index_id == knowledge_index.id && turn.status_running?
     end
     cleanup = retire_and_schedule_pinned_index!
-
-    ChatRing::Knowledge::ProviderCleanupJob.perform_now(cleanup.id)
-    assert!(cleanup.reload.status == 'pending', 'pinned cleanup did not remain pending')
+    wait_for('queued cleanup to observe the nonterminal pin') do
+      cleanup.reload
+      cleanup if cleanup.status == 'pending' && cleanup.last_error == 'provider index is pinned by a nonterminal AI turn'
+    end
+    assert!(cleanup.status == 'pending', 'pinned cleanup did not remain pending')
     assert!(cleanup.last_error == 'provider index is pinned by a nonterminal AI turn',
             "pinned cleanup reason is #{cleanup.last_error.inspect}")
 
     FileUtils.touch(File.join(state_dir, 'release_provider'))
     wait_for_terminal_turn(message)
-    ChatRing::Knowledge::ProviderCleanupJob.perform_now(cleanup.id)
-    assert!(cleanup.reload.status == 'succeeded', "unpinned cleanup ended as #{cleanup.status}")
+    cleanup.update!(eligible_at: Time.current)
+    assert!(ChatRing::Knowledge::ProviderCleanupScheduler.enqueue_cleanup!(cleanup),
+            'unpinned cleanup could not be re-enqueued')
+    wait_for('queued cleanup to delete the unpinned provider source') do
+      cleanup.reload
+      cleanup if cleanup.status == 'succeeded'
+    end
     results[:knowledge_pin] = { deferred_while_running: true, cleanup_status_after_turn: cleanup.status }
   ensure
     FileUtils.touch(File.join(state_dir, 'release_provider'))
@@ -468,6 +644,14 @@ class ChatRingWebWidgetProof
       webhook_deliveries: 0,
       nonterminal_turns: 0,
       rails_image_commit: File.read('/app/.git_sha').strip
+    }
+    results[:proof_scope] = {
+      server_processes: %w[rails sidekiq postgres redis docsgpt_api docsgpt_worker],
+      native_widget_http: true,
+      native_action_cable_payload: true,
+      connected_browser_rendering: 'separate_required_gate',
+      non_widget_channel_certification: 'separate_required_gate',
+      public_release_ready: false
     }
   end
 
@@ -493,6 +677,169 @@ class ChatRingWebWidgetProof
       )
     end
     result
+  end
+
+  def create_binding_fixture!(label)
+    fixture_channel = Channel::WebWidget.create!(account: account, website_url: "https://#{label}.proof.invalid")
+    fixture_inbox = Inbox.create!(
+      account: account,
+      channel: fixture_channel,
+      name: "Proof #{label} #{run_id}",
+      greeting_enabled: false,
+      enable_email_collect: false,
+      working_hours_enabled: false
+    )
+    fixture_contact = Contact.create!(account: account, name: "Proof #{label} visitor")
+    fixture_contact_inbox = ContactInbox.create!(
+      contact: fixture_contact,
+      inbox: fixture_inbox,
+      source_id: "proof-#{label}-#{SecureRandom.uuid}"
+    )
+    fixture_assistant = workspace.assistants.create!(name: "Proof #{label} Assistant #{run_id}")
+    ChatRing::AssistantVersions::Publisher.new(
+      assistant: fixture_assistant,
+      knowledge_scope: workspace.knowledge_scopes.find_by!(business_wide: true),
+      configuration: {
+        identity: { 'name' => "Proof #{label} Assistant" },
+        goals: ['Answer grounded pricing questions.'],
+        instructions: 'Use supplied evidence only.',
+        response_guidelines: ['Keep the answer concise.'],
+        guardrails: ['Never invent facts.'],
+        handoff_policy: { 'on_insufficient_evidence' => 'handoff', 'on_provider_failure' => 'handoff' },
+        llm_provider: 'openai',
+        llm_model: 'gpt-5.4'
+      }
+    ).call
+    fixture_connection = ChatRing::AssistantProvisioning::AgentBotProvisioner.new(assistant: fixture_assistant).call
+    create_incoming_automation!(
+      name: "Proof #{label} observation #{run_id}",
+      actions: [{ 'action_name' => 'add_label', 'action_params' => ["proof-fixture-#{fixture_inbox.id}"] }],
+      target_inbox: fixture_inbox
+    )
+    fixture_token = Widget::TokenService.new(
+      payload: { source_id: fixture_contact_inbox.source_id, inbox_id: fixture_inbox.id }
+    ).generate_token
+    BindingFixture.new(
+      assistant: fixture_assistant,
+      connection: fixture_connection,
+      channel: fixture_channel,
+      inbox: fixture_inbox,
+      contact: fixture_contact,
+      contact_inbox: fixture_contact_inbox,
+      token: fixture_token
+    )
+  end
+
+  def fixture_label(fixture)
+    "proof-fixture-#{fixture.inbox.id}"
+  end
+
+  def start_binding(fixture)
+    Thread.new do
+      ActiveRecord::Base.connection_pool.with_connection do
+        fixture_assistant = ChatRing::Assistant.find(fixture.assistant.id)
+        fixture_inbox = Inbox.find(fixture.inbox.id)
+        ChatRing::AssistantProvisioning::InboxBindingActivator.new(
+          assistant: fixture_assistant,
+          inbox: fixture_inbox
+        ).call
+      end
+    end
+  end
+
+  def post_first_widget(fixture, endpoint, content)
+    response = if endpoint == :conversations
+                 post_json(
+                   '/api/v1/widget/conversations',
+                   {
+                     website_token: fixture.channel.website_token,
+                     contact: { name: fixture.contact.name },
+                     message: { content: content, timestamp: Time.current.to_i }
+                   },
+                   'X-Auth-Token' => fixture.token
+                 )
+               else
+                 post_json(
+                   '/api/v1/widget/messages',
+                   {
+                     website_token: fixture.channel.website_token,
+                     message: { content: content, timestamp: Time.current.to_i }
+                   },
+                   'X-Auth-Token' => fixture.token
+                 )
+               end
+    assert!(response.is_a?(Net::HTTPSuccess), "first Widget #{endpoint} POST failed with HTTP #{response.code}")
+    payload = JSON.parse(response.body)
+    message_id = endpoint == :conversations ? payload.fetch('messages').first.fetch('id') : payload.fetch('id')
+    Message.find(message_id)
+  end
+
+  def checkout_record_lock!(table, record_id)
+    raise Failure, "unsupported proof lock table #{table}" unless %w[accounts inboxes].include?(table)
+
+    record_id = Integer(record_id)
+    lock_connection = ActiveRecord::Base.connection_pool.checkout
+    lock_connection.execute('BEGIN')
+    pid = lock_connection.select_value('SELECT pg_backend_pid()')
+    lock_connection.execute("SELECT id FROM #{table} WHERE id = #{record_id} FOR UPDATE")
+    [lock_connection, pid]
+  end
+
+  def release_record_lock!(lock_connection)
+    lock_connection.execute('COMMIT')
+    ActiveRecord::Base.connection_pool.checkin(lock_connection)
+  rescue StandardError => e
+    begin
+      lock_connection.execute('ROLLBACK')
+    rescue StandardError
+      nil
+    end
+    begin
+      ActiveRecord::Base.connection_pool.checkin(lock_connection)
+    rescue StandardError
+      nil
+    end
+    raise e
+  end
+
+  def wait_for_blocked_backend!(blocker_pid, relation_name, exclude_pids: [])
+    excluded = [Integer(blocker_pid), *exclude_pids.map { |pid| Integer(pid) }]
+    wait_for("#{relation_name} lock waiter behind PID #{blocker_pid}", timeout: 30) do
+      ActiveRecord::Base.connection.select_value(<<~SQL.squish)
+        SELECT pid
+        FROM pg_stat_activity
+        WHERE pid NOT IN (#{excluded.join(',')})
+          AND wait_event_type = 'Lock'
+          AND #{Integer(blocker_pid)} = ANY(pg_blocking_pids(pid))
+          AND query ILIKE '%#{relation_name}%'
+        ORDER BY query_start
+        LIMIT 1
+      SQL
+    end
+  end
+
+  def create_incoming_automation!(name:, actions:, target_inbox: inbox)
+    AutomationRule.create!(
+      account: account,
+      name: name,
+      event_name: 'message_created',
+      conditions: [
+        {
+          'values' => [target_inbox.id],
+          'attribute_key' => 'inbox_id',
+          'query_operator' => 'AND',
+          'filter_operator' => 'equal_to'
+        },
+        {
+          'values' => ['incoming'],
+          'attribute_key' => 'message_type',
+          'query_operator' => nil,
+          'filter_operator' => 'equal_to'
+        }
+      ],
+      actions: actions,
+      active: true
+    )
   end
 
   def post_widget(visitor, content)
@@ -533,6 +880,50 @@ class ChatRingWebWidgetProof
     assert!(refreshed.dig('content_attributes', 'chatring_citations') == citations,
             'visitor-safe citations did not survive Widget refresh')
     assert!(!refreshed.key?('additional_attributes'), 'Widget refresh exposed internal Message attributes')
+  end
+
+  def subscribe_to_action_cable!(contact_inbox, messages)
+    subscribed = Queue.new
+    callback = lambda do |raw_payload|
+      messages << JSON.parse(raw_payload)
+    rescue JSON::ParserError
+      messages << { 'invalid_json' => true }
+    end
+    ActionCable.server.pubsub.subscribe(contact_inbox.pubsub_token, callback, -> { subscribed << true })
+    wait_for('ActionCable contact subscription') do
+      subscribed.pop(true)
+    rescue ThreadError
+      nil
+    end
+    callback
+  end
+
+  def unsubscribe_from_action_cable(contact_inbox, callback)
+    return unless contact_inbox && callback
+
+    ActionCable.server.pubsub.unsubscribe(contact_inbox.pubsub_token, callback)
+  end
+
+  def assert_action_cable_citations!(messages, outgoing, turn, citations)
+    payload = wait_for('native ActionCable AgentBot Message payload') do
+      next_payload = messages.pop(true)
+      next unless next_payload['event'] == Message::MESSAGE_CREATED
+      next unless next_payload.dig('data', 'id') == outgoing.id
+
+      next_payload
+    rescue ThreadError
+      nil
+    end
+    data = payload.fetch('data')
+    assert!(data.dig('content_attributes', 'chatring_citations') == citations,
+            'ActionCable citations differ from the persisted native Message')
+    serialized = JSON.generate(data)
+    forbidden = [*turn.evidence.pluck(:evidence_id), *turn.evidence.pluck(:excerpt)].compact.map(&:to_s)
+    assert!(forbidden.none? { |value| value.present? && serialized.include?(value) },
+            'ActionCable payload exposed internal turn/evidence data')
+    internal_attributes = data.fetch('additional_attributes', {})
+    assert!(!internal_attributes.key?('chatring_ai_turn_id') && !internal_attributes.key?('chatring_evidence_ids'),
+            'ActionCable payload exposed internal ChatRing Message attributes')
   end
 
   def post_dashboard_reply(conversation, content)
@@ -576,15 +967,32 @@ class ChatRingWebWidgetProof
 
   def wait_for_ai_insert_lock!
     wait_for('guarded AI Message insert to reach PostgreSQL barrier', timeout: 90) do
-      value = ActiveRecord::Base.connection.select_value(<<~SQL.squish)
-        SELECT EXISTS (
-          SELECT 1
-          FROM pg_stat_activity
-          WHERE wait_event_type = 'Lock'
-            AND query ILIKE '%INSERT%messages%'
-        )
+      ActiveRecord::Base.connection.select_value(<<~SQL.squish)
+        SELECT activity.pid
+        FROM pg_locks waiting
+        JOIN pg_stat_activity activity ON activity.pid = waiting.pid
+        WHERE waiting.locktype = 'advisory'
+          AND waiting.granted = FALSE
+          AND waiting.classid = 0
+          AND waiting.objid = #{AI_INSERT_ADVISORY_LOCK}
+          AND activity.query ILIKE '%INSERT%messages%'
+        LIMIT 1
       SQL
-      value == true || value == 't'
+    end
+  end
+
+  def wait_for_native_writer_blocked_by!(ai_insert_pid)
+    wait_for('native writer to block behind the guarded AI transaction', timeout: 30) do
+      ActiveRecord::Base.connection.select_value(<<~SQL.squish)
+        SELECT pid
+        FROM pg_stat_activity
+        WHERE pid <> #{Integer(ai_insert_pid)}
+          AND wait_event_type = 'Lock'
+          AND #{Integer(ai_insert_pid)} = ANY(pg_blocking_pids(pid))
+          AND (query ILIKE '%inboxes%' OR query ILIKE '%conversations%')
+        ORDER BY query_start
+        LIMIT 1
+      SQL
     end
   end
 
@@ -611,7 +1019,7 @@ class ChatRingWebWidgetProof
         knowledge_index,
         eligible_at: Time.current,
         force: true,
-        enqueue: false
+        enqueue: true
       )
     end
   end

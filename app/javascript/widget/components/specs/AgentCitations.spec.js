@@ -34,7 +34,7 @@ describe('AgentCitations', () => {
     const wrapper = mount(AgentCitations, {
       props: {
         citations: [
-          { title: 'Unsafe', url: 'javascript:alert(1)' },
+          { title: 'Unsafe', url: 'data:text/html,unsafe' },
           { title: 'Malformed', url: 'not a URL' },
           { title: '', url: 'https://chatring.ai' },
         ],
