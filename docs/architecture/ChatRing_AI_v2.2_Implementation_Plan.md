@@ -6,7 +6,7 @@
 
 **Base tree:** deployed-equivalent `0309e77ea7954dec5185dc480f31dab610b468d4`
 
-**Release rule:** `PUBLIC_AI_RELEASE_READY` remains `false` until every v2.2 Section 13 gate and the complete production-foundation release gate pass on the exact deployed paths.
+**Release rule:** `PUBLIC_AI_RELEASE_READY` remains `false` until every v2.2 Section 13 gate and the complete Sales Core v1 release gate pass on the exact deployed paths.
 
 ## 1. Verified integration map
 
@@ -360,10 +360,13 @@ Run, in order:
 10. manual fresh-widget supported, unsupported and immediate-takeover scenarios.
 
 PR G proves the bounded Web Widget core but does not open
-`PUBLIC_AI_RELEASE_READY`. Omnichannel certification, a real external capability,
-trusted business events/outbound and the full production proof in
-`ChatRing_Complete_Production_Foundation_Direction.md` still govern release. Any failed
-gate leaves the constant false.
+`PUBLIC_AI_RELEASE_READY`. Sales Core still requires the shared Brain/context and
+reliability boundary, native actions and Automation coexistence, Inbox-scoped Tool
+policy, Inbox-owned Playbooks, Website Engagement starter pills, sales administration,
+the approved channel set, human voice/calls and the full production proof in
+`ChatRing_Complete_Production_Foundation_Direction.md`. External business-event outbound,
+AI Navigator, media-aware Knowledge and Microsites are separately gated later stages.
+Any failed Sales Core gate leaves the constant false.
 
 ## 5. Migration and deployment safety
 
@@ -405,11 +408,11 @@ The work has three distinct checkpoints:
    Knowledge-safety and production-proof PRs pass the exact Web Widget path and every
    v2.2 Section 13 concurrency/reliability gate. This proves the bounded native lifecycle;
    it is not ChatRing v1 product completion and does not open the public gate.
-3. **ChatRing v1 production foundation proven:** the BrainInvocation/context boundary,
-   native Automation/action integration, enabled-channel certification, one real external
-   capability, trusted business events, transactional and AI-assisted outbound, and full
-   production proof pass the release definition in
-   `ChatRing_Complete_Production_Foundation_Direction.md`.
+3. **Sales Core v1 production foundation proven:** the shared BrainInvocation/context
+   boundary, native Automation/action integration, Inbox-scoped Tool policy, Inbox-owned
+   Playbooks, Website Engagement starter pills, sales administration, enabled-channel
+   certification, human voice/calls and full production proof pass the release definition
+   in `ChatRing_Complete_Production_Foundation_Direction.md`.
 
 Green unit tests, service-only barriers or a single successful widget response are not
 sufficient completion evidence.

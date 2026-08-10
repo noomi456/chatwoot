@@ -1,90 +1,175 @@
-# ChatRing v1 Production Foundation — PR #17 / v2.2 Execution Direction
+# ChatRing Sales Core v1 Production Foundation - Staged AI Navigator Direction
 
 ## Purpose
 
-We are still completing PR #17 / ChatRing v2.2, but PR #17 is only the native-lifecycle remediation package. It is not the complete ChatRing product.
+PR #17 is merged and remains the native-lifecycle remediation package. It corrected the authority boundary, removed the parallel responder lifecycle, retained native AgentBot ownership, assignment, handoff, Message persistence and delivery, and kept public AI disabled. It is not the complete ChatRing Sales product.
 
-The production objective is:
+This document now separates two complete product stages instead of forcing the entire visual-sales stack into the first production release.
 
-> **Build a Captain-like, production-ready ChatRing AI layer on top of Chatwoot's native omnichannel foundation, using Chatwoot's existing Contacts, ContactInbox, identity, Conversations, Messages, AgentBot ownership, assignment/handoff, templates, Automations, actions, Campaigns, APIs, webhooks and channel delivery rather than recreating them.**
+## Stage A - ChatRing Sales Core v1
 
-ChatRing v1 is not production-complete while AI is limited to Web Widget, while it can only answer static Knowledge, or while external events cannot produce native Chatwoot customer communication.
+The immediate production objective is:
 
-The complete production boundary includes:
+> **Build a production-ready sales AI layer across Chatwoot's native omnichannel Inbox foundation using the current Chatwoot Website Widget, one shared Brain, one text Business Knowledge Base, Inbox-owned Playbooks, Inbox-scoped Tools, Website Engagement starter pills, native Chatwoot actions, productive Automation coexistence, human voice/calls, and complete administration.**
 
-```text
-omnichannel inbound AI
-+
-Chatwoot Contact / Conversation context
-+
-Knowledge and human-visible memory
-+
-native Chatwoot actions
-+
-productive Automation coexistence
-+
-one real customer-scoped external integration
-+
-transactional and AI-assisted outbound
-+
-native Chatwoot persistence and delivery
-```
+Sales Core v1 is a complete commercial product. It must not be described as a prototype or as a temporary RAG bot.
 
-This does **not** mean copying all Captain features, building every possible connector, replacing Chatwoot's CRM, or creating a new workflow/messaging platform.
-
-The foundation may be delivered through PR #17 plus stacked, reviewable PRs. The public release gate remains closed until the complete production foundation defined in this document is implemented and proven.
-
-The authority order is explicit:
+It includes:
 
 ```text
-actual deployed and current native Chatwoot source/runtime
-        ↓
-this document — ChatRing v1 production/release authority
-        ↓
-ChatRing_AI_Chatwoot_Integration_Contract_v2.2.md — bounded lifecycle remediation
-        ↓
-ChatRing_AI_v2.2_Implementation_Plan.md — reviewed execution sequence
-        ↓
-AGENTS.md files — concise mirrored engineering constraints
+native Chatwoot lifecycle and ownership
++
+one shared sales Brain across the approved Inbox set
++
+one canonical text Business Knowledge Base
++
+correct Contact / Conversation context and speaker provenance
++
+Inbox-owned phrase-triggered Playbooks
++
+Tools available to both free-form Brain and Playbooks
++
+Inbox-specific Tool availability and rendering policy
++
+Engagement conversation-starter pills in the native Website Widget
++
+native Chatwoot actions and productive Automation coexistence
++
+human-to-human Website voice through RealtimeKit
++
+one selected PSTN provider adapter or audited native equivalent
++
+sales-first administration, customization, analytics and navigation
++
+production durability, idempotency and tenant isolation
 ```
 
-Contradictory prose never overrides executable native behavior. When source/runtime
-evidence changes an assumption, correct the documents before expanding implementation.
+Sales Core v1 does **not** require:
 
-The governing engineering rule is:
+```text
+AI Navigator
+media-aware Knowledge ingestion
+website-image management
+structured Sales Entities for visual generation
+Microsite generation or sharing
+embedded visual calendars inside Microsites
+website add-to-cart actions
+AI voice receptionist
+external business-event outbound automation
+Shopify / WooCommerce order tracking
+```
+
+## Stage B - AI Navigator and Visual Sales
+
+After Sales Core v1 is stable in production, a separately gated Visual Sales stage adds:
+
+```text
+media-aware Knowledge and approved website images
+structured, source-linked Sales Entities
+AI Navigator
+explicit AI Navigator Playbook buttons
+Microsite generation, validation and rendering
+shareable Microsite snapshots
+embedded booking/calendar components
+approved Website host actions such as add to cart
+visual-sales administration and analytics
+```
+
+This is not architecture debt. It is a separate product capability with different data, security, rendering and administration requirements.
+
+The sequencing rule is:
+
+```text
+complete the native sales conversation foundation first
+        ->
+release and prove Sales Core v1
+        ->
+add media and visual artifacts
+        ->
+release AI Navigator / Visual Sales separately
+```
+
+## Product distinctions that must remain exact
+
+```text
+Engagement
+= a Website conversation-starter pill that submits ordinary customer text
+
+Playbook
+= an Inbox-owned guided conversation triggered by a customer phrase
+  or, later, an explicit AI Navigator Playbook button
+
+Tool
+= a typed capability available to the free-form Brain and/or a Playbook,
+  subject to the current Inbox policy and renderer
+
+Campaign
+= native Chatwoot proactive/broadcast outreach
+
+Automation
+= native Chatwoot event-condition-action behavior
+
+AI Navigator
+= a later rich Website presentation surface
+
+Microsite
+= a later validated visual artifact rendered by AI Navigator
+```
+
+Do not merge these concepts in models, APIs, UI labels, prompts or documentation.
+
+The governing engineering rule remains:
 
 ```text
 AUDIT CHATWOOT FIRST
-        ↓
+        ->
       REUSE
-        ↓
+        ->
       EXTEND
-        ↓
+        ->
        ADAPT
-        ↓
+        ->
 BUILD ONLY WHAT IS GENUINELY MISSING
 ```
 
-The governing production rule is:
+The source roles remain:
+
+```text
+NATIVE AUTHORITY
+-> deployed Chatwoot source/runtime and official Chatwoot documentation
+
+PRODUCT / UX DONORS
+-> Expertise.ai public product and documentation
+-> cqalerts3-code donor repository
+
+IMPLEMENTATION AUTHORITY
+-> the audited Chatwoot-native ChatRing architecture in this repository
+```
+
+Expertise.ai and cqalerts3-code may be studied for product contracts, interaction models, schemas, validation ideas and UI references. Their storage, transport, orchestration and security architecture must not be copied into Chatwoot merely because it exists there.
+
+The governing production rule remains:
 
 ```text
 NO ARCHITECTURE-CRITICAL "WE WILL GENERALIZE THIS LATER"
 ```
 
-If a later channel, integration, Tool, Automation effect, or business event would require rebuilding the Brain invocation model, context model, identity/authorization boundary, execution persistence, native-effect arbitration, or Chatwoot ownership boundary, then the production foundation is incomplete.
-
-At the same time, do not create speculative generic infrastructure without a real requirement. Generic primitives must be derived from and proven by concrete Chatwoot channels and at least one real external integration/event path.
+This means Sales Core v1 must freeze the native authority, Brain/context, Tool policy, Inbox-specific Playbook, Automation arbitration, durability and channel-adapter contracts. It does **not** mean implementing AI Navigator, image extraction and Microsites before the first complete release.
 
 ---
+
 # 1. Audit native Chatwoot before implementing each base component
 
 Before creating or changing a ChatRing subsystem, inspect:
 
-- the current PR #17 implementation;
+- the merged PR #17 implementation;
 - the pinned Chatwoot CE source;
 - relevant current upstream Chatwoot implementation;
 - official current Chatwoot documentation;
-- and, where behavior is provider-dependent, the real configured provider path.
+- the actual deployed edition and feature flags;
+- the real configured channel/provider path;
+- Expertise.ai public product/documentation for the specific product contract being adapted;
+- and the exact cqalerts3-code files used only as donor references.
 
 Audit at least:
 
@@ -103,6 +188,7 @@ notes
 Conversation lifecycle
 Message lifecycle
 attachments/media
+structured Message content types
 AgentBot lifecycle
 assignment/handoff
 Message Templates
@@ -122,6 +208,7 @@ Canned Responses
 Account/Public APIs
 Client APIs
 Webhooks
+Widget SDK / JavaScript API
 
 Website / Web Widget
 Email
@@ -137,11 +224,45 @@ LINE
 TikTok
 X/Twitter when enabled
 API Channel
-Voice/calls as a separately audited non-text lifecycle
+
+Cloudflare RealtimeKit Website meeting integration
+native Voice/Call models and edition restrictions
+agent presence and Inbox membership
+native call assignment/routing behavior
+
+native structured cards/forms/articles/integration Messages
+native calendar/integration seams, if any
+native reports and dashboard surfaces
 
 official AI Actions product contract
-official Custom Tools product contract
+official Captain/Custom Tools product contract for comparison only
 native integrations available in the deployed edition/version
+```
+
+For the staged Sales product layer, separately study and classify:
+
+```text
+Engagement conversation-starter pills
+
+phrase-triggered Playbooks
+
+explicit Playbook buttons near the AI Navigator input
+
+Playbook steps, branches, validation and Playbook-to-Playbook transitions
+
+AI Navigator / rich Website experience
+
+Microsite generation, renderer, strict component schema and CTA policy
+
+shareable Microsite snapshots
+
+booking and calendar surfaces
+
+Website human call invitation / request UI
+
+one PSTN provider adapter: Twilio OR Telnyx
+
+sales-first navigation, terminology and analytics
 ```
 
 For each desired ChatRing capability classify it as:
@@ -154,38 +275,54 @@ EXTEND
 Use the native model/service/event lifecycle with a narrow seam.
 
 ADAPT
-Independently implement a useful publicly documented Chatwoot product
-abstraction that is not available in our CE implementation.
+Independently implement a proven product contract or interaction pattern
+from public documentation/donor references because it is not available
+in the deployed Chatwoot edition.
 
 NEW
-The capability is genuinely absent and requires ChatRing infrastructure.
+The capability is genuinely absent and requires a ChatRing-owned component.
 ```
 
 Do not design a new ChatRing subsystem before completing this classification.
 
-The audit must identify the actual native model, callback, service, API or provider path that will be reused. A statement such as "Chatwoot supports outbound" or "Chatwoot supports WhatsApp" is not sufficient without identifying the exact channel/provider behavior relevant to the feature.
+The audit must identify the exact native model, callback, service, API, content type or provider path that will be reused. Statements such as "Chatwoot supports cards," "Chatwoot supports campaigns," or "Chatwoot supports voice" are insufficient without proving the exact deployed path and edition.
 
-If source and documentation disagree, current deployed source/runtime behavior wins for implementation purposes and the discrepancy must be documented.
+When donor sources conflict with Chatwoot or with one another:
+
+```text
+deployed Chatwoot source/runtime
+→ wins for native ownership and implementation
+
+approved ChatRing product direction
+→ wins for scope
+
+Expertise / cqalerts donors
+→ remain references, never authority
+```
 
 Every implementation PR must state:
 
 ```text
 native Chatwoot authority
 → native seam reused
+→ donor concept studied, if any
+→ NATIVE / EXTEND / ADAPT / NEW classification
 → minimal ChatRing extension
-→ native mutation/delivery path
+→ native Message/action/assignment/delivery path
 ```
 
 ---
 
 # 2. Native ownership boundary is final
 
-Chatwoot remains operational authority.
+Chatwoot remains operational authority in both stages.
 
 Chatwoot owns:
 
-```
+```text
 Account / workspace tenancy
+
+Inbox and channel/provider configuration
 
 Contact
 ContactInbox
@@ -195,229 +332,390 @@ Contact reconciliation
 
 Conversation
 Message
+attachments
+native structured Message records
 
 AgentBot integration identity
+AgentBotInbox connection
 
+agent/team membership
+agent availability
 assignment
 human takeover
 handoff
 Conversation status
 
 Message Templates
+working hours
+out-of-office
+greeting
+email collection
 
 Automations
 Automation conditions/actions
+Automation provenance
 
 Campaigns
 
 provider/channel ingress
 provider/channel delivery
+delivery status
 
 native APIs
 native Webhooks
 
+Cloudflare RealtimeKit integration where available
+native Call lifecycle where available in the deployed edition
 ```
 
 ChatRing must not recreate those systems.
 
-ChatRing owns only the AI-specific layer required above them:
+## Sales Core v1 ownership
 
-```
+ChatRing owns only the sales-AI components that Chatwoot does not provide:
+
+```text
 Assistant configuration/versioning
 
-normalized Brain invocation
+normalized BrainInvocation
 
-AI execution state
+AITurn computation/audit
 
 context policy/projection
 
-Knowledge retrieval/evidence
+Business Knowledge retrieval/evidence
 
-AI/tool reasoning loop
+AI reasoning and typed decisions
+
+Tool registry and Inbox Tool policy
 
 Tool authorization/execution/audit
 
 AI/native-effect arbitration
 
-trusted business-event normalization
+Website Engagement starter configuration
 
-AI outbound intent
+InboxPlaybook definitions and immutable versions
+
+Playbook execution state linked to native Conversation
+
+Website visitor call-request coordination where Chatwoot lacks it
+
+one selected PSTN provider adapter where the audited native deployment is insufficient
+
+sales administration and ChatRing-specific conversion analytics
 
 AI audit/idempotency
-
 ```
+
+## Later Visual Sales ownership
+
+The separately gated AI Navigator stage may add:
+
+```text
+KnowledgeMediaAsset and media review state
+
+source-linked structured Sales Entities
+
+AI Navigator configuration/rendering contract
+
+Microsite artifact generation, validation, storage and sharing
+
+visual Website Tool renderers
+
+booking/calendar presentation integration
+
+approved Website host-action adapters
+```
+
+These later components remain subordinate to the same native Contact, Conversation, Message, assignment and delivery authority.
 
 The primary authority flow remains:
 
-```
+```text
 native Chatwoot state/lifecycle
-          ↓
-ChatRing reasoning/policy
-          ↓
-native Chatwoot mutations/messages/actions
-          ↓
-native delivery
-
+          ->
+ChatRing sales reasoning / guided experience
+          ->
+authorized native Chatwoot Messages/actions/assignment
+          ->
+native delivery or audited Website/call presentation
 ```
 
 Do not introduce:
 
-```
+```text
 second Conversation store
 second Message store
-second customer model
+second Contact/customer model
 second channel-identity model
+second agent-presence model
 second assignment state machine
-second workflow engine
-second campaign engine
-second delivery engine
-
+second handoff meaning
+second Automation engine
+second Campaign engine
+second generic operational workflow engine
+second native channel transport
+second delivery system
 ```
+
+An InboxPlaybook is not a replacement operational workflow engine. It is a bounded, multi-turn AI conversation flow linked to one native Chatwoot Conversation. Operational effects requested by a Playbook still execute through native Chatwoot services.
+
+A future Microsite is not a second website CMS or Conversation. It is a validated visual artifact linked to native Chatwoot records.
 
 ---
 
-# 3. Build a real Brain kernel now
+# 3. Build the shared Sales Brain kernel now
 
-Do not finish the foundation with a Brain that fundamentally means:
+Do not finish Sales Core v1 with a Brain that fundamentally means:
 
-```
+```text
 AITurn.trigger_message
-        ↓
+        ->
 prompt
-        ↓
+        ->
 LLM
-
 ```
 
-Implement a concrete normalized Brain invocation contract.
+Implement one normalized, channel-neutral Brain contract now.
 
 Conceptually:
 
-```
+```text
 BrainInvocation
 ├── assistant_version
 ├── trigger
 │   ├── kind
 │   ├── source
 │   └── normalized payload
+├── inbox_context
+│   ├── inbox_id
+│   ├── channel/provider facts
+│   └── capability profile
 ├── model_context
 ├── trusted_runtime_context
 ├── knowledge_evidence
+├── active_playbook_context, optional
 ├── available_tools
 └── runtime_policy
-
 ```
 
-The distinction between `model_context` and `trusted_runtime_context` is mandatory.
+The Brain is shared across:
 
-## Model-visible context
+```text
+free-form customer questions
 
-Only information intentionally exposed to the model:
+active Playbook turns
 
-```
-Assistant instructions/policy
+Playbook side questions
 
-relevant Conversation history
-
-correct speaker provenance
-
-approved Contact attributes
-
-retrieved Knowledge evidence
-
-Tool names/descriptions/input schemas
-
-safe business-event facts when relevant
-
+human-call offers or escalation decisions
 ```
 
-## Trusted runtime context
+The Brain is not split into WebsiteBrain, WhatsAppBrain, EmailBrain or PlaybookBrain.
 
-Information the ChatRing runtime may use but which does not automatically belong in the prompt:
+## 3.1 Tools are available in free-form and Playbook modes
 
-```
-Workspace / Chatwoot Account
+The same typed Tool registry serves both paths.
 
-native Contact database identity
-
-ContactInbox
-
-HMAC/verified identity state
-
-channel/provider identity
-
-Assistant binding/version
-
-expected AgentBot
-
-Conversation ownership
-
-deadline
-
-credentials
-
-authorization information
-
-external identity resolution
-
-locking/idempotency data
-
+```text
+Free-form Brain available Tools
+=
+Assistant policy
+INTERSECT current Inbox Tool policy
+INTERSECT current native/channel capability
+INTERSECT runtime authorization
 ```
 
-This separation is important.
+```text
+Active Playbook available Tools
+=
+free-form available Tools
+INTERSECT the published InboxPlaybookVersion Tool allowlist
+INTERSECT the current step Tool allowlist
+```
 
-The AI system must be able to **use** trusted identity and customer information for authorization without necessarily sending identifiers, email addresses, phone numbers, credential data or other sensitive information to the model.
+The model must never be shown a Tool that cannot be authorized or rendered in the current Inbox.
+
+## 3.2 Typed Brain outcome
+
+A Brain result may contain:
+
+```text
+customer-facing text
+
+zero or more typed Tool requests
+
+Playbook control
+- continue
+- pause for side question
+- stop
+- transition to an allowed next Playbook
+
+human escalation / call offer
+
+no action
+```
+
+The Brain does not emit:
+
+```text
+arbitrary HTML
+arbitrary JavaScript
+provider credentials
+raw Chatwoot mutations
+unvalidated URLs
+channel-specific payload JSON
+```
+
+Application code validates and executes every Tool and native effect.
+
+## 3.3 Presentation is not Brain logic
+
+The Brain requests semantic capabilities such as:
+
+```text
+show_options
+show_contact_form
+share_booking_link
+request_human_call
+```
+
+The current Inbox renderer chooses the supported representation.
+
+Examples:
+
+```text
+Website Widget
+-> native input_select / form / card / link / call CTA
+
+WhatsApp or social messaging
+-> audited native interactive form when supported
+-> otherwise numbered text or approved link fallback
+
+Email
+-> ordinary text, approved links or a concise structured question
+```
+
+Provider-specific rendering does not belong in the Assistant prompt or Playbook prose.
+
+## 3.4 Visual tools are deferred without changing the kernel
+
+The later AI Navigator phase may register additional Tools such as:
+
+```text
+generate_microsite
+show_microsite
+share_microsite
+show_embedded_calendar
+website_add_to_cart
+```
+
+Adding these Tools must not change BrainInvocation, Contact authority, Playbook execution or native Chatwoot commit rules.
 
 ---
 
-# 4. AITurn and BrainInvocation must be separate concepts
+# 4. AITurn, BrainInvocation, InboxPlaybookExecution and ToolExecution are separate concepts
 
-`ChatRing::AiTurn` may remain the durable execution record for an inbound customer-Message turn.
+Keep persistence responsibilities explicit.
 
-Do not generalize its database model merely for theoretical purity if that creates unnecessary churn.
+## 4.1 AITurn
 
-But the Brain must not accept an `AiTurn` as its fundamental reasoning API.
+`ChatRing::AiTurn` remains the durable computation/audit record for one qualifying incoming customer Message.
 
-Use an adapter/builder boundary:
+It owns:
 
+```text
+trigger Message reference
+Assistant and immutable version
+Inbox/binding version
+execution state
+attempts
+deadline
+Knowledge evidence references
+decision and failure state
+customer-effect ledger relationship
 ```
+
+It does not own Conversation status, assignment or delivery.
+
+## 4.2 BrainInvocation
+
+`BrainInvocation` is an immutable in-memory/value contract built from authoritative state.
+
+```text
 incoming native Message
-        ↓
+        ->
 AITurn
-        ↓
+        ->
 InboundInvocationBuilder
-        ↓
+        ->
 BrainInvocation
-        ↓
-Brain
-
+        ->
+shared Brain
 ```
 
-A future trusted business event must use the same reasoning kernel:
+The Brain does not accept an ActiveRecord `AiTurn` as its fundamental API.
 
-```
-BusinessEvent
-        ↓
-BusinessEventInvocationBuilder
-        ↓
-BrainInvocation
-        ↓
-same Brain
+## 4.3 InboxPlaybookExecution
 
-```
+An InboxPlaybookExecution is durable state for a guided conversation spanning multiple native customer Messages.
 
-This second path must not require:
-
-```
-BusinessEvent pretending to be a Message
-
-synthetic customer Message just to invoke AI
-
-new Shopify-specific Brain runner
-
+```text
+Conversation
++ InboxPlaybookVersion
++ current step
++ collected fields
++ pending question
++ transition history
++ status
 ```
 
-The normalized invocation contract must be implemented and tested before the production foundation is frozen.
+It does not duplicate the native transcript. Every customer and AI/human utterance remains a Chatwoot Message.
+
+At most one active InboxPlaybookExecution may control a Conversation.
+
+## 4.4 ToolExecution
+
+Each Tool request creates or reuses an auditable ToolExecution when the operation is not purely local and side-effect-free.
+
+It records:
+
+```text
+AITurn / PlaybookExecution
+ToolDefinition
+Inbox Tool policy version
+validated arguments
+authorization result
+renderer/executor selected
+idempotency key
+result or failure
+```
+
+Do not store credentials or unnecessary PII in ToolExecution.
+
+## 4.5 InboxCapabilityProfile
+
+The runtime derives an InboxCapabilityProfile from the exact native Inbox/channel/provider configuration.
+
+It describes facts such as:
+
+```text
+structured options supported
+forms supported
+cards/media supported
+approved link rendering
+human-call CTA supported
+booking-link rendering
+message-length guidance
+provider template/session restrictions
+```
+
+It is runtime capability data, not another channel transport.
+
+## 4.6 Later visual artifacts
+
+The AI Navigator phase may introduce a separate immutable visual-artifact record. It must not be added to AITurn or PlaybookExecution as a competing lifecycle.
 
 ---
 
@@ -425,9 +723,9 @@ The normalized invocation contract must be implemented and tested before the pro
 
 Do not leave native context assembly as scattered prompt-building logic.
 
-Create one reusable Chatwoot-context resolution/projection layer conceptually responsible for:
+Create one reusable Chatwoot-context resolution/projection layer responsible for:
 
-```
+```text
 Conversation
 
 Inbox/channel metadata
@@ -442,15 +740,24 @@ selected labels
 
 selected custom/additional attributes
 
+company/account context where approved
+
 native Conversation state
 
 normalized Message history
 
 speaker provenance
 
+current Website page/referrer/UTM where available and approved
+
+active PlaybookExecution state
+
+human call/meeting history where native data exists
+
+future approved visual-artifact references only when Visual Sales is enabled
 ```
 
-The context resolver should understand native Chatwoot data.
+The context resolver understands native Chatwoot data.
 
 A separate context policy determines what becomes model-visible.
 
@@ -458,15 +765,17 @@ A separate context policy determines what becomes model-visible.
 
 At minimum distinguish:
 
-```
+```text
 customer
 human_agent
 managed_ai
 native_template
 automation
 external_bot_or_system
-
+playbook_generated_ai
 ```
+
+Playbook-generated AI remains a managed ChatRing AI Message, but its Playbook provenance must be auditable.
 
 Do not classify every outgoing Message as AI.
 
@@ -478,7 +787,7 @@ Human replies must remain human replies.
 
 External/system bot messages must not be presented as ChatRing's previous statements.
 
-This must be fixed before the Brain foundation is frozen.
+Private notes remain excluded from customer-facing model history by default.
 
 ---
 
@@ -488,18 +797,17 @@ Do not build parallel customer identity.
 
 Use:
 
-```
+```text
 Chatwoot Contact
 +
 ContactInbox
 +
 native channel identity
-
 ```
 
 For Web Widget:
 
-```
+```text
 setUser(identifier)
         ↓
 native HMAC validation
@@ -509,7 +817,6 @@ Chatwoot Contact
 ContactInbox
         ↓
 trusted runtime identity
-
 ```
 
 ChatRing consumes this trust result.
@@ -518,54 +825,104 @@ ChatRing does not create a second login/authentication system.
 
 ## Contact context policy
 
-Implement a reusable allowlisted projection mechanism rather than hardcoding one temporary set of fields inside PromptBuilder.
+Implement a reusable allowlisted projection mechanism.
 
 It must be capable of exposing selected fields such as:
 
-```
+```text
 customer type
 language
+lead stage
 plan/tier
 region
+company
 selected labels
 selected custom attributes
-
+sales qualification fields
 ```
 
 when explicitly authorized.
 
 It must not automatically expose:
 
-```
+```text
 name
 email
 phone
 identifier
 all custom attributes
+all notes
 all internal metadata
-
 ```
 
 merely because Chatwoot stores them.
 
-The initial Widget policy may remain minimal.
+The runtime may use native Contact identity for dedupe, routing, call authorization and field updates without exposing it to the model.
 
-The base component must nevertheless support controlled native-field projection without another context architecture rewrite.
+Lead data collected by a Playbook must be written to approved native Contact attributes/notes through authorized native tools rather than trapped only inside hidden Playbook state.
 
 ---
 
-# 7. Knowledge is part of the finished Brain foundation
+# 7. One text Business Knowledge Base now; media-aware Knowledge later
 
-Continue the current account-owned Knowledge/Retriever architecture.
+Continue the current account-owned Knowledge/Retriever architecture for Sales Core v1.
 
-The Brain receives retrieved evidence, not an entire Knowledge Base dump.
+The Workspace/Chatwoot Account owns one canonical Business Knowledge Base:
 
-The finished foundation must include:
-
+```text
+one Workspace / Account
+        ->
+one Business Knowledge Base
+        ->
+all approved Assistants / Inboxes
+        ->
+free-form answers + Playbook side questions
 ```
+
+Playbooks do not receive copied Knowledge Bases merely because they belong to different Inboxes.
+
+Knowledge Scope may still restrict an Assistant or Inbox to approved source subsets.
+
+The Brain receives relevant evidence, not an entire Knowledge Base dump.
+
+## 7.1 Current implemented boundary is text/markdown
+
+The current ChatRing KnowledgeDocument and DocsGPT path are text oriented:
+
+```text
+website/file extraction
+        ->
+KnowledgeDocument.markdown
+        ->
+text/markdown upload
+        ->
+markdown chunking and scored retrieval
+```
+
+Current Sales Core v1 must describe this truthfully.
+
+It must not claim:
+
+```text
+website-image retrieval
+image embeddings
+image-aware answers
+administrator image library
+Microsite-ready media selection
+```
+
+unless those capabilities are implemented and verified.
+
+## 7.2 Sales Core v1 Knowledge requirements
+
+Complete and prove:
+
+```text
 workspace/account ownership enforcement
 
 Knowledge scope enforcement
+
+website/page/file ingestion
 
 active/pinned index selection
 
@@ -577,25 +934,104 @@ protection of indexes referenced by nonterminal executions
 
 bounded retrieval context
 
+source URL and source revision metadata
+
+manual retrain/delete/status administration
 ```
 
-Knowledge cleanup must not delete an index still required by any nonterminal AI execution.
+The native Widget, Playbooks and omni-channel Brain use this text evidence.
+
+## 7.3 Image/media capability is a separate Visual Sales dependency
+
+AI Navigator and Microsites require an explicit media-aware Knowledge extension.
+
+Do not treat image URLs embedded in markdown as a sufficient media architecture.
+
+The later phase must audit and implement a source-linked model conceptually like:
+
+```text
+KnowledgeMediaAsset
+├── workspace/account
+├── Knowledge source/document/revision
+├── source page URL
+├── original asset URL
+├── managed stored asset or approved remote reference
+├── content type
+├── width / height / byte size
+├── content hash
+├── alt text / caption
+├── surrounding source text
+├── role
+│   ├── hero
+│   ├── product
+│   ├── gallery
+│   ├── logo
+│   └── supporting
+├── approval / enabled state
+├── safety / ownership result
+└── provenance
+```
+
+Required media controls include:
+
+```text
+crawl and extract owned-domain images
+
+allow administrator image upload, replacement and disablement
+
+filter icons, tracking pixels and low-value assets
+
+content-type and size validation
+
+malware/content safety scanning where applicable
+
+origin and redirect policy
+
+hash dedupe
+
+source-revision invalidation
+
+human review and description editing
+
+public/share eligibility policy
+```
+
+## 7.4 Structured Sales Entities belong to the later visual phase
+
+Microsite pricing, product cards and visual comparisons require a structured source-linked projection such as SalesEntity.
+
+That model is not required to release the text-first Sales Core v1.
+
+When implemented, it must be derived from approved Knowledge sources and link exact facts and media to provenance. It must not become a second Knowledge Base.
+
+## 7.5 No forced multimodal retrieval in the first media release
+
+The first Visual Sales release may select approved images using:
+
+```text
+source-page association
+entity association
+role and relevance metadata
+text/alt/caption matching
+administrator approval
+```
+
+Image embeddings or a multimodal vector store are optional optimizations after the source-linked media pipeline is correct.
 
 ---
 
-# 8. Automation and ChatRing are peer decision-makers
+# 8. Automation and ChatRing remain peer decision-makers
 
 Do not use the inaccurate simplification:
 
-```
+```text
 Automation = WHEN
 AI = WHAT
-
 ```
 
 Native Chatwoot Automations can themselves:
 
-```
+```text
 evaluate events/conditions
 
 send public messages
@@ -617,48 +1053,56 @@ resolve/open/pending/snooze
 send webhooks
 
 perform other deterministic actions
-
 ```
 
-ChatRing separately performs AI reasoning and may also request overlapping native effects.
+ChatRing separately performs AI reasoning, executes Playbooks and may request overlapping native effects.
 
 The actual architecture is:
 
-```
+```text
                    CHATWOOT EVENT
                          │
              ┌───────────┴───────────┐
              │                       │
              ▼                       ▼
      native Automations         ChatRing AI
-     deterministic rules         reasoning
+     deterministic rules         Brain / Playbooks
              │                       │
              └───────────┬───────────┘
                          ▼
                    native Chatwoot
                     effects/state
-
 ```
 
 Neither system replaces the other.
 
 The production problem is deterministic arbitration when both affect the same customer turn.
 
+Playbooks must not duplicate Automation conditions or become the place where operational rules such as assignment-on-label are reimplemented.
+
+Example of productive composition:
+
+```text
+Playbook qualifies lead
+        ↓
+NativeTool adds label: qualified-lead
+        ↓
+Native Chatwoot Automation assigns Sales team
+        ↓
+ChatRing observes resulting native state
+```
+
 ---
 
 # 9. Automation arbitration is a production-foundation component
 
-The existing broad `AutomationConflictClassifier` is useful temporary containment.
+The existing broad `AutomationConflictClassifier` remains temporary containment.
 
 It is not the final production arbitration mechanism.
 
-It currently reasons about whether a potentially applicable Automation contains a potentially conflicting action.
+Current ordering can be:
 
-That can conservatively suppress AI even when the particular Automation never executes for the particular Message.
-
-More importantly, current ordering can be:
-
-```
+```text
 incoming Message
       ↓
 native template handling
@@ -666,18 +1110,15 @@ native template handling
 ChatRing scheduling
       ↓
 asynchronous Automation evaluation
-
 ```
 
 Therefore `post-template` is not necessarily `post-Automation`.
 
 Before the public release gate opens, establish a deterministic native integration seam.
 
-The exact mechanism must follow the source audit, but the required invariant is non-negotiable:
+The required invariant is:
 
-> **For one triggering customer event, ChatRing must know when relevant native Automation evaluation/effects are complete or must have an equivalent serialization barrier that prevents a later Automation effect from racing an already-approved AI commit.**
-
-Codex should specifically evaluate whether the cleanest native seam is to schedule/arbitrate ChatRing after `AutomationRuleListener` processing for the triggering event rather than maintaining a separate competing lifecycle.
+> **For one triggering customer event, ChatRing must know when relevant immediate native Automation evaluation/effects are complete, or must have an equivalent native serialization barrier that prevents a later Automation effect from racing an already-approved Brain/Playbook commit.**
 
 Do not duplicate Automation evaluation.
 
@@ -687,13 +1128,7 @@ Do not re-run Automation rules inside ChatRing.
 
 Extend the native lifecycle at the smallest safe point.
 
-The current fork and current upstream must be distinguished. The audited PR #17 fork
-has immediate asynchronous Automation dispatch but no delayed-execution model. Current
-upstream Chatwoot includes delayed Automation execution. ChatRing v1 must not claim that
-capability merely because upstream contains it: either port it in a separate source-
-audited PR and certify its later-effect semantics, or explicitly keep it unavailable.
-Immediate AI must not wait indefinitely for a future delayed rule; a later native effect
-may supersede a still-nonterminal turn according to authoritative Conversation state.
+Playbook activation must occur only after the same native handling-completion contract used by free-form AI eligibility.
 
 ---
 
@@ -705,23 +1140,22 @@ Classify Automation effects by what actually happened for the trigger.
 
 Examples after source verification may include:
 
-```
+```text
 labels
 priority
 private notes
 non-responder metadata
-
 ```
 
-These should normally be allowed to coexist.
+These should normally coexist.
 
-They may become part of the final Conversation/context snapshot seen by AI.
+They may become part of the final Conversation/context snapshot seen by the Brain or current Playbook.
 
 ## Responder/lifecycle effects
 
 Examples include:
 
-```
+```text
 public send_message
 public attachment
 
@@ -732,23 +1166,21 @@ AgentBot ownership changes
 status changes
 
 resolve/open/pending/snooze
-
 ```
 
 If one of these actually executes for the customer trigger, apply deterministic policy.
 
 For example:
 
-```
+```text
 Automation sends customer-facing response
-→ AI response for that trigger must not race it.
+→ Brain/Playbook response for that trigger must not race it.
 
-Automation hands conversation to human/open
-→ current AI turn cannot later commit a public reply.
+Automation hands Conversation to human/open
+→ current AITurn and Playbook step cannot later commit a public AI reply.
 
 Automation only adds label/priority
-→ AI may continue using the updated state.
-
+→ AI may continue using updated state.
 ```
 
 The exact precedence must be documented and tested.
@@ -757,14 +1189,13 @@ The exact precedence must be documented and tested.
 
 Examples:
 
-```
+```text
 send_webhook_event
 future actions
 indirect external side effects
-
 ```
 
-Audit their real semantics before deciding whether they invalidate the AI turn.
+Audit their real semantics before deciding whether they invalidate the AI turn or Playbook step.
 
 Do not classify them only by name.
 
@@ -774,256 +1205,918 @@ Do not classify them only by name.
 
 During implementation, the current conservative classifier may remain enabled.
 
-Before foundation freeze:
+Before Sales v1 foundation freeze:
 
-```
+```text
 actual native Automation processing
         ↓
 effect/provenance observation
         ↓
 deterministic ChatRing eligibility/arbitration
         ↓
-AI execution/commit
-
+free-form Brain or Playbook execution/commit
 ```
 
 must be proven.
 
 The production foundation should not require customers to disable useful native Automations simply because ChatRing cannot determine whether they actually fired.
 
-This is part of making ChatRing a native Chatwoot extension rather than a competing subsystem.
+This is part of making ChatRing a native Chatwoot sales extension rather than a competing subsystem.
 
 ---
 
-# 12. Implement the Tool capability through a real business integration before foundation freeze
+# 12. Build one Tool system with Inbox-scoped availability
 
-Do not defer live external-system access until after the product is called complete.
+Sales Core v1 does not require a generic administrator-defined external HTTP Tool platform.
 
-The intended product is a business-capable AI Agent, not merely a RAG FAQ responder.
+It does require a typed Tool system because both free-form Brain conversations and InboxPlaybooks must perform native actions and present structured interactions.
 
-Chatwoot AgentBot does not automatically know how to query Shopify, WooCommerce, CRM, billing, inventory or another external system. ChatRing must provide the concrete connector/business logic.
+## 12.1 Shared semantic Tool definitions
 
-At the same time, do not build a fake or purely theoretical generic Tool platform.
+A ToolDefinition describes what a capability means, not how one provider renders it.
 
-Implement the reusable Tool execution contract around one real, read-only, customer-scoped vertical slice, preferably:
-
-```text
-identified customer asks for order status
-        ↓
-Brain requests order lookup
-        ↓
-server resolves trusted customer/store identity
-        ↓
-Shopify / WooCommerce / business API connector
-        ↓
-structured order, fulfilment and tracking result
-        ↓
-Brain answers through native Chatwoot Message
-```
-
-The reusable Tool contract should follow the publicly documented Chatwoot Custom Tool product model conceptually and support at least:
+Conceptually:
 
 ```text
-name
-description
-
-HTTP GET / POST
-
-endpoint or connector operation
-
-input schema
-
-authentication:
-  Bearer
-  Basic
-  API key
-  provider-managed credentials
-
-request template/shaping
-
-response template/shaping
+ToolDefinition
+├── key
+├── version
+├── category
+├── description
+├── input schema
+├── output schema
+├── side-effect class
+├── authorization policy
+├── idempotency policy
+└── supported renderer/executor families
 ```
 
-Do not implement separate reasoning systems such as:
+## 12.2 Inbox Tool policy
+
+Every native Chatwoot Inbox has an explicit Tool policy.
 
 ```text
-Brain::Shopify
-Brain::Stripe
-Brain::Hubspot
+InboxToolPolicy
+├── inbox_id
+├── enabled Tool versions
+├── Tool-specific configuration
+├── permitted native targets
+├── renderer/fallback policy
+├── hours/availability policy
+└── published version
 ```
 
-The Brain understands capabilities and structured results.
+Tool availability is based on the exact Inbox and configured provider, not only the generic channel name.
 
-The connector owns the external-system-specific logic, including:
+## 12.3 Free-form and Playbook use the same Tools
+
+Free-form Brain may call any Tool authorized by the current Inbox policy and Assistant policy.
+
+An InboxPlaybookVersion declares a narrower Tool allowlist.
+
+A Playbook step may declare a narrower subset again.
+
+This gives:
 
 ```text
-provider authentication
-customer/store identity resolution
-API requests
-pagination/search
-provider errors
-normalization
-business validation
+one Tool implementation
++
+Inbox-specific availability
++
+Playbook-specific control
 ```
 
-Native Chatwoot Actions and external Tools are different categories:
+without channel-specific prompts or duplicated Tool code.
+
+## 12.4 Sales Core v1 Tool categories
+
+### Native Chatwoot action Tools
+
+These invoke audited native services:
 
 ```text
-Native Chatwoot Actions
-→ label, priority, note, assignment, status, handoff, reply
-
-External Tools / Connectors
-→ order lookup, tracking, inventory, billing, subscription, booking
+add_label
+remove_label
+set_priority
+add_private_note
+update_approved_contact_attribute
+assign_team
+assign_agent
+handoff_to_human
+change_conversation_status
+resolve_conversation
 ```
 
-Both may be available to the Brain, but they use different executors and authority boundaries.
+### Conversational and Playbook Tools
+
+```text
+ask_question
+show_options
+mention_specifically
+validate_business_email
+capture_lead_field
+stop_playbook
+trigger_playbook
+```
+
+### Website/classic Widget Tools
+
+```text
+show_contact_form
+share_booking_link
+recommend_page
+request_human_call
+```
+
+Use Chatwoot's native interactive Message types where they fit.
+
+### Deferred AI Navigator / visual Tools
+
+```text
+generate_microsite
+show_microsite
+share_microsite
+show_embedded_calendar
+website_add_to_cart
+```
+
+These must remain disabled until the Visual Sales stage and its media/artifact foundation pass.
+
+## 12.5 Native and ChatRing Tool authority
+
+```text
+native Chatwoot action
+-> native Chatwoot service remains authority
+
+conversation UI Tool
+-> ChatRing selects a typed request
+-> native Message/rendering path presents it
+
+human call Tool
+-> native hours/presence/assignment plus audited call coordinator
+
+future visual Tool
+-> validated artifact/renderer only after Visual Sales release
+```
+
+The Brain never mutates Chatwoot records or renders provider payloads directly.
 
 ---
 
-# 13. Tool execution must be production-safe
+# 13. Tool execution and Inbox rendering must be production-safe
 
-Implement a real ToolExecutor.
+## 13.1 Authorization and identity
 
-It must handle:
+The model chooses a semantic operation.
 
+The runtime supplies authoritative identity and scope:
+
+```text
+Workspace / Account
+Inbox and provider
+Conversation
+Contact / ContactInbox
+Assistant and version
+active PlaybookVersion, when present
+allowed agent/team IDs
+native authorization policy
 ```
+
+The model must not choose arbitrary Account, Contact, Conversation, agent, team or provider identifiers.
+
+## 13.2 Rendering is selected after Tool authorization
+
+```text
+Brain or Playbook requests Tool
+        ->
 schema validation
-
-trusted server-side identity injection
-
-Workspace/account authorization
-
-credential access
-
-network/SSRF protections
-
-timeouts
-
-response-size bounds
-
-safe response parsing
-
-bounded tool iterations
-
-deadline propagation
-
-audit
-
-error classification
-
-idempotency/retry rules
-
+        ->
+Inbox Tool policy validation
+        ->
+runtime authorization
+        ->
+select native executor or channel renderer
+        ->
+create ordinary native Message/action
+        ->
+audit result
 ```
 
-Retries must account for operation safety.
+The Tool result is not considered customer-visible until the native Message/action commit succeeds.
 
-Read-only/idempotent operations may be retryable under policy.
+## 13.3 Inbox rendering policy
 
-Do not blindly retry non-idempotent writes.
+For each enabled Inbox/provider, audit the exact output capability.
 
-## Tool identity rule
+Examples:
 
-The model chooses the requested operation.
+```text
+Website Widget
+- input_select
+- form
+- cards
+- articles
+- approved links
+- call CTA
 
-The runtime chooses the authorized identity.
+WhatsApp / Facebook / Instagram
+- use supported native interactive content where the exact provider permits
+- otherwise use concise text, numbered choices or approved links
 
-Good:
+Email
+- ordinary text and approved links
+- do not assume button/form semantics
 
-```
-AI:
-get_my_order(order_number)
-
-```
-
-Runtime injects:
-
-```
-Workspace
-verified Contact
-ContactInbox/channel trust
-resolved provider customer identity
-credentials
-authorization
-
+SMS
+- concise numbered choices and links
 ```
 
-Bad:
+Do not claim a structured experience from generic channel names. Provider behavior must be source-tested.
 
+## 13.4 Fallback behavior
+
+Every presentation Tool must define a safe fallback.
+
+```text
+show_options
+-> native buttons/list when supported
+-> otherwise numbered text
+
+show_contact_form
+-> native Widget form when supported
+-> otherwise ask fields sequentially through the Playbook
+
+share_booking_link
+-> approved link on every suitable text channel
+
+request_human_call
+-> Website call CTA when supported
+-> otherwise callback/booking/handoff fallback
 ```
-AI:
-get_orders(customer_id=12345, account_id=99)
 
+If no safe rendering exists, the Tool is not included in `available_tools`.
+
+## 13.5 Side-effect safety
+
+Every Tool must declare:
+
+```text
+read-only / conversational / native mutation / customer-visible
+
+retryable or not
+
+idempotency key strategy
+
+required confirmation
+
+required identity assurance
+
+terminal or nonterminal Playbook behavior
 ```
 
-The LLM must not be trusted to select the customer/tenant identity used for authorization.
+No unbounded autonomous Tool loop is permitted.
 
-This boundary must be implemented before the first real integration.
+Sales Core v1 must define:
+
+```text
+maximum Tools per Brain turn
+maximum Tools per Playbook step
+maximum Playbook transition depth
+maximum total invocation deadline
+```
+
+## 13.6 Publish-time validation
+
+An InboxPlaybookVersion cannot publish when it references a Tool that is unavailable or unconfigured for that Inbox.
+
+An Inbox Tool policy change must identify active published Playbooks that would become invalid and require explicit handling rather than silently breaking them.
 
 ---
 
-# 14. Prove the Tool loop with a real connector, not a fake fixture
+# 14. Engagements are Website conversation-starter pills only
 
-Do not declare the Tool architecture complete using only a mock endpoint or synthetic demo Tool.
+This definition is strict.
 
-Use one real read-only customer-scoped capability in a test store/environment.
+> **An Engagement is a configurable conversation-starter pill displayed in a Website chat surface.**
 
-Prove:
+Sales Core v1 renders Engagements in the current native Chatwoot Website Widget.
 
-```text
-customer asks for live data
-        ↓
-Brain selects the capability
-        ↓
-ToolExecutor validates request
-        ↓
-trusted identity/policy applied
-        ↓
-real connector calls the external system
-        ↓
-result is normalized and audited
-        ↓
-Brain consumes the safe result
-        ↓
-final native Chatwoot response
-```
+The later AI Navigator may render the same Engagement records after its own release.
 
-The first required ecommerce operations should be narrowly scoped, for example:
+Engagements are not:
 
 ```text
-list_my_recent_orders
-get_my_order_status
-get_my_tracking_details
+Playbook definitions
+Playbook IDs or bindings
+Tool invocations
+native Chatwoot Campaigns
+Automations
+proactive popup timers
+Brain-selected actions
 ```
 
-The model must not select arbitrary customer or tenant identity.
+## 14.1 Engagement data model
 
-Also test:
+Conceptually:
 
 ```text
-unverified customer requests sensitive data
-Tool timeout
-Tool unauthorized
-Tool malformed result
-Tool unavailable
-Tool retries
-Tool response too large
-Tool returns prompt-injection-like content
-Tool attempts to access another customer's identity
-overall AITurn deadline exceeded
-connector succeeds but final Chatwoot commit is superseded
+EngagementSet
+├── workspace/account
+├── Website inbox_id
+├── name
+├── enabled
+├── page URL visibility rules, optional
+├── priority
+└── EngagementStarters[]
+
+EngagementStarter
+├── label
+├── submitted_text
+├── display_order
+├── enabled
+└── optional appearance metadata
 ```
 
-Do not enable write-capable Tools such as refund, cancellation or credit merely because the read-only path works. Those require stronger verification, confirmation, authorization, idempotency and limits.
+No Engagement record contains `playbook_id`, `tool_key` or an action enum.
+
+## 14.2 Click behavior
+
+```text
+visitor clicks starter pill
+        ->
+Widget submits submitted_text as one ordinary customer Message
+        ->
+native Chatwoot Message lifecycle
+        ->
+normal ChatRing routing
+```
+
+If the submitted text happens to match a configured InboxPlaybook phrase, the normal Playbook phrase resolver may start it.
+
+That does not create a persisted Engagement-to-Playbook relationship.
+
+## 14.3 Configuration
+
+Administrators may configure:
+
+```text
+default starter set per Website Inbox
+
+page-specific starter visibility
+
+display order
+
+maximum visible pills
+
+label and submitted text
+
+Classic Widget enabled state
+
+future AI Navigator visibility state
+```
+
+## 14.4 Proactive outreach remains Campaigns
+
+Time-on-page, URL-triggered proactive messages and broadcasts remain native Chatwoot Campaign concerns where supported.
+
+Do not copy donor UI that combines Engagement and proactive timing into one runtime model.
+
+The Sales UI may place their settings near each other, but the persisted models and execution remain separate.
 
 ---
 
-# 15. Inbound core must be proven across all enabled Chatwoot messaging channels
+# 15. Playbooks are owned by one Inbox and triggered by customer phrases
 
-PR #17 remains the Web Widget lifecycle-remediation PR, but Web Widget is not the product-completion boundary.
+This definition is strict.
 
-Before ChatRing v1 is called production-complete, certify the same AI core across every customer messaging Inbox type enabled in the deployed Chatwoot build.
+> **An InboxPlaybook is a published, versioned, multi-turn sales conversation flow owned by one native Chatwoot Inbox. It starts when a customer phrase matches a configured trigger.**
 
-The required target set includes, where enabled:
+Sales Core v1 deliberately uses Inbox-owned Playbooks rather than one published Playbook bound across many channels.
+
+This simplifies:
+
+```text
+Tool validation
+channel/provider rendering
+copy length and tone
+business-hour behavior
+call/booking availability
+trigger conflicts
+administrator preview and testing
+```
+
+The execution engine remains shared across all Inboxes.
+
+## 15.1 Model
+
+Conceptually:
+
+```text
+InboxPlaybook
+├── workspace/account
+├── inbox_id
+├── name
+├── purpose / sales goal
+├── draft version
+└── published versions
+
+InboxPlaybookVersion
+├── immutable version
+├── trigger phrases / synonyms
+├── steps
+├── branches
+├── Tool allowlist
+├── collected-field schema
+├── completion outcomes
+├── allowed next InboxPlaybooks
+├── safety rules
+├── capability snapshot
+└── validation result
+```
+
+There is no separate multi-Inbox PlaybookBinding in Sales Core v1.
+
+To reuse a flow in another Inbox, the administrator clones it and customizes/publishes the new Inbox-owned version.
+
+A future template library may reduce editing duplication, but runtime versions remain Inbox-specific.
+
+## 15.2 Phrase trigger
+
+Example:
+
+```text
+Customer types:
+"How much is internet?"
+        ->
+PhraseTriggerResolver inspects active published InboxPlaybooks
+for this exact Inbox
+        ->
+Pricing Discovery Playbook starts
+```
+
+Trigger resolution must be bounded:
+
+```text
+normalized configured phrase or synonym
+        ->
+optional semantic match among this Inbox's published Playbooks only
+        ->
+confidence threshold and conflict margin
+        ->
+start one Playbook OR ask clarification OR use free-form Brain
+```
+
+Do not use uncontrolled bidirectional substring matching as production authority.
+
+Simple greetings, acknowledgements and vague replies must not activate a Playbook.
+
+## 15.3 AI Navigator Playbook buttons are later and separate
+
+The later AI Navigator may display explicit buttons beside its input bar.
+
+A button carries the exact published InboxPlaybookVersion identity.
+
+It is not an Engagement pill.
+
+This explicit-button trigger must be added without changing phrase-triggered Sales Core execution.
+
+## 15.4 Runtime precedence
+
+For each qualifying incoming customer Message:
+
+```text
+1. Complete native template and immediate Automation handling.
+
+2. If an active InboxPlaybookExecution exists:
+   continue it or answer a side question.
+
+3. Else resolve configured phrase triggers for this Inbox.
+
+4. Else use free-form Brain and Business Knowledge.
+```
+
+After AI Navigator is released, insert this deterministic step before phrase matching:
+
+```text
+trusted exact AI Navigator Playbook-button metadata
+-> start that exact published InboxPlaybookVersion
+```
+
+Engagement is not a separate runtime branch. Its click has already created an ordinary customer Message.
+
+## 15.5 Free-form Knowledge during a Playbook
+
+A Playbook guides the sales goal; it does not disable the Business Knowledge Base.
+
+When a visitor asks a side question:
+
+```text
+preserve pending Playbook step
+        ->
+answer from approved Business Knowledge
+        ->
+resume the pending Playbook question naturally
+```
+
+The Playbook controls required fields, branch choices and completion.
+
+The Brain controls natural language and grounded explanation.
+
+---
+
+# 16. InboxPlaybook validation, execution and transitions
+
+## 16.1 Immutable publication
+
+Draft InboxPlaybooks may be edited.
+
+Published InboxPlaybookVersion records are immutable.
+
+Each execution pins one published version.
+
+Updating a Playbook must not mutate an active conversation's behavior.
+
+## 16.2 Publish validation
+
+At minimum validate:
+
+```text
+Inbox belongs to the same Account/Workspace
+
+all step IDs are unique
+
+all branch targets exist
+
+all terminal paths stop, hand off, book, call or transition explicitly
+
+no unreachable required step
+
+all Tools are enabled by the current Inbox Tool policy
+
+all Tool configuration exists
+
+all Tools have a safe renderer/fallback for the Inbox/provider
+
+collected-field names/types are approved
+
+trigger phrases do not conflict beyond configured tolerance
+
+maximum step count
+
+maximum branch depth
+
+maximum Tool count
+
+maximum transition depth
+
+no direct or indirect Playbook cycle
+```
+
+Natural-language authoring or AI-assisted generation may help administrators, but publication compiles to a validated typed version.
+
+Raw prose is not runtime authority.
+
+## 16.3 Execution state
+
+One active InboxPlaybookExecution per Conversation.
+
+Statuses may include:
+
+```text
+active
+waiting_for_customer
+paused_for_side_question
+transitioning
+completed
+stopped
+handed_off
+superseded
+failed
+```
+
+Execution state must survive worker restarts and customer delays.
+
+Collected fields must be:
+
+```text
+schema validated
+source attributed
+written to approved native Contact attributes/notes when configured
+available only where policy permits
+excluded from model context when not required
+```
+
+## 16.4 Playbook-to-Playbook transition
+
+Sales Core v1 may support an explicit typed transition:
+
+```text
+trigger_playbook(target_inbox_playbook_version_id, carry_fields[])
+```
+
+Required safeguards:
+
+```text
+same Workspace/Account
+same native Inbox
+published immutable target version
+explicit source-version allowlist
+no cycle
+maximum transition depth
+schema-compatible carried fields
+one transition audit record
+```
+
+Cross-Inbox Playbook transition is not supported in v1.
+
+Do not chain Playbooks by emitting text that happens to match another trigger phrase.
+
+## 16.5 Human takeover and supersession
+
+A human reply, native assignment change, terminal Automation response, expired deadline, disabled binding or newer customer turn may supersede the pending Playbook outcome.
+
+A superseded execution must not later resume and send a stale Message.
+
+---
+
+# 17. Sales Core v1 Website experience uses the native Chatwoot Widget
+
+Sales Core v1 intentionally does not require AI Navigator.
+
+Its Website surfaces are:
+
+```text
+1. Current native Chatwoot Website Widget
+2. Human Voice Call Banner / Call Surface
+```
+
+They share native Chatwoot identity, Contact, ContactInbox, Conversation, Message and agent state.
+
+## 17.1 Current Widget capabilities to reuse
+
+Audit and reuse native Chatwoot Widget capabilities before creating custom equivalents:
+
+```text
+branding and appearance controls
+Widget SDK controls
+identity/HMAC
+pre-chat forms
+interactive input_select messages
+forms
+cards
+articles
+attachments
+Campaign messages
+normal Conversation history
+```
+
+Sales Core enhancements may add:
+
+```text
+Engagement starter pills
+Playbook-driven questions and options
+approved contact forms
+booking links
+human-call CTA
+sales-specific copy and navigation
+```
+
+All visitor input still creates ordinary native customer Messages.
+
+## 17.2 Playbook rendering in the current Widget
+
+Examples:
+
+```text
+ask_question
+-> ordinary AI Message
+
+show_options
+-> native input_select when supported
+-> otherwise numbered text
+
+show_contact_form
+-> native form / approved pre-chat fields when appropriate
+-> otherwise sequential Playbook questions
+
+share_booking_link
+-> approved link
+
+request_human_call
+-> Website Voice CTA
+```
+
+No Microsite renderer is required for Sales Core v1.
+
+## 17.3 Voice banner/call surface
+
+The Voice surface may:
+
+```text
+show an agent-initiated call invitation
+
+show a visitor-initiated Talk to us launcher
+
+show ringing / connecting / active / completed states
+
+fall back to chat, booking or callback
+```
+
+It is human-to-human in Sales Core v1.
+
+## 17.4 Classic Widget customization
+
+Administrators need a Sales-oriented configuration surface for:
+
+```text
+appearance and brand settings
+Engagement starters
+page visibility
+Playbook preview for this Inbox
+available Tool preview
+call CTA visibility
+business-hour fallback
+```
+
+Reuse the native Widget builder and Inbox settings wherever they already provide the required control.
+
+---
+
+# 18. AI Navigator is a separately gated Visual Sales stage
+
+Deferring AI Navigator is the correct sequence.
+
+AI Navigator is not just another skin for the current Widget. Its main commercial value comes from visual artifacts, richer controls and contextual navigation, which depend on data and rendering capabilities that the current text-only Knowledge foundation does not yet provide.
+
+## 18.1 Visual Sales prerequisites
+
+Before AI Navigator can be released, complete:
+
+```text
+KnowledgeMediaAsset extraction and administrator uploads
+
+media approval, description and disablement UI
+
+source-linked structured Sales Entities
+
+visual component and CTA schemas
+
+safe artifact renderer
+
+AI Navigator session integration with native Chatwoot Conversation
+
+explicit Playbook-button metadata path
+
+booking/calendar configuration
+
+share policy
+
+Visual Sales analytics
+```
+
+## 18.2 AI Navigator must reuse Sales Core
+
+AI Navigator uses the same:
+
+```text
+Contact / ContactInbox
+Conversation / Message history
+AssistantVersion
+BrainInvocation
+Business Knowledge
+InboxPlaybooks
+Inbox Tool policy
+native action authorization
+Automation arbitration
+voice/call policy
+idempotency and audit
+```
+
+It must not create a second conversation or AI runtime.
+
+## 18.3 Explicit Playbook buttons
+
+AI Navigator may display selected InboxPlaybooks next to its input bar.
+
+```text
+[ How does it work ] [ Compare plans ] [ Book a demo ]
+```
+
+These buttons are generated from published InboxPlaybook configuration.
+
+They are not Engagements.
+
+A click sends exact trusted Playbook-version metadata through the native Chatwoot conversation path.
+
+## 18.4 Release independence
+
+Sales Core v1 may be generally available while AI Navigator remains behind a separate feature flag.
+
+AI Navigator release must not require changing the already-proven Sales Core Brain, Playbook, Tool or native ownership contracts.
+
+---
+
+# 19. Microsites follow AI Navigator and the media foundation
+
+Microsites are commercially valuable but are not a Sales Core v1 prerequisite.
+
+They require a larger visual-artifact pipeline than text chat.
+
+## 19.1 Later generation flow
+
+```text
+customer Message or InboxPlaybook step
+        ->
+Brain retrieves text evidence, approved media and Sales Entities
+        ->
+Brain requests generate_microsite
+        ->
+strict schema generation
+        ->
+server injects exact approved data and URLs
+        ->
+validation
+        ->
+immutable MicrositeArtifact linked to native records
+        ->
+ordinary AgentBot Message references artifact
+        ->
+AI Navigator renders it
+```
+
+## 19.2 Required artifact boundary
+
+Conceptually:
+
+```text
+MicrositeArtifact
+├── workspace/account
+├── native conversation_id
+├── native message_id / ai_turn_id
+├── assistant_version_id
+├── inbox_playbook_execution_id, optional
+├── Knowledge revision
+├── media/entity/evidence references
+├── strict content_json
+├── schema version
+├── visibility
+├── share state
+└── audit metadata
+```
+
+No arbitrary LLM-generated HTML, CSS, JavaScript, selectors or iframe URLs are permitted.
+
+## 19.3 Later components
+
+The first Visual Sales release may support a bounded registry such as:
+
+```text
+hero
+rich text
+features grid
+product/service cards
+pricing cards
+comparison table
+image/video gallery
+FAQ
+booking section
+contact section
+CTA banner
+```
+
+Exact product names, prices, URLs, media and booking links come from approved source data or deterministic configuration.
+
+## 19.4 Sharing
+
+A shareable Microsite publishes an immutable sanitized snapshot.
+
+It must not expose Contact PII, private transcript, credentials or internal IDs.
+
+Search indexing requires explicit administrator opt-in.
+
+## 19.5 Classic Widget behavior after Visual Sales release
+
+The native Widget does not need inline Microsite rendering.
+
+When useful, it may receive:
+
+```text
+a concise text summary
+an approved rich card
+or a safe Microsite share link
+```
+
+This keeps the Classic Widget stable while AI Navigator provides the premium visual experience.
+
+---
+
+# 20. Omnichannel sales chat uses one Brain, but Inbox-owned Playbooks and Tool policies
+
+PR #17 was a Web Widget lifecycle remediation, but Website is not the final sales-channel boundary.
+
+Before Sales Core v1 is called production-complete, certify the shared AI core across every Inbox/provider included in the approved Sales v1 channel set.
+
+The target inventory includes, where enabled and selected:
 
 ```text
 Website / Web Widget
@@ -1042,515 +2135,479 @@ X/Twitter
 API Channel
 ```
 
-Any enabled messaging Inbox type not certified must be explicitly excluded by product decision with a documented native limitation. It may not be silently omitted while the product is described as omnichannel.
+Any enabled Inbox type not certified must be explicitly excluded by written product decision with a documented native/provider limitation.
 
-Voice/calls must be audited separately because the call lifecycle may not reduce to the ordinary text Message/AgentBot path. If Voice is part of the product, certify it separately; otherwise document it as a v1 exclusion.
+## 20.1 Shared across channels
 
-Every channel must use the same:
+Every approved Inbox uses the same:
 
 ```text
 Assistant / AssistantVersion
 BrainInvocation
 context and identity policy
-Knowledge architecture
-memory policy
-native-action policy
-external Tool policy
+text Business Knowledge architecture
+ToolDefinition registry
 AI decision contract
+native action authorization
 audit/idempotency
 ```
 
-Channel-specific implementation is limited to:
+## 20.2 Deliberately Inbox-specific
+
+Each Inbox owns:
+
+```text
+Inbox Tool policy
+Inbox capability profile
+InboxPlaybooks and published versions
+trigger phrases
+presentation/copy choices
+call/booking availability
+channel/provider fallback behavior
+```
+
+This is preferable to large channel-specific Assistant prompts.
+
+It also avoids pretending that one published Playbook will render identically in Website, WhatsApp, Facebook, Instagram, SMS and Email.
+
+## 20.3 Reuse through cloning, not shared runtime binding
+
+Administrators may clone a Playbook from one Inbox to another.
+
+The editor should show capability differences and require the cloned Playbook to pass target-Inbox validation before publication.
+
+A later template library may support shared authoring, but each runtime version remains Inbox-owned.
+
+## 20.4 Channel-specific implementation remains narrow
 
 ```text
 native scheduling seam
 native eligibility differences
 content/media normalization
+Tool renderer/fallback
 serialization participation
-reply/template/session restrictions
-native delivery and status behavior
+provider template/session restrictions
+native delivery/status behavior
 ```
 
-The proof for every channel must look like:
+Do not create ChatRing provider webhooks for channels Chatwoot already supports.
+
+The proof for each channel remains:
 
 ```text
 native provider ingress
-        ↓
+        ->
 native Contact / ContactInbox
-        ↓
+        ->
 native Conversation / Message
-        ↓
+        ->
 small channel-specific ChatRing adapter
-        ↓
-same BrainInvocation and AI core
-        ↓
-same context / Knowledge / Tool / action policy
-        ↓
+        ->
+same Brain and text Knowledge
+        ->
+current InboxPlaybook and Tool policy
+        ->
 guarded native Chatwoot effect
-        ↓
+        ->
 native provider delivery
 ```
 
-If a channel requires creating a separate Brain, customer model, Conversation lifecycle, Message store, assignment model or delivery system, the shared architecture has failed.
+## 20.5 Website-only capabilities
 
-Staged feature flags and channel-by-channel rollout are allowed operationally.
+Sales Core v1 Website-only capabilities:
 
-They do not change the final completion requirement.
+```text
+Engagement starter pills
+native Widget forms/cards/options
+RealtimeKit call surface
+```
+
+Later Visual Sales Website-only capabilities:
+
+```text
+AI Navigator
+explicit Playbook buttons
+inline Microsites
+embedded visual calendars
+Website host actions
+```
 
 ---
 
-# 16. Inbound provider transports remain native
+# 21. Human voice and calls in Sales v1
 
-Even while adding the second-channel proof, do not create ChatRing provider webhooks for channels Chatwoot already supports.
+Sales v1 includes human-to-human voice.
 
-The ownership remains:
+It does not include AI speech-to-speech or an AI receptionist.
 
-```
-provider
-  ↓
-native Chatwoot ingress
-  ↓
-native Contact/ContactInbox
-  ↓
-native Conversation/Message
-  ↓
-ChatRing
+## 21.1 Website RealtimeKit calls
 
-```
+Audit and reuse Chatwoot's Cloudflare RealtimeKit integration for agent-initiated Website meetings/calls.
 
-ChatRing only needs the smallest channel-specific scheduling/eligibility seam required to invoke its shared execution core.
-
-Audit each provider independently because identity/message semantics differ.
-
-The Brain itself remains provider-neutral.
-
----
-
-# 17. Build the trusted business-event path through a real external event
-
-Outbound/event-driven customer communication is part of the ChatRing v1 product boundary.
-
-Do not leave it as a diagram until after the product is declared complete.
-
-Do not begin with a speculative event platform either.
-
-Implement the minimal reusable event contract through one real provider event, preferably:
+Required flows:
 
 ```text
-Shopify / ecommerce order fulfilled or shipment created
+Agent-initiated
+Agent opens native Conversation
+→ starts RealtimeKit meeting
+→ native integration Message/invite
+→ visitor accepts
+→ both join
 ```
-
-The concrete flow is:
 
 ```text
-provider webhook/event
-        ↓
-provider-specific signature/authentication verification
-        ↓
-deduplicate external event ID
-        ↓
-resolve Workspace / Account
-        ↓
-resolve Contact and target Inbox/channel
-        ↓
-normalize trusted event facts
-        ↓
-deterministic intent or BrainInvocation
-        ↓
-native Chatwoot action/message
+Visitor-initiated
+Visitor clicks Talk to us / Voice Banner
+→ native hours + availability + abuse checks
+→ create/reuse native Contact/Conversation
+→ call request rings assigned agent first
+→ then eligible Inbox members according to approved routing
+→ first accepted agent becomes native assignee
+→ create/reuse RealtimeKit meeting
+→ both join
 ```
 
-Extract only the generic event fields proven necessary by the real integration.
+The visitor-initiated flow is a ChatRing extension where Chatwoot does not already provide it.
 
-A minimal durable BusinessEvent may include:
+It must reuse native Contact, Conversation, agent presence, Inbox membership and assignment.
+
+## 21.2 One PSTN provider for v1
+
+Choose exactly one:
 
 ```text
-workspace/account
-source
-event_type
-external_event_id / dedupe key
-Contact reference when known
-trusted normalized payload
-occurred_at
-received_at
-processing status
-audit metadata
+Twilio
+OR
+Telnyx
 ```
 
-The base must provide:
+Do not require both while claiming scope simplification.
 
-```text
-tenant resolution
-event authentication result
-dedupe/idempotency
-Contact resolution
-durable processing state
-audit
-```
+Whether Twilio native Chatwoot Voice is reused depends on the deployed edition and licensing audit.
 
-Provider-specific verification and normalization remain in the provider adapter.
-
-Do not force the event to pretend to be a customer Message.
-
----
-
-# 18. Do not create another rule/workflow engine for business events
-
-A deterministic business event does not automatically require AI.
-
-For example:
-
-```
-order_fulfilled
-
-```
-
-may simply produce a deterministic outbound intent.
-
-Do not create a new general ChatRing rule language to express this.
-
-A provider/business adapter may decide:
-
-```
-deterministic native intent
-
-```
-
-or:
-
-```
-invoke Brain for judgment
-
-```
-
-Both use the same downstream native execution architecture.
+If the native deployed feature is unavailable or inappropriate, implement one narrow provider adapter.
 
 Conceptually:
 
-```
-BusinessEvent
-       │
-       ├── deterministic adapter mapping
-       │            ↓
-       │       OutboundIntent
-       │
-       └── BrainInvocation
-                    ↓
-               OutboundIntent
-
-```
-
-Do not duplicate Chatwoot Automations merely to handle external events.
-
-Where an external event can appropriately be translated into native Chatwoot state and then handled by native Automations, reuse that path.
-
----
-
-# 19. Implement a generic native-effect / outbound-intent contract
-
-The Brain should not perform provider sends directly.
-
-It should produce structured intents.
-
-Examples:
-
-```
-send_customer_message
-
-handoff
-
-assign_team
-
-change_priority
-
-add_label
-
-do_nothing
-
+```text
+VoiceProviderAdapter
+├── create_client_token
+├── originate_call
+├── receive_provider_event
+├── accept
+├── reject
+├── hangup
+├── transfer, if required
+└── normalize_status
 ```
 
-The intent executor must map those decisions onto native Chatwoot services/actions wherever available.
+Build only the operations required by Sales v1.
 
-Do not create duplicate business operations if Chatwoot already owns them.
-
-This same intent/effect layer should be usable by:
-
-```
-inbound AI
-
-business-event AI
-
-future scheduled AI
-
-```
-
-without separate responder implementations.
-
----
-
-# 20. Campaigns are not generic transactional outbound
-
-Keep the three outbound concepts separate.
-
-## Campaign/broadcast
-
-Use native Campaigns where their semantics fit:
-
-```
-audience/broadcast
-promotion
-Website proactive campaign
-supported native SMS/WhatsApp campaign behavior
-
-```
-
-Do not create ChatRing Campaigns.
-
-## Deterministic transactional outbound
-
-Example:
-
-```
-BusinessEvent: order_shipped
-        ↓
-deterministic intent
-        ↓
-native Chatwoot send path
-
-```
-
-No AI required.
-
-## AI-assisted outbound
-
-Example:
-
-```
-BusinessEvent: severe_order_delay
-        ↓
-Brain
-+ Contact context
-+ Conversation context
-+ Knowledge
-+ Tools
-        ↓
-structured intent
-        ↓
-native Chatwoot actions/message
-
-```
-
-All three can coexist.
-
-They are not the same subsystem.
-
----
-
-# 21. Implement native outbound capability resolution
-
-Recent investigation shows that outbound capability differs by:
-
-```
-channel
-+
-provider
-+
-Conversation state
-+
-session/template requirements
-
-```
-
-Do not put provider branching in the Brain.
-
-Implement a reusable native capability resolver conceptually like:
-
-```
-OutboundCapabilities.for(inbox, conversation:, contact:)
-
-```
-
-It should answer facts derived from native Chatwoot/channel behavior such as:
-
-```
-can_initiate?
-
-requires_existing_conversation?
-
-supports_transactional_send?
-
-requires_template?
-
-supports_template?
-
-session/window restrictions?
-
-persists_normal_chatwoot_message?
-
-native send path
-
-```
-
-Do not duplicate provider implementations.
-
-The resolver describes what the existing native channel can do.
-
-The executor still invokes native Chatwoot services.
-
----
-
-# 22. Audit and encode capability by channel + provider
-
-Audit every enabled target channel/provider separately for both inbound and outbound behavior.
-
-At minimum include:
+## 21.3 Voice ownership boundary
 
 ```text
-Website / Web Widget
-Email
-WhatsApp Cloud
-WhatsApp default/non-Cloud provider
-Twilio WhatsApp
-Twilio SMS
-Bandwidth/native SMS
-Facebook Messenger
-Instagram
-Telegram
-LINE
-TikTok
-X/Twitter
-API Channel
+Sales Brain
+→ may offer/request a human call
+
+Chatwoot / ChatRing call policy
+→ determines eligibility, routing and assignment
+
+RealtimeKit or selected PSTN provider
+→ owns media transport
+
+Chatwoot
+→ owns Contact, Conversation, agent/team and native assignment
+
+Call adapter / native Call model
+→ owns normalized call status and provider IDs
 ```
 
-For each document and test:
+The Brain must not:
 
 ```text
-native ingress path
-
-Contact identity semantics
-ContactInbox source identity
-
-Conversation creation/reopen/threading behavior
-
-supported Message/content/media types
-
-native templates and Automation timing
-
-safe ChatRing scheduling seam
-
-human takeover / assignment behavior
-
-can initiate outbound?
-
-Contact requirements
-Conversation requirements
-
-template/session/window restrictions
-
-Campaign support
-
-native Message persistence
-
-native send API/service
-
-delivery/status/error behavior
-
-serialization requirements
-
-provider limitations
+select arbitrary agents
+create participant tokens directly
+control provider credentials
+change call status directly
+or stream/process audio
 ```
 
-Do not use a generic channel name as proof of provider behavior.
+## 21.4 Call record audit
 
-The capability registry must describe native Chatwoot behavior; it must not duplicate provider transport logic.
+Before creating a new `ChatRingCall` model, audit:
 
----
-
-# 23. Prefer native Message persistence for outbound
-
-Whenever possible:
-
-```
-business event
-        ↓
-optional Brain
-        ↓
-native Chatwoot Conversation/Message
-        ↓
-native provider delivery
-
+```text
+native Chatwoot Call model availability and licensing
+native voice_call Message content type
+RealtimeKit integration Message behavior
+Conversation association
+call dashboard/reporting
 ```
 
-is preferred over:
+Prefer extending/reusing native call records where legally and technically available.
 
-```
-business event
-        ↓
-direct provider API only
+If a minimal ChatRing call-request record is necessary, it must be linked to native Account, Inbox, Contact, Conversation and Message, and must not replace native assignment or Conversation status.
 
-```
+## 21.5 Call failure and fallback
 
-because native persistence gives:
+Required outcomes:
 
-```
-human-visible history
-
-future Brain context
-
-auditability
-
-Conversation continuity
-
-native delivery/status semantics
-
+```text
+agent accepts
+no agent answers
+visitor declines
+provider failure
+microphone permission denied
+outside business hours
+rate limited / abuse rejected
 ```
 
-Direct provider sending is an exception.
+Fallback may offer:
 
-If a provider genuinely requires it, document:
-
-```
-why native Chatwoot cannot perform the send
-
-how the send/result is represented back in Chatwoot
-
-how retries/idempotency are handled
-
+```text
+continue chat
+book appointment
+leave contact details
+request callback
 ```
 
 ---
 
-# 24. Complete durability and failure semantics across the whole execution base
+# 22. Sales-first product shell and administration
 
-The same reliability model must cover:
+ChatRing Sales simplifies Chatwoot for customers while preserving native code and upgrade compatibility.
 
+## 22.1 Sales Core v1 primary navigation
+
+Recommended navigation:
+
+```text
+Overview
+
+Conversations
+
+Leads & Customers
+
+AI Sales Agent
+
+Playbooks
+
+Engagements
+
+Knowledge
+
+Calls
+
+Campaigns
+
+Automations
+
+Sales Analytics
+
+Settings
 ```
+
+Do not expose AI Navigator or Microsites in the primary navigation until the Visual Sales stage is implemented.
+
+## 22.2 Native Chatwoot features kept and presented for sales
+
+| Native Chatwoot capability | Sales-first presentation |
+|---|---|
+| Contacts | Leads & Customers |
+| Companies | Accounts / Companies |
+| Contact notes | Sales Notes / Memory |
+| Custom attributes | Lead Fields |
+| Labels | Segments / Tags |
+| Conversations | Sales Conversations |
+| Inboxes | Channels |
+| Agents and teams | Sales Reps and Teams |
+| Assignment | Lead / Conversation Ownership |
+| Business hours | Team Availability |
+| Campaigns | Campaigns / Proactive Outreach |
+| Automations | Sales Automations |
+| RealtimeKit | Website Calls |
+| Canned Responses | Rep Templates |
+| Reports | Sales Engagement Analytics |
+| APIs/Webhooks | Advanced Integrations |
+
+Internal Chatwoot model/service names remain unchanged.
+
+## 22.3 Minimum Sales Core administration
+
+Console-only operation is not acceptable for production.
+
+Administrators need UI/API for:
+
+```text
+Assistant create, edit draft and immutable publish
+
+Inbox bind, switch, drain, disable and archive
+
+Business Knowledge source add/delete/retrain/status
+
+Inbox Tool policy and configuration
+
+Inbox capability preview
+
+InboxPlaybook create/edit/validate/test/publish/clone
+
+Playbook execution and failure inspection
+
+Engagement starter configuration and page visibility
+
+Classic Widget sales appearance/preview
+
+RealtimeKit and PSTN voice configuration
+
+hours, routing and call fallback
+
+failed AITurn / Tool / call inspection
+
+feature enable/disable and release state
+```
+
+## 22.4 Playbook editor requirements
+
+Study cqalerts donor UI patterns for:
+
+```text
+list and status cards
+quick setup and manual creation
+split editor / Tool palette
+real-time validation
+visual step preview
+publish errors and warnings
+clone to another Inbox
+```
+
+ChatRing runtime must use typed compiled versions rather than donor prose parsing as authority.
+
+The Tool palette must be filtered by the selected Inbox Tool policy.
+
+The preview must show target-Inbox rendering/fallback behavior.
+
+## 22.5 Engagement editor requirements
+
+Provide:
+
+```text
+starter label and submitted text
+order and enabled state
+Website Inbox selection
+page visibility rules
+Classic Widget preview
+future AI Navigator visibility field, disabled until available
+```
+
+Do not combine Playbook selection or proactive Campaign timers into Engagement records.
+
+## 22.6 Visual Sales administration later
+
+The AI Navigator stage adds separate UI for:
+
+```text
+website-image extraction status
+media library, upload, description, enable/disable and approval
+Sales Entity review and exact fact correction
+AI Navigator appearance and page rules
+explicit Playbook buttons
+Microsite component/CTA policy
+calendar/booking configuration
+share, expiry and SEO policy
+host action / cart adapter configuration
+Visual Sales failures and analytics
+```
+
+## 22.7 Support-first features hidden, not deleted
+
+Hide from ordinary Sales navigation unless enabled:
+
+```text
+Help Center / support portals
+SLA policies and breach views
+CSAT configuration and reports
+support resolution dashboards
+support-ticket terminology where irrelevant
+Captain configuration
+Dialogflow configuration
+external AgentBot configuration for managed Inboxes
+support-specific developer settings
+```
+
+Use feature flags, product profile, navigation filtering, permissions and Advanced settings.
+
+---
+
+# 23. Keep Engagements, Playbooks, Tools, Campaigns, Automations, AI Navigator and Microsites separate
+
+This boundary must be reflected in models, APIs, UI labels, documentation and tests.
+
+| Concept | Definition | Trigger | Runtime authority |
+|---|---|---|---|
+| **Engagement** | Website conversation-starter pill | Visitor clicks pill | Submits ordinary customer Message |
+| **InboxPlaybook** | Inbox-owned multi-turn guided sales flow | Matching customer phrase; later exact AI Navigator button | ChatRing execution + native Messages/Tools |
+| **Tool** | Typed semantic capability | Brain or Playbook requests it | Inbox policy + authorized native executor/renderer |
+| **Campaign** | Proactive/broadcast outreach | Native Chatwoot Campaign rules/schedule | Chatwoot Campaign engine |
+| **Automation** | Event-condition-action rule | Native Chatwoot event | Chatwoot Automation engine |
+| **AI Navigator** | Later rich Website presentation surface | Website configuration | Same native Conversation and Sales Core |
+| **Microsite** | Later validated visual artifact | AI Navigator Tool request | ChatRing artifact pipeline linked to native records |
+
+Rules:
+
+```text
+Engagement records contain no Playbook IDs or Tool actions.
+
+InboxPlaybooks own phrase triggers and Tool allowlists.
+
+AI Navigator buttons come from published InboxPlaybooks, not Engagements.
+
+Tools are available through Inbox policy to free-form Brain and/or Playbooks.
+
+Campaigns are not renamed Engagements.
+
+Playbooks do not evaluate native Automation conditions.
+
+Automations may react to native effects requested by Playbooks.
+
+Microsites are not available until AI Navigator/media release.
+
+All customer-visible text remains native Chatwoot Messages.
+```
+
+A Sales administration screen may cross-link concepts for convenience, but persistence and runtime authority remain separate.
+
+---
+
+# 24. Complete durability and failure semantics across Sales Core v1
+
+The Sales Core reliability model must cover:
+
+```text
 LLM calls
 
-Knowledge retrieval
+text Business Knowledge retrieval
 
 Tool calls
 
+InboxPlaybook activation and step execution
+
 Automation arbitration
 
-final Chatwoot commit
+final Chatwoot Message/action commit
 
-business-event processing
+RealtimeKit call requests
 
+selected PSTN provider events
 ```
 
 Foundation requirements include:
 
-```
-hard turn/invocation deadline
+```text
+hard AITurn/BrainInvocation deadline
 
 explicit LLM timeout
 
-explicit Tool timeout
-
-bounded retries
-
-one explicit retry owner per operation
+bounded retries with one retry owner
 
 retry safety/idempotency classification
 
@@ -1560,48 +2617,116 @@ no stranded received/running/ready_to_commit state
 
 durable final-commit enqueue/recovery
 
-automatic recovery of durable pending customer outcomes; operator resume is supplemental
-
 release kill switch
 
-business-event dedupe
+InboxPlaybookExecution recovery and supersession
 
-tool-call audit
+ToolExecution audit/idempotency
 
-outbound effect idempotency
+call request/provider-event dedupe
 
 KnowledgeIndex pin safety
-
 ```
 
-Failure behavior must be deterministic.
+## 24.1 One retry owner
 
-A process crash, Sidekiq retry, Redis restart, or provider timeout must not produce duplicate customer-facing effects.
+Recommended default:
+
+```text
+model SDK internal retries disabled or tightly bounded to zero
+
+ActiveJob / ChatRing orchestration owns cross-attempt retry
+
+one persisted attempt per actual provider request
+
+all retries bounded by deadline_at
+```
+
+Do not retry permanent configuration, authorization, schema, tenant, expiry, human-takeover or unsupported-capability failures.
+
+## 24.2 Durable customer-outcome outbox
+
+A customer-affecting result must not depend on a best-effort enqueue.
+
+```text
+Brain / Playbook / Tool produces authorized outcome
+        ->
+transaction creates or reuses pending outcome ledger
+        ->
+after-commit enqueue
+        ->
+worker revalidates native state
+        ->
+commits native Message/action/handoff
+        ->
+marks committed / rejected / retryable failure
+```
+
+Automatic recovery of pending outcomes is mandatory.
+
+Operator resume is supplemental.
+
+## 24.3 Playbook recovery
+
+A crash or retry must not:
+
+```text
+advance a step twice
+ask a question twice
+write a Contact field twice
+transition twice
+resume after human takeover
+```
+
+The execution pins the current step and uses idempotent outcome keys.
+
+## 24.4 Tool failure
+
+A Tool failure follows its declared policy:
+
+```text
+safe text fallback
+retry within remaining budget
+Playbook alternate branch
+clarification
+human handoff
+```
+
+No unavailable or failed Tool may cause fabricated success.
+
+## 24.5 Voice failure
+
+Call-request and provider failures must produce explicit states and safe fallback to chat, booking or callback.
+
+## 24.6 Later Visual Sales reliability
+
+Media extraction, Sales Entity generation, Microsite generation, sharing and calendar/cart actions receive a separate failure and release matrix in the Visual Sales stage.
+
+They are not hidden inside the Sales Core release gate.
 
 ---
 
-# 25. Shared serialization and commit invariants remain mandatory
+# 25. Shared serialization and final commit invariants remain mandatory
 
-For managed ChatRing conversations, preserve the narrow DB-backed serialization approach.
+For managed ChatRing Conversations, preserve the narrow DB-backed serialization approach.
 
 Do not globally lock every Chatwoot Message.
 
-The existing direction of:
+The existing direction remains:
 
-```
+```text
+Account/configuration
+        ↓
 Inbox
-  ↓
+        ↓
 Conversation
-  ↓
-AI/outbound effect record
-
+        ↓
+AITurn / PlaybookExecution / outcome ledger
 ```
-
-should remain the basis where appropriate.
 
 At final native-effect commit, revalidate:
 
-```
+```text
 Workspace/account ownership
 
 current Assistant binding/version
@@ -1616,646 +2741,841 @@ newer customer Message
 
 Automation outcome/arbitration
 
+active PlaybookVersion and expected step
+
+Native Tool authorization
+
+channel/Website capability
+
 deadline
 
 release gate
 
 duplicate/idempotency state
-
 ```
 
-The Brain's answer is advisory until final guarded commit succeeds.
+For a call request, also revalidate:
+
+```text
+calls enabled for Inbox/site
+
+business hours / configured availability
+
+eligible agent/team route exists
+
+no duplicate active request
+
+provider/RealtimeKit configuration valid
+```
+
+The Brain's answer, Playbook step and Tool request remain advisory until guarded commit succeeds.
+
+Do not perform external model, Tool-provider or call-provider network operations while holding database locks.
+
+The later Visual Sales stage must add its own artifact-specific revalidation without changing this native commit boundary.
 
 ---
 
-# 26. PR #17 itself should finish the lifecycle work it already owns
+# 26. PR #17 is merged; preserve its lifecycle correction
 
-PR #17 should not be abandoned or converted wholesale into every production-foundation feature.
-
-PR #17 owns the native authority and containment correction:
+PR #17 merged at source head:
 
 ```text
-release-gate containment
+19d6abcd49ec33e52f96f469ad0ee65b63110093
+```
 
-stale gate-created AITurn reconciliation
+with merge commit:
 
-managed AgentBot self-webhook removal
+```text
+401a33f35a4edda131edf51ed829a6b2fbbcec61
+```
 
-contained post-template observation with the public gate closed
+It froze:
 
-native AgentBot ownership
+```text
+native Chatwoot authority
+
+internal managed AgentBot mode
+
+managed self-webhook removal
 
 native assignment and takeover
 
 native handoff
 
-scoped serialization
-
-binding drain / rebind / disable / archive behavior
-
 ordinary AgentBot Message persistence
 
 native delivery
 
-non-managed Inbox regression protection
+scoped serialization
 
-lifecycle and containment deployment proof
+binding drain / rebind / disable / archive behavior
+
+fail-closed Automation containment
+
+public/external gates disabled
 ```
 
-The native Automation audit proves that post-template is not necessarily post-Automation.
-PR #17 therefore freezes the native authority boundary and fail-closed containment, not
-the current scheduling location. A directly stacked Native Handling Completion PR must
-establish the final two-sided template/immediate-Automation completion contract before
-Brain expansion.
+It explicitly did not freeze post-template scheduling as the final production trigger seam.
 
-Brain/context, Tool, channel certification and outbound work may be delivered in separate reviewable PRs.
+Do not reopen PR #17 or mix Sales product work into its historical scope.
 
-They remain part of the production-completion scope and must not be reclassified as an indefinite future roadmap.
+The first directly stacked lifecycle work remains Native Handling Completion:
 
-Merging PR #17 must not enable public AI or be described as product completion.
+```text
+synchronous template completion
++
+actual immediate Automation completion/effects
++
+idempotent ChatRing scheduling
+```
+
+Current fork behavior and current upstream delayed-Automation behavior must be audited separately.
+
+Do not claim delayed Automation support unless it is deliberately ported, implemented and tested.
+
+PR #17 merge is not permission to enable public AI.
 
 ---
 
-# 27. Package the remaining foundation as stacked work, not future roadmap
+# 27. Package Sales Core v1 as stacked, reviewable work
 
-After PR #17 is correct, complete the remaining ChatRing v1 foundation through stacked, reviewable work.
-
-A reasonable package is:
+PR #17 is merged. Continue through bounded PRs in dependency order.
 
 ```text
-PR #17
+PR #17 - merged
 Native lifecycle remediation
 + containment
 + correct Chatwoot authority
 
-        ↓
+        ->
 
-Foundation PR — Native Handling Completion
-template completion observation
+Foundation PR - Native Handling Completion
+synchronous template completion
 immediate Automation completion/effect observation
-one durable two-sided trigger barrier
-no Automation condition/action re-evaluation
+one two-sided trigger barrier
+no rule re-evaluation
 
-        ↓
+        ->
 
-Foundation PR — BrainInvocation / Context / Policy
+Foundation PR - Brain / Context / Text Knowledge
 BrainInvocation
 trusted-vs-model context
-native context resolver
 speaker provenance
-identity/context policy
-deadlines and model-data minimization
+privacy and Contact projection
+text Knowledge evidence and pin safety
+deadlines, LLM timeout and typed decisions
 
-        ↓
+        ->
 
-Foundation PR — Failure Reliability
+Foundation PR - Reliability / Durable Outcomes
 one retry owner
 bounded provider calls
-durable fallback OutboundCommit
-automatic pending-outcome recovery
+durable fallback and pending-outcome recovery
 
-        ↓
+        ->
 
-Foundation PR — Knowledge Safety
-nonterminal index pins
-end-to-end audit correlation
+Foundation PR - Inbox Capability and Tool System
+ToolDefinition
+InboxCapabilityProfile
+InboxToolPolicy
+native action executors
+channel renderer/fallback contract
+ToolExecution audit
 
-        ↓
+        ->
 
-Foundation PR — Native Actions and Automation Integration
-native action authorization/execution
-actual Automation effect observation
-deterministic native-effect arbitration
-human-visible memory/notes policy
+Foundation PR - InboxPlaybooks
+InboxPlaybook and immutable versions
+phrase resolution
+validation against Inbox Tools
+execution, side questions and transitions
+Playbook administration and target-Inbox preview
 
-        ↓
+        ->
 
-Foundation PR — Basic Assistant Administration
-create + immutable publish
-bind + switch + disable/archive
-secret rotation + failure inspection
-native Chatwoot permissions and services remain authoritative
+Foundation PR - Engagements and Classic Widget Sales UX
+Website starter pills
+page visibility
+native interactive Messages
+sales appearance/preview
+strict Engagement/Playbook separation
 
-        ↓
+        ->
 
-Foundation PRs — Omnichannel Inbound
-one shared AI core
-channel/provider adapters and certification
-all enabled messaging channels covered
+Foundation PR - Native Actions / Automation / Memory
+actual native effect arbitration
+authorized native actions
+human-visible sales notes/memory
 
-        ↓
+        ->
 
-Foundation PR — Real External Capability
-one real customer-scoped order/tracking connector
-generic Tool contract extracted from the vertical slice
-ToolExecutor security, audit and bounded loop
+Foundation PRs - Omnichannel Sales Certification
+one shared Brain
+Inbox-owned Playbooks and Tool policies
+all approved Sales v1 Inboxes/providers certified
 
-        ↓
+        ->
 
-Foundation PR — Events / Outbound
-one real verified business event
-dedupe/idempotency
-one deterministic transactional notification
-one AI-assisted outbound decision
-native effect executor
-channel/provider capability resolution
+Foundation PR - Human Voice
+RealtimeKit agent and visitor call flows
+one selected PSTN provider or audited native equivalent
+native hours, presence, routing and assignment
 
-        ↓
+        ->
 
-Foundation PR — Full Production Proof
-cross-channel lifecycle tests
-real PostgreSQL/Redis/Sidekiq concurrency
-provider failure tests
-tenant isolation
+Foundation PR - Sales Product Shell and Administration
+sales navigation and terminology
+hide support-first surfaces
+Assistant, Knowledge, Playbook, Engagement, Tool and call administration
+sales analytics
+
+        ->
+
+Foundation PR - Sales Core Full Production Proof
+real PostgreSQL / Redis / Sidekiq
+all approved channels
+Automations and native actions
+Playbooks, Engagements and Tools
+human voice
 exact-image deployment and manual proof
 
-        ↓
+        ->
 
-CHATRING V1 FOUNDATION FREEZE
+CHATRING SALES CORE V1 RELEASE
+```
 
-        ↓
+After Sales Core v1 is stable:
 
-PUBLIC PRODUCTION RELEASE
+```text
+Visual Sales PR - Media-aware Knowledge
+        ->
+Visual Sales PR - Sales Entities and AI Navigator
+        ->
+Visual Sales PR - Microsites, booking and sharing
+        ->
+Visual Sales full production proof
+        ->
+AI NAVIGATOR / VISUAL SALES RELEASE
 ```
 
 The exact number of PRs may change.
 
-The production-completion scope may not be reduced to Web Widget, static Knowledge, or an empty Tool/event abstraction.
-
-Feature flags may support staged rollout while the complete foundation is being verified.
+The dependency order and release boundaries may not be blurred.
 
 ---
 
 # 28. What may legitimately remain for later
 
-After ChatRing v1 foundation freeze, later work should plug into the frozen primitives.
-
-Examples:
+The following are legitimate post-Sales-Core features because they plug into the frozen Brain, Tool, Playbook, native ownership and channel contracts:
 
 ```text
-additional ecommerce/CRM/billing connectors
+AI Navigator
 
-write-capable Tools such as refund or credit
+website-image/media extraction and administrator media library
 
-additional Tool types
+structured Sales Entities
 
-advanced provider credential/setup UI
+Microsite generation, rendering and share links
 
-more business-specific event mappings
+embedded calendar UI
 
-more transactional message templates/policies
+approved Website add-to-cart adapter
 
-full Copilot/agent-assist product
+additional PSTN provider
 
-automatic FAQ generation and curation UI
+AI voice receptionist / speech-to-speech
 
-advanced analytics and evaluation UI
+Shopify / WooCommerce order lookup
 
-voice-agent/call automation if excluded from v1
+generic external HTTP Custom Tools
 
-additional UI/admin polish
+trusted external business-event processing
+
+transactional and AI-assisted outbound automation
+
+general AI Skills framework
+
+advanced analytics / A-B testing / optimization
 ```
 
-Adding one of these should not require changing:
+These later features must not require changing:
 
 ```text
+native Chatwoot ownership
+
 BrainInvocation
 
-Context architecture
+trusted-vs-model context boundary
 
 Contact/identity authority
 
-native action authorization
+Inbox Tool policy contract
 
-Tool authorization model
+InboxPlaybook execution and versioning
 
-Tool execution loop
+Automation arbitration
 
-AITurn core semantics
+AITurn / durable outcome semantics
 
-Automation arbitration model
-
-BusinessEvent contract
-
-OutboundIntent contract
-
-native effect execution model
-
-serialization/idempotency model
-
-channel adapter contract
+channel adapter/native delivery contract
 ```
 
-If it does, the foundation was not actually complete.
+If they do, the Sales Core foundation was incomplete.
 
-The following may **not** be moved to “later” while still claiming ChatRing v1 production completion:
+The following may not be moved later while still claiming Sales Core v1 production readiness:
 
 ```text
-omnichannel inbound across enabled messaging channels
+native handling completion
+
+reliable shared Brain and text Knowledge
 
 correct Contact/Conversation context
 
-Knowledge and memory policy
+Inbox-scoped Tools
 
-native Chatwoot actions
+Inbox-owned phrase-triggered Playbooks
 
-productive Automation coexistence
+Website Engagement pills in the native Widget
 
-one real external business integration
+productive native actions/Automation coexistence
 
-one deterministic outbound event
+approved omnichannel sales chat
 
-one AI-assisted outbound path
+human voice/calls
 
-native persistence/delivery and production reliability
+complete administration
+
+production durability and tenant isolation
 ```
 
 ---
 
 # 29. Do not prematurely build unnecessary generic infrastructure
 
-“Complete foundation” does not mean invent every conceivable abstraction.
+"Complete foundation" does not mean invent every conceivable abstraction.
 
-In particular, do not build without a proven requirement:
+Do not build without a proven requirement:
 
-```
+```text
 generic second CRM/customer database
 
 generic cross-provider identity graph
 
-new workflow language
+generic external Tool marketplace
+
+generic business-event bus
+
+generic outbound orchestration platform
 
 new Campaign engine
 
-new channel framework
+new Automation language
 
-new provider transport system
+new provider transport for channels Chatwoot already owns
 
 new assignment engine
 
+new agent-presence system
+
+arbitrary visual page builder
+
+arbitrary LLM-generated HTML/JavaScript runtime
 ```
 
-For external business identity, begin with trusted native Contact/ContactInbox identity and canonical `Contact.identifier`/approved attributes where sufficient.
+The intended Playbook language is deliberately bounded to conversational sales flows.
 
-Introduce a dedicated external-identity relation only if a real integration demonstrates requirements such as:
+The later Visual Sales Microsite schema must be bounded to approved components and CTAs.
 
-```
-multiple provider accounts per Contact
+The Sales Core Voice adapter is deliberately bounded to one selected provider.
 
-multiple IDs per provider
+When Visual Sales adds Website add-to-cart, use a narrow configured host adapter rather than a generic ecommerce integration platform.
 
-ID rotation/merges
+Sales Core booking begins with approved links. Embedded calendars belong to the later Visual Sales stage unless a separate product decision promotes them.
 
-many-to-many identity relations
-
-provenance/verification requirements
-
-```
-
-The goal is complete **necessary** primitives, not speculative infrastructure.
+The goal is complete necessary Sales primitives, not speculative infrastructure.
 
 ---
 
-# 30. Production-foundation tests
+# 30. Sales Core v1 production-foundation tests
 
-The public AI gate must remain closed until the complete base is exercised.
+The public Sales Core AI gate remains closed until this complete base is exercised.
 
-At minimum prove:
-
-## Native lifecycle
+## 30.1 Native lifecycle and Automation
 
 ```text
-greeting + AI precedence
+greeting, email collection and out-of-office precedence
 
-email collection suppresses AI
+immediate Automation completion/effect observation
 
-out-of-office suppresses AI
+label/priority/private-note Automation coexists
 
-human public reply supersedes AI
+public-response or ownership Automation produces one deterministic result
 
 newer customer Message supersedes stale AI
 
-handoff uses native state
+human reply/takeover supersedes AI and Playbook outcome
 
-non-managed Inbox is unchanged
+non-managed Inbox remains native
 ```
 
-## Automation and native actions
+## 30.2 Brain, context and text Knowledge
 
 ```text
-label Automation + AI
-→ both succeed
+supported question -> grounded response with evidence
 
-priority Automation + AI
-→ both succeed
+unsupported question -> clarification or handoff, no fabrication
 
-private-note Automation + AI
-→ both succeed
+cross-account/scope evidence rejected
 
-Automation public reply + AI
-→ exactly one deterministic customer-facing outcome
+speaker provenance preserved
 
-assignment/status Automation + AI
-→ deterministic ownership; no late AI reply
+unapproved Contact PII absent from model context
 
-Automation-generated outgoing Message
-→ does not start a new customer AITurn
+KnowledgeIndex pinned while execution is nonterminal
 
-multiple Automations
-→ preserve native Chatwoot semantics
-
-Brain requests native label/priority/note/assignment/status/handoff action
-→ application authorization applies
-→ native Chatwoot service executes
-→ audit records result
+free-form and Playbook side questions use the same Business Knowledge
 ```
 
-## Knowledge, context and memory
+## 30.3 Inbox Tool policy
 
 ```text
-supported Knowledge question
-→ grounded response with evidence
+free-form Brain sees only current Inbox Tools
 
-unsupported question
-→ no fabrication; clarification/handoff
+Playbook sees only Inbox Tools intersected with version/step allowlist
 
-cross-account or cross-scope evidence
-→ rejected
+unavailable Tool absent from prompt
 
-speaker provenance
-→ customer/human/AI/template/Automation/system preserved
+native action executes through native service
 
-unapproved Contact PII
-→ absent from model context
+model cannot override Account/Contact/Conversation/agent/team identity
 
-human-visible memory/note
-→ correct Contact, provenance and retention
+Tool retry creates one idempotent effect
+
+renderer fallback selected for current Inbox/provider
+
+Inbox Tool policy change detects invalid published Playbooks
 ```
 
-## Real external Tool / connector
+## 30.4 Engagements
 
 ```text
-identified customer order lookup
-→ correct customer/store only
+starter pill displays in native Website Widget
 
-unverified identity requests sensitive data
-→ rejected or handed off
+click creates one ordinary incoming customer Message
 
-Tool timeout
+no direct Playbook ID/action exists on Engagement
 
-Tool malformed response
+clicked text may match normal phrase resolver
 
-Tool unauthorized
+page visibility and ordering work
 
-Tool response too large
-
-safe retry
-
-unsafe write not blindly retried
-
-customer identity cannot be overridden by model
-
-connector result is normalized and audited
+Campaign behavior remains native and separate
 ```
 
-## Business events/outbound
+## 30.5 InboxPlaybooks
 
 ```text
-duplicate external_event_id
-→ one effect only
+phrase match starts correct Playbook for current Inbox only
 
-real order/shipment event
-→ deterministic native outbound notification
+same phrase in another Inbox follows that Inbox's Playbooks
 
-AI-assisted delay event
-→ same Brain kernel
-→ one authorized native outcome
+ambiguous match clarifies or falls back
 
-unsupported channel/provider capability
-→ explicit safe failure or configured fallback
+sequential steps and branches
 
-supported native outbound path
-→ normal Chatwoot history and delivery status
+side question answered from Knowledge, then pending step resumes
 
-customer reply to outbound notification
-→ returns through normal inbound AI/human lifecycle
+field collection writes approved native Contact state
+
+invalid Tool/capability blocks publication
+
+clone to another Inbox requires revalidation
+
+explicit same-Inbox transition works
+
+cycle/excessive depth blocked
+
+worker retry advances once
+
+human takeover supersedes execution
 ```
 
-## Omnichannel portability
+## 30.6 Current Website Widget
 
-For every enabled messaging channel/provider:
+```text
+native appearance/identity remains intact
+
+native input_select/form/card paths work where used
+
+Engagements and Playbook options render correctly
+
+booking link and human-call CTA fall back safely
+
+no AI Navigator or Microsite dependency
+```
+
+## 30.7 Omnichannel certification
+
+For every approved Sales v1 Inbox/provider:
 
 ```text
 native ingress
-→ same Brain core
-→ native Chatwoot effect
-→ native delivery
-→ no second lifecycle/store/Brain
+-> same Brain and text Knowledge
+-> Inbox-owned Playbook and Tool policy
+-> guarded native effect
+-> native delivery
+-> no second Conversation/store/Brain
 ```
 
-Include channel-specific tests for:
+Test identity, threading/reopen behavior, media/attachments, renderer fallbacks, provider templates/session rules, human takeover and delivery failure/status.
+
+## 30.8 Human voice
 
 ```text
-identity
-threading/reopen behavior
-media/attachments
-provider templates/session rules
-human takeover
-delivery failure/status
+agent-initiated RealtimeKit invite
+
+visitor-initiated Talk to us
+
+hours/availability checks
+
+assigned agent first and eligible Inbox fallback where configured
+
+first answer wins
+
+native assignment updates once
+
+visitor decline / no answer / microphone denial / provider failure
+
+one selected PSTN provider flow
+
+chat/booking/callback fallback
+
+no AI audio processing
 ```
 
-## Multi-process reliability
+## 30.9 Administration and product shell
 
-Use real PostgreSQL/Redis/Sidekiq process boundaries where race correctness depends on them.
+```text
+administrator can create/publish/bind Assistant
 
-Do not prove concurrency exclusively with mocks or one-process specs.
+configure text Knowledge and inspect status
 
-Run representative concurrency across multiple channels and outbound/event processing.
+configure Inbox Tools
+
+create/validate/publish/clone InboxPlaybook
+
+configure Engagement starters
+
+configure voice and fallback
+
+inspect failures and safely disable/drain
+
+support-first surfaces hidden from default Sales navigation
+
+advanced administrator retains permitted native settings
+```
+
+## 30.10 Multi-process reliability
+
+Use real PostgreSQL, Redis and Sidekiq process boundaries where race correctness depends on them.
+
+Run representative concurrency across free-form AI, Playbook execution, native actions/Automations, human takeover, call request acceptance and multiple approved channels.
+
+## 30.11 Separate Visual Sales test gate
+
+AI Navigator, media extraction, Sales Entities, Microsites, sharing, calendar and cart actions are tested under their own later release gate.
+
+Sales Core tests must not pretend those features exist.
 
 ---
 
 # 31. Release-gate definition
 
-There are two separate milestones.
+There are three milestones.
 
-## PR #17 merge readiness
+## 31.1 PR #17 lifecycle remediation
 
-PR #17 can merge when its bounded lifecycle remediation is internally correct, reviewed, tested and deployed with public AI still disabled.
+Complete. PR #17 merged with public AI disabled and the native authority boundary corrected.
 
-## ChatRing v1 production readiness
+## 31.2 ChatRing Sales Core v1 production readiness
 
-The project may be called production-complete only when the complete production foundation is finished and proven:
+Sales Core v1 may be called production-ready only when the following are implemented and proven:
 
 ```text
 native Chatwoot lifecycle
++
+Native Handling Completion / Automation arbitration
 +
 BrainInvocation and typed decisions
 +
 native context / identity / speaker provenance
 +
-Knowledge and memory safety
+one text Business Knowledge Base with evidence safety
 +
-productive native Automation coexistence
+Inbox Tool policies used by free-form Brain and Playbooks
 +
-native Chatwoot action authorization/execution
+Inbox-owned phrase-triggered Playbooks
 +
-omnichannel inbound across every enabled messaging channel
+validated execution, side questions and transitions
 +
-one real customer-scoped external integration
+Engagement starter pills in the current Website Widget
 +
-secure Tool authorization/execution derived from that integration
+productive native Chatwoot actions and Automations
 +
-one real trusted business-event path
+omnichannel sales chat across the approved Inbox set
 +
-one deterministic transactional outbound path
+human RealtimeKit Website calls
 +
-one AI-assisted outbound path
+one production PSTN provider adapter or audited native equivalent
 +
-channel/provider capability resolution
+complete Sales administration and customization
 +
 native Message persistence/delivery
 +
 multi-process durability, idempotency and tenant isolation
 ```
 
-Staged rollout may enable channels incrementally behind feature flags.
+Sales Core v1 does not claim:
 
-That operational rollout does not alter the completion definition.
+```text
+AI Navigator
+Microsites
+image-aware Knowledge
+embedded visual calendars
+website add to cart
+AI voice
+external event outbound
+```
 
-Merging PR #17 or enabling Web Widget alone must not be described as ChatRing v1 production completion.
+## 31.3 AI Navigator / Visual Sales readiness
 
-Basic Assistant administration is part of this production definition. Console-only
-create, publish, bind, switch, disable/archive, secret rotation and failure inspection
-is acceptable during contained engineering work, but not at ChatRing v1 release.
+The later Visual Sales release requires, in addition to the already-proven Sales Core:
+
+```text
+media-aware Knowledge and administrator media controls
++
+source-linked Sales Entities
++
+AI Navigator using the same native Conversation/Brain/Playbooks/Tools
++
+explicit Playbook buttons separate from Engagements
++
+validated Microsite artifacts and safe sharing
++
+booking/calendar and approved Website host actions
++
+visual-stage durability, privacy, rendering and browser proof
+```
+
+Each milestone has a separate feature/release gate and immutable image proof.
 
 ---
 
-# 32. Final completion definition
+# 32. Final completion definitions
 
-ChatRing v1 is complete when we can truthfully say:
+## 32.1 Sales Core v1
 
-> ChatRing is a native, Captain-like AI layer across Chatwoot rather than a parallel customer-service platform or a Web Widget-only RAG bot. Chatwoot remains authority for Contacts, channel identity, Conversations, Messages, AgentBot ownership, Automations, native actions, assignment/handoff, Campaigns and delivery. ChatRing uses one channel/provider-neutral Brain, one safe context/identity policy, one deterministic model for AI versus native effects, one authorized external-capability model proven through a real connector, one durable trusted business-event path, one native outbound-intent/effect path, and certified operation across every enabled messaging channel.
+ChatRing Sales Core v1 is complete when we can truthfully say:
 
-The final architecture is:
+> **ChatRing is a native sales-conversation and human-connection layer across Chatwoot. Chatwoot remains authority for Inboxes, Contacts, ContactInbox, Conversations, Messages, AgentBot ownership, agents/teams, assignment/handoff, Automations, Campaigns, APIs and delivery. ChatRing uses one shared Sales Brain and one text Business Knowledge Base; provides Inbox-owned phrase-triggered Playbooks and Inbox-scoped Tools to both free-form and guided conversations; shows separate Engagement starter pills in the current Website Widget; executes authorized native Chatwoot actions; and connects qualified visitors to humans through native RealtimeKit and one audited PSTN provider under production-grade durability and tenant isolation.**
+
+Architecture:
 
 ```text
                          CHATWOOT
                 native operational foundation
 
+ Inboxes / Channels / Provider Ingress
  Contacts / ContactInbox / Identity
- Conversations / Messages
- AgentBot / Assignment / Handoff
- Templates
- Automations / Actions
- Campaigns
- APIs / Webhooks
- Channels / Delivery
-                         │
-                         ▼
-               CHATRING EXECUTION CORE
+ Conversations / Messages / Attachments
+ AgentBot / Agents / Teams / Availability
+ Assignment / Handoff / Status
+ Templates / Automations / Actions
+ Campaigns / APIs / Webhooks
+ Native Delivery / RealtimeKit / Calls where available
+                         |
+                         v
+               CHATRING SALES CORE V1
 
-              Assistant / Version
-              BrainInvocation
-              Context Policy
-              Knowledge / Memory
-              AI reasoning
-              Native-action policy
-              Effect Arbitration
-              External capabilities / Tools
-              Tool Authorization
-              AI Audit / Idempotency
-              BusinessEvent
-              OutboundIntent
-                         │
-              ┌──────────┴───────────┐
-              │                      │
-              ▼                      ▼
-       NATIVE CHATWOOT         EXTERNAL SYSTEMS
-       effects/delivery        via real connectors
+ Assistant / Immutable Version
+ BrainInvocation / AITurn
+ Native Context / Privacy Policy
+ Text Business Knowledge / Evidence
+ ToolDefinition / InboxToolPolicy / ToolExecution
+ InboxPlaybook / Version / Execution
+ Engagement Starter Configuration
+ Native Effect Arbitration
+ Voice Request Coordination / One PSTN Adapter
+ Sales Administration / Audit / Analytics
+                         |
+              +----------+-----------+
+              |                      |
+              v                      v
+      CUSTOMER CHANNELS          HUMAN SALES TEAM
 
-                              Shopify / WooCommerce
-                              CRM
-                              Billing
-                              ERP
-                              custom APIs
+      Native Website Widget      Native Chatwoot Inbox
+      WhatsApp / Email / SMS     Agents / Teams
+      Social / API Inboxes       Assignment / Handoff
+      Voice Call Surface         RealtimeKit / PSTN
 ```
 
-Inbound:
+Free-form path:
 
 ```text
-native provider ingress
-        ↓
-Chatwoot Contact / ContactInbox
-        ↓
-Chatwoot Conversation / Message
-        ↓
-native templates + Automations
-        ↓
-deterministic ChatRing arbitration
-        ↓
+native customer Message
+        ->
+native templates + immediate Automations complete
+        ->
+no active/matching InboxPlaybook
+        ->
 shared BrainInvocation
-        ↓
-Brain / Knowledge / Memory / Tools
-        ↓
-authorized native Chatwoot effect
-        ↓
+        ->
+text Business Knowledge + current Inbox Tools
+        ->
+authorized native Message/action/call offer
+        ->
 native delivery
 ```
 
-Outbound:
+Engagement path:
 
 ```text
-trusted external business event
-        ↓
-real provider adapter
-        ↓
-BusinessEvent
-        ↓
-deterministic intent
-        OR
-shared BrainInvocation
-        ↓
-OutboundIntent
-        ↓
-native capability resolution
-        ↓
-authorized native Chatwoot effect
-        ↓
-native delivery
+visitor clicks starter pill
+        ->
+ordinary incoming Message with configured text
+        ->
+normal phrase resolution or free-form path
+```
+
+Playbook path:
+
+```text
+customer phrase match for current Inbox
+        ->
+published InboxPlaybookVersion
+        ->
+InboxPlaybookExecution
+        ->
+shared Brain + text Knowledge + Inbox Tools
+        ->
+native Messages/actions / booking link / human call
+        ->
+stop, handoff or explicit same-Inbox transition
+```
+
+Human voice path:
+
+```text
+agent invite OR visitor Talk to us OR Brain/Playbook call offer
+        ->
+native Contact / Conversation / hours / availability
+        ->
+native assignment/routing
+        ->
+RealtimeKit Website call
+OR selected Twilio/Telnyx adapter
+        ->
+normalized call status
+        ->
+return to same Chatwoot Conversation
+```
+
+## 32.2 Later AI Navigator / Visual Sales
+
+The later product is complete when it can truthfully add:
+
+> **The same Sales Core now has media-aware Knowledge, AI Navigator, source-grounded visual Microsites, explicit Playbook buttons, embedded booking and safe shareable artifacts without creating another Conversation, Brain, customer identity or delivery lifecycle.**
+
+Visual path:
+
+```text
+Sales Core Brain / InboxPlaybook
+        ->
+approved text evidence + media + Sales Entities
+        ->
+typed visual Tool
+        ->
+validated immutable artifact
+        ->
+native Message reference
+        ->
+AI Navigator render
+        ->
+optional sanitized share snapshot
 ```
 
 The central engineering objectives are:
 
-> **Audit Chatwoot before building each component. Preserve the final native ownership boundary. Build one shared AI core across all enabled channels. Use Chatwoot's existing product primitives productively. Add external intelligence through real connectors rather than fake abstractions. Keep every customer-visible effect inside native Chatwoot wherever possible.**
-
-After foundation freeze, adding another connector, business policy or Tool should be integration work—not a redesign of the Brain, identity model, Automation arbitration, event execution, channel lifecycle or Chatwoot ownership model.
-
+> **Audit Chatwoot before building each component. Preserve native ownership. Keep Engagements and Playbooks distinct. Use one shared Brain, while making Tool availability and Playbooks Inbox-specific. Complete the current Widget, Playbook, Tool, omnichannel and human-voice foundation before building AI Navigator. Add media and Microsites only when the Knowledge, administration and artifact-security prerequisites exist.**
 
 ---
 
-# Appendix A — Mandatory source-evidence map
+# Appendix A - Mandatory source-evidence map
 
-Before implementation, Codex must refresh the exact PR and repository SHAs and record them in the implementation plan.
+Before implementation, Codex must refresh exact repository SHAs and document them in the active implementation plan.
 
-Current reviewed reference at the time of this direction:
+Current lifecycle reference at the time of this direction:
 
 ```text
 Repository: noomi456/chatwoot
 PR: #17
-Reviewed head: 1500b09f27c80efb33d23ecea54354a4687e87bd
+Merged: 2026-08-10
+PR head: 19d6abcd49ec33e52f96f469ad0ee65b63110093
+Merge commit: 401a33f35a4edda131edf51ed829a6b2fbbcec61
 ```
 
-Do not assume this SHA remains current.
+Do not assume these remain the deployed production SHA.
 
-## Official Chatwoot documentation to audit
+## A.1 Source authority hierarchy
+
+```text
+1. Deployed Chatwoot/ChatRing source and runtime
+2. This staged Sales Core v1 direction
+3. PR #17 / v2.2 native lifecycle contract
+4. Active stacked implementation plans
+5. Official Chatwoot documentation
+6. Expertise.ai public documentation/product pages as donor reference
+7. cqalerts3-code repository as donor/UI reference
+```
+
+Donor code may not override native Chatwoot ownership or production security requirements.
+
+## A.2 Current Knowledge truth to audit
+
+At the reviewed ChatRing merge:
+
+```text
+KnowledgeDocument stores markdown and metadata.
+
+DocsGPT upload sends text/markdown files containing KnowledgeDocument.markdown.
+
+The configured provider chunks markdown.
+
+There is no implemented first-class Website image/media asset catalog,
+administrator media upload/review surface, image retrieval contract,
+or Microsite-ready media selection path.
+```
+
+Codex must verify the current deployed tree before implementing media support.
+
+Relevant source areas include:
+
+```text
+db/migrate/20260805000000_create_chat_ring_knowledge_foundation.rb
+app/models/chat_ring/knowledge_document.rb
+app/models/chat_ring/knowledge_index.rb
+app/services/chat_ring/knowledge/docs_gpt_client.rb
+app/services/chat_ring/knowledge/sync_service.rb
+app/services/chat_ring/knowledge/retriever.rb
+```
+
+## A.3 Official Chatwoot documentation to audit
 
 ```text
 User Guide
 https://chatwoot.help/hc/user-guide/en
 https://www.chatwoot.com/hc/user-guide/en/
-
-Channels overview
-https://www.chatwoot.com/features/channels
 
 Channels and Inboxes
 https://www.chatwoot.com/hc/user-guide/articles/1677492191-adding-inboxes
@@ -2266,20 +3586,17 @@ https://www.chatwoot.com/hc/user-guide/articles/1677497472-how-to-use-agent-bots
 Automations
 https://www.chatwoot.com/hc/user-guide/articles/1677689800-how-to-use-automation
 
-Customer engagement / Automation loop guidance
-https://www.chatwoot.com/hc/user-guide/articles/1677238266-lesson-4-complete-your-customer-engagement-suite
+Interactive Messages
+https://www.chatwoot.com/hc/user-guide/articles/1677689344-how-to-use-interactive-messages
 
-AI Actions
-https://www.chatwoot.com/hc/user-guide/articles/1777328078-lesson-5-ai-actions
+Widget Customization
+https://www.chatwoot.com/features/widget-customization
 
-Captain Custom Tools
-https://www.chatwoot.com/hc/user-guide/articles/1775045339-v2-_-how-to-set-up-custom-tools-for-captain
+Pre-chat Forms
+https://www.chatwoot.com/hc/user-guide/articles/1677688647-how-to-use-pre_chat-forms
 
-Widget additional user information
-https://www.chatwoot.com/hc/user-guide/articles/1677587234-how-to-send-additional-user-information-to-chatwoot-using-sdk
-
-Widget identity validation
-https://www.chatwoot.com/hc/user-guide/articles/1677587479-how-to-enable-identity-validation-in-chatwoot
+Widget identity validation and SDK user information
+Audit the current official Widget SDK/HMAC documentation.
 
 Contacts
 https://www.chatwoot.com/hc/user-guide/articles/1677498364-understanding-contacts
@@ -2287,17 +3604,14 @@ https://www.chatwoot.com/hc/user-guide/articles/1677498364-understanding-contact
 Campaigns
 https://www.chatwoot.com/hc/user-guide/articles/1677738682-how-to-use-campaigns
 
-Webhooks
-https://www.chatwoot.com/hc/user-guide/articles/1677693021-how-to-use-webhooks
+Cloudflare RealtimeKit / Website calls
+https://www.chatwoot.com/hc/user-guide/articles/1781766180-how-to-enable-video-calls-with-cloudflare-realtime_kit
 
-API Channel
-https://www.chatwoot.com/hc/user-guide/articles/1677839703-how-to-create-an-api-channel-inbox
-
-SMS channel
-https://www.chatwoot.com/hc/user-guide/articles/1677846958-how-to-setup-an-sms-channel
+Voice calling / Twilio Voice / WhatsApp Calling
+Audit current official Voice documentation and deployed edition.
 ```
 
-## Chatwoot source areas to audit
+## A.4 Chatwoot source areas to audit
 
 ```text
 app/models/account.rb
@@ -2313,6 +3627,7 @@ app/models/campaign.rb
 
 app/listeners/agent_bot_listener.rb
 app/listeners/automation_rule_listener.rb
+app/listeners/campaign_listener.rb
 
 app/dispatchers/dispatcher.rb
 app/dispatchers/sync_dispatcher.rb
@@ -2322,10 +3637,11 @@ app/services/message_templates/hook_execution_service.rb
 app/services/automation_rules/action_service.rb
 app/services/automation_rules/conditions_filter_service.rb
 app/services/conversations/assignment_service.rb
-app/services/messages/message_builder.rb
+app/builders/messages/message_builder.rb
 
 app/controllers/api/v1/widget/
 app/controllers/api/v1/accounts/conversations/
+app/controllers/api/v1/accounts/integrations/
 app/controllers/public/api/v1/inboxes/
 
 app/models/channel/
@@ -2333,21 +3649,135 @@ app/services/whatsapp/
 app/services/twilio/
 app/mailers/conversation_reply_mailer.rb
 
+lib/integrations/dyte/
+app/controllers/api/v1/widget/integrations/dyte_controller.rb
+app/controllers/api/v1/accounts/integrations/dyte_controller.rb
+
+enterprise/app/models/call.rb and related voice services
+only to determine deployed edition/licensing/native seams;
+do not import Enterprise source without explicit authority.
+
 app/services/chat_ring/
 app/jobs/chat_ring/
 app/models/chat_ring/
 ```
 
-Captain/Enterprise source may be inspected only for product and native-seam understanding. It must not be copied into the CE implementation unless licensing and product authority explicitly permit it.
+## A.5 Expertise.ai donor references
 
-## Evidence rule
+Use public sources to understand product contracts:
+
+```text
+Playbooks
+https://docs.expertise.ai/playbook/core-concepts/
+https://docs.expertise.ai/playbook/quick-reference/
+
+Active Engagement / Conversation Starters
+https://docs.expertise.ai/active-engagement/overview/
+
+Personalized Microsites
+https://www.expertise.ai/personalized-microsites
+
+Voice and booking product references
+https://www.expertise.ai/booking
+```
+
+Important distinctions:
+
+```text
+Conversation Starters are clickable questions.
+
+Playbooks have triggers, steps, branches and Tools.
+
+Microsites are a separate AI Nav visual capability and are not supported in the standard chat widget.
+
+Microsites depend on images, links, interactive tools and booking/calendar presentation.
+```
+
+## A.6 cqalerts3-code donor references
+
+Repository:
+
+```text
+cqalerts3-code/bottree-dark-custom-bots-f6b3cac4
+verified donor commit: 99d37267d01997ca23ae7ff776ca11ee319bdb6b
+verified on: 2026-08-10
+```
+
+Study, at minimum:
+
+```text
+src/pages/dashboard/Engagement.tsx
+src/components/engagement/
+src/components/widget/ClassicEngagementSettings.tsx
+
+src/pages/dashboard/Playbooks.tsx
+src/components/playbooks/
+src/hooks/usePlaybooks.ts
+docs/PLAYBOOK_DOCUMENTATION.md
+docs/PLAYBOOK_TOOLS_REFERENCE.md
+supabase/functions/shared/playbook-utils.ts
+
+supabase/functions/enrich-content/index.ts
+supabase/functions/shared/extract-entities.ts
+supabase/functions/generate-microsite/index.ts
+supabase/functions/shared/microsite-artifact.ts
+supabase/functions/microsite-share/index.ts
+public/microsite-renderer.js
+
+src/components/voice/IncomingCallBanner.tsx
+voice-server/README.md
+```
+
+Study useful donor patterns such as:
+
+```text
+Playbook list/editor/preview/validation/quick setup
+
+Engagement list/page rules/live preview
+
+content enrichment, CTA extraction and structured entity extraction
+
+media-aware Microsite generation and image review concepts
+
+shared artifact renderer and share page
+```
+
+Do not copy donor weaknesses as production authority:
+
+```text
+Supabase-specific tenancy/storage
+
+substring-only Playbook matching
+
+heuristic branch matching without typed validation
+
+prototype claims not backed by end-to-end tests
+
+separate customer/conversation stores
+
+arbitrary URL/action execution
+
+AI voice architecture outside Sales Core v1
+```
+
+## A.7 Evidence rule
 
 Every implementation decision must cite:
 
 ```text
-exact source path or official documentation
-current commit/ref
+exact Chatwoot source path or official documentation
+
+current commit/ref and deployed feature state
+
 observed native behavior
+
 selected classification: NATIVE / EXTEND / ADAPT / NEW
+
+donor source studied, when applicable
+
 reason the chosen ChatRing extension is minimal
+
+native Message/action/assignment/delivery path
+
+test proving non-managed Chatwoot behavior remains unchanged
 ```
