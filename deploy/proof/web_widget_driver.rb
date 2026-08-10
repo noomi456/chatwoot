@@ -9,13 +9,13 @@ require 'fileutils'
 require 'json'
 require 'net/http'
 require 'securerandom'
-require 'timeout'
 require 'uri'
 
 class ChatRingWebWidgetProof
   class Failure < StandardError; end
 
   BindingFixture = Data.define(:assistant, :connection, :channel, :inbox, :contact, :contact_inbox, :token)
+  BindingProcess = Data.define(:pid, :backend_pid, :pid_file)
 
   WAIT_TIMEOUT = 300
   POLL_INTERVAL = 0.25
@@ -175,7 +175,8 @@ class ChatRingWebWidgetProof
   def run_writer_before_first_binding!(endpoint)
     fixture = create_binding_fixture!("#{endpoint}-writer-first")
     lock_connection, lock_pid = checkout_record_lock!('accounts', account.id)
-    binder, binder_pid = start_binding(fixture)
+    binder = start_binding(fixture)
+    binder_pid = binder.backend_pid
     wait_for_backend_blocked_by!(binder_pid, lock_pid, 'accounts')
     message = post_first_widget(fixture, endpoint, "First native message before binding #{run_id}")
     wait_for('pre-binding native Automation completion') do
@@ -183,7 +184,8 @@ class ChatRingWebWidgetProof
     end
     release_record_lock!(lock_connection)
     lock_connection = nil
-    binder.value
+    wait_for_binding!(binder)
+    binder = nil
 
     assert!(ChatRing::NativeHandlingCompletion.where(trigger_message: message).none?,
             'first Message committed before binding was adopted by ChatRing')
@@ -194,12 +196,14 @@ class ChatRingWebWidgetProof
     { writer_won: true, binder_waiter_pid: binder_pid, adopted_turns: 0 }
   ensure
     release_record_lock!(lock_connection) if defined?(lock_connection) && lock_connection
+    terminate_binding_process!(binder) if defined?(binder) && binder
   end
 
   def run_binding_before_first_writer!(endpoint)
     fixture = create_binding_fixture!("#{endpoint}-binding-first")
     lock_connection, lock_pid = checkout_record_lock!('inboxes', fixture.inbox.id)
-    binder, binder_pid = start_binding(fixture)
+    binder = start_binding(fixture)
+    binder_pid = binder.backend_pid
     wait_for_backend_blocked_by!(binder_pid, lock_pid, 'inboxes')
     writer = Thread.new do
       ActiveRecord::Base.connection_pool.with_connection do
@@ -213,7 +217,8 @@ class ChatRingWebWidgetProof
     writer_pid = wait_for_blocked_backend!(lock_pid, 'inboxes', exclude_pids: [binder_pid])
     release_record_lock!(lock_connection)
     lock_connection = nil
-    binder.value
+    wait_for_binding!(binder)
+    binder = nil
     message = writer.value
     turn = wait_for_terminal_turn(message)
 
@@ -225,6 +230,7 @@ class ChatRingWebWidgetProof
     { binding_won: true, binder_waiter_pid: binder_pid, writer_waiter_pid: writer_pid, turns: 1 }
   ensure
     release_record_lock!(lock_connection) if defined?(lock_connection) && lock_connection
+    terminate_binding_process!(binder) if defined?(binder) && binder
   end
 
   def run_supported_lifecycle!
@@ -735,20 +741,35 @@ class ChatRingWebWidgetProof
   end
 
   def start_binding(fixture)
-    ready = Queue.new
-    thread = Thread.new do
-      ActiveRecord::Base.connection_pool.with_connection do |database_connection|
-        ready << database_connection.select_value('SELECT pg_backend_pid()')
-        fixture_assistant = ChatRing::Assistant.find(fixture.assistant.id)
-        fixture_inbox = Inbox.find(fixture.inbox.id)
-        ChatRing::AssistantProvisioning::InboxBindingActivator.new(
-          assistant: fixture_assistant,
-          inbox: fixture_inbox
-        ).call
-      end
+    pid_file = File.join(state_dir, "binding_backend_#{fixture.inbox.id}")
+    FileUtils.rm_f(pid_file)
+    script = <<~RUBY
+      File.write(#{pid_file.dump}, ActiveRecord::Base.connection.select_value('SELECT pg_backend_pid()').to_s)
+      ChatRing::AssistantProvisioning::InboxBindingActivator.new(
+        assistant: ChatRing::Assistant.find(#{Integer(fixture.assistant.id)}),
+        inbox: Inbox.find(#{Integer(fixture.inbox.id)})
+      ).call
+    RUBY
+    process_pid = Process.spawn('bundle', 'exec', 'rails', 'runner', script)
+    backend_pid = wait_for('binding process database PID', timeout: 30) do
+      Integer(File.read(pid_file)) if File.exist?(pid_file) && File.size?(pid_file)
     end
-    backend_pid = Timeout.timeout(10) { ready.pop }
-    [thread, Integer(backend_pid)]
+    BindingProcess.new(pid: process_pid, backend_pid: backend_pid, pid_file: pid_file)
+  end
+
+  def wait_for_binding!(binding_process)
+    _, status = Process.wait2(binding_process.pid)
+    FileUtils.rm_f(binding_process.pid_file)
+    raise Failure, "binding process #{binding_process.pid} failed" unless status.success?
+  end
+
+  def terminate_binding_process!(binding_process)
+    Process.kill('TERM', binding_process.pid)
+    Process.wait(binding_process.pid)
+  rescue Errno::ESRCH, Errno::ECHILD
+    nil
+  ensure
+    FileUtils.rm_f(binding_process.pid_file)
   end
 
   def post_first_widget(fixture, endpoint, content)
