@@ -44,6 +44,8 @@ class ChatRing::AiTurn < ApplicationRecord
           inverse_of: :ai_turn,
           dependent: :destroy
 
+  scope :nonterminal, -> { where(status: statuses.values_at(*NONTERMINAL_STATUSES)) }
+
   validates :binding_version, numericality: { only_integer: true, greater_than: 0 }
   validates :deadline_at, presence: true
   validates :context_digest, format: { with: /\A[0-9a-f]{64}\z/ }, allow_nil: true

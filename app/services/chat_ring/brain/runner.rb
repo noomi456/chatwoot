@@ -109,11 +109,21 @@ class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
         next
       end
 
-      pinned_index_id = ChatRing::Knowledge::Retriever.active_index_id(inbox: turn.conversation.inbox)
-      turn.update!(status: :running, started_at: turn.started_at || Time.current, knowledge_index_id: pinned_index_id)
+      pin_current_index!
       claimed = true
     end
     claimed
+  end
+
+  def pin_current_index!
+    knowledge_base = ChatRing::KnowledgeBase.for_account!(turn.conversation.account)
+    knowledge_base.with_lock do
+      turn.update!(
+        status: :running,
+        started_at: turn.started_at || Time.current,
+        knowledge_index_id: knowledge_base.active_knowledge_index_id
+      )
+    end
   end
 
   def mark_ineligible!(reason)

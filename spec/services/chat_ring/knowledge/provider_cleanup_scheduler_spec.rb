@@ -76,4 +76,35 @@ RSpec.describe ChatRing::Knowledge::ProviderCleanupScheduler do
     end.not_to have_enqueued_job(ChatRing::Knowledge::ProviderCleanupJob)
     expect(index.provider_cleanup).to be_nil
   end
+
+  it 'schedules cleanup for a retired index even when a nonterminal turn currently pins it' do
+    create_pinned_turn(index)
+
+    expect do
+      described_class.schedule_eligible!(knowledge_base: knowledge_base)
+    end.to have_enqueued_job(ChatRing::Knowledge::ProviderCleanupJob)
+
+    expect(index.reload.provider_cleanup).to have_attributes(status: 'pending', provider_source_id: 'source-1')
+    expect(described_class.pinned_by_nonterminal_turn?(index)).to be true
+  end
+
+  def create_pinned_turn(knowledge_index) # rubocop:disable Metrics/AbcSize
+    workspace = knowledge_base.workspace
+    inbox = create(:channel_widget, account: account).inbox
+    assistant = ChatRing::Assistant.create!(workspace: workspace, name: 'Sales')
+    scope = workspace.knowledge_scopes.find_by!(business_wide: true)
+    version = ChatRing::AssistantVersions::Publisher.new(assistant: assistant, knowledge_scope: scope).call
+    connection = ChatRing::AssistantProvisioning::AgentBotProvisioner.new(assistant: assistant).call
+    binding = ChatRing::AssistantProvisioning::InboxBindingActivator.new(assistant: assistant, inbox: inbox).call
+    conversation = create(:conversation, account: account, inbox: inbox, status: :pending,
+                                         assignee_agent_bot: connection.agent_bot)
+    message = create(:message, account: account, inbox: inbox, conversation: conversation,
+                               message_type: :incoming, sender: conversation.contact)
+    ChatRing::AiTurn.create!(
+      workspace: workspace, conversation: conversation, trigger_message: message,
+      inbox_assistant_binding: binding, binding_version: binding.binding_version,
+      assistant: assistant, assistant_version: version, expected_agent_bot: connection.agent_bot,
+      knowledge_index: knowledge_index, status: :running, deadline_at: 1.minute.from_now
+    )
+  end
 end

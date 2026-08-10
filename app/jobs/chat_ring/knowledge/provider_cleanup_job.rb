@@ -11,9 +11,34 @@ class ChatRing::Knowledge::ProviderCleanupJob < ApplicationJob
   def perform(cleanup_id)
     cleanup = ChatRing::KnowledgeProviderCleanup.find_by(id: cleanup_id)
     return if cleanup.blank? || cleanup.status == 'succeeded'
-    return cancel!(cleanup) if ChatRing::Knowledge::ProviderCleanupScheduler.protected?(cleanup.knowledge_index)
+    return delete_when_unpinned(cleanup) if cleanup.knowledge_index
 
     cleanup.update!(status: 'retrying', attempts: cleanup.attempts + 1, last_error: nil)
+    delete_source(cleanup)
+  end
+
+  private
+
+  def delete_when_unpinned(cleanup)
+    knowledge_base = cleanup.knowledge_base || cleanup.knowledge_index.knowledge_base
+    action = knowledge_base.with_lock do
+      cleanup.reload
+      if ChatRing::Knowledge::ProviderCleanupScheduler.active?(cleanup.knowledge_index)
+        cancel!(cleanup)
+        :stop
+      elsif ChatRing::Knowledge::ProviderCleanupScheduler.pinned_by_nonterminal_turn?(cleanup.knowledge_index)
+        ChatRing::Knowledge::ProviderCleanupScheduler.defer_pinned!(cleanup)
+        :defer
+      else
+        cleanup.update!(status: 'retrying', attempts: cleanup.attempts + 1, last_error: nil)
+        :delete
+      end
+    end
+    ChatRing::Knowledge::ProviderCleanupScheduler.enqueue_cleanup!(cleanup) if action == :defer
+    delete_source(cleanup) if action == :delete
+  end
+
+  def delete_source(cleanup)
     docs_gpt_client.delete_source(
       account_id: cleanup.account_id,
       knowledge_index_id: cleanup.knowledge_index_id,
@@ -22,8 +47,6 @@ class ChatRing::Knowledge::ProviderCleanupJob < ApplicationJob
     )
     cleanup.update!(status: 'succeeded', cleaned_at: Time.current, last_error: nil)
   end
-
-  private
 
   def cancel!(cleanup)
     cleanup.update!(status: 'cancelled', last_error: 'provider index is active')
