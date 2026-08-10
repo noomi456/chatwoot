@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_08_10_003000) do
+ActiveRecord::Schema[7.1].define(version: 2026_08_10_004000) do
   # These extensions should be enabled to support this database
   enable_extension "pg_stat_statements"
   enable_extension "pg_trgm"
@@ -782,6 +782,30 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_10_003000) do
     t.index ["assistant_id"], name: "idx_chatring_bot_connections_on_assistant", unique: true
     t.index ["webhook_key"], name: "index_chat_ring_assistant_agent_bot_connections_on_webhook_key", unique: true
     t.index ["workspace_id"], name: "idx_on_workspace_id_49db119b3e"
+  end
+
+  create_table "chat_ring_assistant_drafts", force: :cascade do |t|
+    t.bigint "assistant_id", null: false
+    t.bigint "knowledge_scope_id", null: false
+    t.jsonb "identity", default: {}, null: false
+    t.jsonb "goals", default: [], null: false
+    t.text "instructions", default: "", null: false
+    t.jsonb "response_guidelines", default: [], null: false
+    t.jsonb "guardrails", default: [], null: false
+    t.jsonb "audience_policy", default: {}, null: false
+    t.jsonb "availability_policy", default: {}, null: false
+    t.jsonb "handoff_policy", default: {}, null: false
+    t.jsonb "tool_grants", default: [], null: false
+    t.jsonb "conversation_policy", default: {}, null: false
+    t.string "llm_provider", default: "openai", null: false
+    t.string "llm_model", default: "gpt-5.4", null: false
+    t.bigint "published_version_id"
+    t.integer "lock_version", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["assistant_id"], name: "index_chat_ring_assistant_drafts_on_assistant_id", unique: true
+    t.index ["knowledge_scope_id"], name: "index_chat_ring_assistant_drafts_on_knowledge_scope_id"
+    t.index ["published_version_id"], name: "index_chat_ring_assistant_drafts_on_published_version_id"
   end
 
   create_table "chat_ring_assistant_versions", force: :cascade do |t|
@@ -1927,6 +1951,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_10_003000) do
   add_foreign_key "chat_ring_assistant_agent_bot_connections", "agent_bots", on_delete: :restrict
   add_foreign_key "chat_ring_assistant_agent_bot_connections", "chat_ring_assistants", column: "assistant_id", on_delete: :cascade
   add_foreign_key "chat_ring_assistant_agent_bot_connections", "chat_ring_workspaces", column: "workspace_id", on_delete: :cascade
+  add_foreign_key "chat_ring_assistant_drafts", "chat_ring_assistant_versions", column: "published_version_id", on_delete: :nullify
+  add_foreign_key "chat_ring_assistant_drafts", "chat_ring_assistants", column: "assistant_id", on_delete: :cascade
+  add_foreign_key "chat_ring_assistant_drafts", "chat_ring_knowledge_scopes", column: "knowledge_scope_id", on_delete: :restrict
   add_foreign_key "chat_ring_assistant_versions", "chat_ring_assistants", column: "assistant_id", on_delete: :cascade
   add_foreign_key "chat_ring_assistant_versions", "chat_ring_knowledge_scopes", column: "knowledge_scope_id", on_delete: :restrict
   add_foreign_key "chat_ring_assistants", "chat_ring_assistant_versions", column: "current_version_id", on_delete: :nullify

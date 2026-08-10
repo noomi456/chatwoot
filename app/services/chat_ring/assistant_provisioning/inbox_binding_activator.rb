@@ -5,10 +5,11 @@ class ChatRing::AssistantProvisioning::InboxBindingActivator
   end
 
   def call
-    connection = active_connection!
     handed_off_conversations = []
     binding = assistant.workspace.chatwoot_account.with_lock do
+      assistant.reload
       inbox.with_lock do
+        connection = active_connection!
         validate_inbox!
         activate_binding!(connection, handed_off_conversations)
       end

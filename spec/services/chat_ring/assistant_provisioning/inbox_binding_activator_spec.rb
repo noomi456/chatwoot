@@ -90,6 +90,37 @@ RSpec.describe ChatRing::AssistantProvisioning::InboxBindingActivator do
     expect(assistant.inbox_bindings).to be_empty
   end
 
+  it 'rejects activation when archive wins the Account lock' do
+    publish
+    provision
+    archive_started = Queue.new
+    allow_archive_to_commit = Queue.new
+
+    archiver = Thread.new do
+      ActiveRecord::Base.connection_pool.with_connection do
+        account.reload.with_lock do
+          assistant.reload.update!(status: :archived)
+          archive_started << true
+          allow_archive_to_commit.pop
+        end
+      end
+    end
+    archive_started.pop
+    activator = Thread.new do
+      ActiveRecord::Base.connection_pool.with_connection do
+        described_class.new(assistant: assistant.reload, inbox: inbox.reload).call
+      end
+    rescue StandardError => e
+      e
+    end
+    allow_archive_to_commit << true
+
+    archiver.join
+    expect(activator.value).to be_a(ActiveRecord::RecordInvalid)
+    expect(inbox.reload.agent_bot).to be_nil
+    expect(assistant.inbox_bindings).to be_empty
+  end
+
   it 'fails closed when Dialogflow is configured' do
     publish
     provision
