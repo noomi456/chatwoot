@@ -7,12 +7,15 @@
 require 'fileutils'
 require 'json'
 require 'net/http'
+require 'puma'
+require 'rack'
 require 'uri'
-require 'webrick'
 
 class ChatRingProofLlmProxy
   COPY_RESPONSE_HEADERS = %w[content-type openai-processing-ms x-request-id].freeze
   HOP_BY_HOP_HEADERS = %w[connection content-length host transfer-encoding].freeze
+  PROVIDER_UNAVAILABLE = '{"error":{"message":"proof provider unavailable"}}'
+  UPSTREAM_FAILURE = '{"error":{"message":"proof proxy upstream failure"}}'
 
   def initialize
     @upstream = URI(ENV.fetch('PROOF_LLM_UPSTREAM', 'https://api.openai.com'))
@@ -20,39 +23,30 @@ class ChatRingProofLlmProxy
     FileUtils.mkdir_p(@state_dir)
   end
 
-  def call(request, response)
-    return health(response) if request.path == '/health'
+  def call(environment)
+    request = Rack::Request.new(environment)
+    return response(200, 'text/plain', 'ok') if request.path == '/health'
 
-    body = request.body.to_s
-    return unavailable(response) if body.include?('[[PROOF_FAIL_503]]')
+    body = request.body.read
+    return response(503, 'application/json', PROVIDER_UNAVAILABLE) if body.include?('[[PROOF_FAIL_503]]')
 
     wait_at_barrier if body.include?('[[PROOF_HOLD]]')
-    return local_completion(response, body) if body.include?('[[PROOF_LOCAL_REPLY]]')
+    return local_completion(body) if body.include?('[[PROOF_LOCAL_REPLY]]')
 
-    forward(request, response, body)
+    forward(request, body)
   rescue StandardError
-    response.status = 502
-    response['content-type'] = 'application/json'
-    response.body = '{"error":{"message":"proof proxy upstream failure"}}'
+    response(502, 'application/json', UPSTREAM_FAILURE)
   end
 
   private
 
   attr_reader :upstream, :state_dir
 
-  def health(response)
-    response.status = 200
-    response['content-type'] = 'text/plain'
-    response.body = 'ok'
+  def response(status, content_type, body)
+    [status, { 'content-type' => content_type, 'content-length' => body.bytesize.to_s }, [body]]
   end
 
-  def unavailable(response)
-    response.status = 503
-    response['content-type'] = 'application/json'
-    response.body = '{"error":{"message":"proof provider unavailable"}}'
-  end
-
-  def local_completion(response, request_body)
+  def local_completion(request_body)
     evidence_id = first_evidence_id(request_body)
     decision = {
       decision_type: evidence_id ? 'reply' : 'handoff',
@@ -60,9 +54,7 @@ class ChatRingProofLlmProxy
       reason_code: evidence_id ? 'answered' : 'insufficient_evidence',
       evidence_ids: evidence_id ? [evidence_id] : []
     }
-    response.status = 200
-    response['content-type'] = 'application/json'
-    response.body = JSON.generate(
+    body = JSON.generate(
       id: "proof-#{Process.clock_gettime(Process::CLOCK_MONOTONIC).to_i}",
       object: 'chat.completion',
       created: Time.now.to_i,
@@ -70,6 +62,7 @@ class ChatRingProofLlmProxy
       choices: [{ index: 0, message: { role: 'assistant', content: JSON.generate(decision) }, finish_reason: 'stop' }],
       usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 }
     )
+    response(200, 'application/json', body)
   end
 
   def first_evidence_id(request_body)
@@ -102,16 +95,20 @@ class ChatRingProofLlmProxy
     end
   end
 
-  def forward(request, response, body)
+  def forward(request, body)
     uri = upstream.dup
     uri.path = request.path
     uri.query = request.query_string unless request.query_string.to_s.empty?
     upstream_request = Net::HTTP::Post.new(uri)
-    request.header.each do |name, values|
+    request.env.each do |key, value|
+      next unless key.start_with?('HTTP_')
+
+      name = key.delete_prefix('HTTP_').downcase.tr('_', '-')
       next if HOP_BY_HOP_HEADERS.include?(name.downcase)
 
-      upstream_request[name] = Array(values).join(', ')
+      upstream_request[name] = value
     end
+    upstream_request['content-type'] = request.content_type if request.content_type
     upstream_request.body = body
     upstream_response = Net::HTTP.start(
       uri.host,
@@ -122,24 +119,21 @@ class ChatRingProofLlmProxy
       write_timeout: 10
     ) { |http| http.request(upstream_request) }
 
-    response.status = upstream_response.code.to_i
+    headers = {}
     COPY_RESPONSE_HEADERS.each do |header|
       value = upstream_response[header]
-      response[header] = value if value
+      headers[header] = value if value
     end
-    response.body = upstream_response.body
+    response_body = upstream_response.body.to_s
+    headers['content-length'] = response_body.bytesize.to_s
+    [upstream_response.code.to_i, headers, [response_body]]
   end
 end
 
 proxy = ChatRingProofLlmProxy.new
-server = WEBrick::HTTPServer.new(
-  Port: Integer(ENV.fetch('PORT', '8080')),
-  BindAddress: '0.0.0.0',
-  Logger: WEBrick::Log.new(File::NULL, WEBrick::Log::FATAL),
-  AccessLog: []
-)
-server.mount_proc('/') { |request, response| proxy.call(request, response) }
-trap('TERM') { server.shutdown }
-trap('INT') { server.shutdown }
-server.start
+server = Puma::Server.new(proxy)
+server.add_tcp_listener('0.0.0.0', Integer(ENV.fetch('PORT', '8080')))
+trap('TERM') { server.stop(true) }
+trap('INT') { server.stop(true) }
+server.run.join
 # rubocop:enable Metrics/AbcSize, Metrics/MethodLength
