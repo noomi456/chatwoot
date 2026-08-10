@@ -100,10 +100,12 @@ RSpec.describe 'ChatRing managed AgentBot webhooks', type: :request do
     expect(response).to have_http_status(:ok)
     expect(ChatRing::WebhookDelivery.last).to be_processed
     turn = ChatRing::AiTurn.last
-    expect(turn).to be_status_received
-    expect(turn.trigger_message).to eq(message)
-    expect(turn.assistant_version).to eq(assistant.current_version)
-    expect(turn.expected_agent_bot).to eq(agent_bot)
+    expect(turn).to have_attributes(
+      status: 'received',
+      trigger_message: message,
+      assistant_version: assistant.current_version,
+      expected_agent_bot: agent_bot
+    )
     expect(turn.deadline_at).to be_within(2.seconds).of(Time.current + ChatRing::AiTurn::DEFAULT_DEADLINE)
   end
 
