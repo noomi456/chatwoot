@@ -90,6 +90,24 @@ services:
     volumes:
       - docs_postgres:/var/lib/postgresql/data
 
+  docs-postgres-vector-init:
+    image: ${POSTGRES_IMAGE:?POSTGRES_IMAGE must be immutable}
+    command:
+      - sh
+      - -c
+      - >-
+        PGPASSWORD="$$DOCSGPT_POSTGRES_PASSWORD"
+        psql -h docs-postgres -U docsgpt -d docsgpt_proof
+        -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION IF NOT EXISTS vector'
+    environment:
+      DOCSGPT_POSTGRES_PASSWORD: ${DOCSGPT_POSTGRES_PASSWORD:?required}
+    depends_on:
+      docs-postgres:
+        condition: service_healthy
+    networks:
+      - proof
+    restart: "no"
+
   docs-redis:
     image: ${REDIS_IMAGE:?REDIS_IMAGE must be immutable}
     command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass \"$$REDIS_PASSWORD\""]
@@ -141,6 +159,8 @@ services:
       WSGI_THREADPOOL_WORKERS: "12"
     depends_on:
       docs-gpt-volume-init:
+        condition: service_completed_successfully
+      docs-postgres-vector-init:
         condition: service_completed_successfully
       docs-postgres:
         condition: service_healthy
