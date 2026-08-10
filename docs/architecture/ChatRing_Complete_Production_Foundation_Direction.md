@@ -35,9 +35,9 @@ Engagement conversation-starter pills in the native Website Widget
 +
 native Chatwoot actions and productive Automation coexistence
 +
-human-to-human Website voice through RealtimeKit
+human-to-human Website voice through native Cloudflare RealtimeKit
 +
-one selected PSTN provider adapter or audited native equivalent
+Twilio PSTN Voice through one independently audited CE adapter
 +
 sales-first administration, customization, analytics and navigation
 +
@@ -76,6 +76,46 @@ visual-sales administration and analytics
 ```
 
 This is not architecture debt. It is a separate product capability with different data, security, rendering and administration requirements.
+
+## Locked Sales Core v1 channel and call scope — 2026-08-10
+
+The approved first-release provider boundary is:
+
+```text
+Text/channel certification
+1. Web Widget
+2. Twilio SMS
+3. Email
+4. WhatsApp Cloud
+5. Facebook Messenger
+6. Instagram, only when the deployed Meta app and Inbox are available
+
+Human calls
+1. Cloudflare RealtimeKit through Chatwoot's native Website integration
+2. Twilio for PSTN Voice
+```
+
+Twilio is the selected v1 SMS/PSTN provider. Telnyx is not part of v1. Twilio WhatsApp,
+Bandwidth SMS, WhatsApp default/non-Cloud, API, Telegram, LINE, TikTok and X/Twitter are
+not silently included merely because Chatwoot contains a model or provider path. They
+require a later written scope decision and their own native-path certification.
+
+"Available" means the deployed CE runtime has the required provider credentials, app
+approval, phone number/capabilities and feature configuration. Source availability alone
+does not make a channel release-ready.
+
+The source-verified classification is:
+
+| Capability | Classification | Governing implementation boundary |
+|---|---|---|
+| Web Widget | NATIVE + EXTEND | Reuse native Widget ingress, Conversation/Message and ActionCable delivery; extend the already-scoped scheduling/serialization seam. |
+| Twilio SMS | NATIVE + EXTEND | Reuse `Channel::TwilioSms`, native callback/job/services and `SendReplyJob`; harden provider authentication, deduplication, status, media and consent before AI certification. |
+| Email | NATIVE + EXTEND/ADAPT | Reuse ActionMailbox/IMAP, native threading and Email delivery; add only channel eligibility, bounded context and email-safe output. |
+| WhatsApp Cloud | NATIVE + EXTEND/ADAPT | Reuse Meta verification, native deduplication, Message persistence, templates/interactivity and delivery; enforce session/provider limits server-side. |
+| Facebook Messenger | NATIVE + EXTEND/ADAPT | Reuse native Messenger ingress/delivery; AI must fail closed outside the allowed window and never use the `HUMAN_AGENT` tag. |
+| Instagram | NATIVE + EXTEND/ADAPT when deployed | Reuse the configured direct or Facebook-linked native path; AI must never use the `HUMAN_AGENT` tag. |
+| Cloudflare RealtimeKit | NATIVE + bounded EXTEND/ADAPT | Reuse native meeting, integration Message and participant-token flow after authorization, credential, timeout, role and takeover hardening. |
+| Twilio PSTN Voice | ADAPT + NEW missing CE capability | Independently implement only the absent provider/call boundary from public Twilio contracts; preserve native Chatwoot Contact, Conversation, Message and assignment authority. |
 
 The sequencing rule is:
 
@@ -146,7 +186,7 @@ IMPLEMENTATION AUTHORITY
 -> the audited Chatwoot-native ChatRing architecture in this repository
 ```
 
-Expertise.ai and cqalerts3-code may be studied for product contracts, interaction models, schemas, validation ideas and UI references. Their storage, transport, orchestration and security architecture must not be copied into Chatwoot merely because it exists there.
+Expertise.ai and cqalerts3-code may be studied for product contracts, interaction models, schemas, validation ideas and UI references. A donor file may be clean-copied only when a file-level license/provenance, tenancy, security and native-boundary audit proves that it is implementation-neutral and can be rewired to native Chatwoot authority. Their storage, transport, orchestration, provider credentials, conversation/session state, Supabase tenancy and AI-voice architecture must not be copied into Chatwoot merely because they exist there.
 
 The governing production rule remains:
 
@@ -260,7 +300,7 @@ booking and calendar surfaces
 
 Website human call invitation / request UI
 
-one PSTN provider adapter: Twilio OR Telnyx
+selected PSTN provider: Twilio
 
 sales-first navigation, terminology and analytics
 ```
@@ -401,7 +441,7 @@ Playbook execution state linked to native Conversation
 
 Website visitor call-request coordination where Chatwoot lacks it
 
-one selected PSTN provider adapter where the audited native deployment is insufficient
+one Twilio PSTN Voice adapter where the audited CE deployment is insufficient
 
 sales administration and ChatRing-specific conversion analytics
 
@@ -2116,26 +2156,21 @@ PR #17 was a Web Widget lifecycle remediation, but Website is not the final sale
 
 Before Sales Core v1 is called production-complete, certify the shared AI core across every Inbox/provider included in the approved Sales v1 channel set.
 
-The target inventory includes, where enabled and selected:
+The approved Sales Core v1 inventory is:
 
 ```text
 Website / Web Widget
 Email
 WhatsApp Cloud
-WhatsApp default/non-Cloud provider
-Twilio WhatsApp
 Twilio SMS
-Bandwidth/native SMS
 Facebook Messenger
 Instagram
-Telegram
-LINE
-TikTok
-X/Twitter
-API Channel
 ```
 
-Any enabled Inbox type not certified must be explicitly excluded by written product decision with a documented native/provider limitation.
+The certification order begins with Web Widget, then Twilio SMS, Email, WhatsApp Cloud,
+Facebook Messenger and Instagram when the deployed provider is available. Every other
+Inbox/provider is excluded from Sales Core v1 by the locked product decision above; a
+future addition requires a separate native audit and channel-certification PR.
 
 ## 20.1 Shared across channels
 
@@ -2232,6 +2267,25 @@ embedded visual calendars
 Website host actions
 ```
 
+## 20.6 Twilio SMS must be hardened before certification
+
+The existing CE transport remains authoritative. The bounded extension must:
+
+```text
+validate X-Twilio-Signature synchronously at the existing inbound and status controllers
+store the primary Account Auth Token separately from an optional REST API-key secret
+deduplicate inbound provider SIDs durably
+enforce monotonic delivery-state transitions
+validate, authenticate and bound MMS downloads
+persist and enforce STOP/opt-out/consent state
+enforce SMS output/segment policy server-side
+```
+
+Do not add another Twilio webhook, Contact store, Conversation, sender or delivery job.
+Native one-off Campaign sending must be adapted before Sales outbound use because its
+current direct provider call does not create the required per-recipient Conversation/
+Message/idempotency audit.
+
 ---
 
 # 21. Human voice and calls in Sales v1
@@ -2243,6 +2297,20 @@ It does not include AI speech-to-speech or an AI receptionist.
 ## 21.1 Website RealtimeKit calls
 
 Audit and reuse Chatwoot's Cloudflare RealtimeKit integration for agent-initiated Website meetings/calls.
+
+The current CE seam is real but is not production-safe unchanged. Before any Sales call
+release, the native Widget participant-token endpoint must scope the integration Message
+through the authenticated contact's conversations, not merely the Inbox. Provider tokens
+must be encrypted at rest, calls must use bounded provider timeouts, visitor and agent
+participant roles must use least-privilege presets, and participant-token updates must be
+concurrency-safe. These are hardening extensions to the native seam, not reasons to build
+another meeting transport.
+
+Native meeting creation currently writes the outgoing integration Message directly. In a
+managed-bot-owned Conversation, an agent starting or accepting a call must first complete
+native human takeover through the existing serialization boundary and
+`Conversations::AssignmentService`. Add pending-AITurn versus agent-call race tests; a
+meeting must never leave the managed AgentBot as owner while a human agent is joining.
 
 Required flows:
 
@@ -2271,21 +2339,18 @@ The visitor-initiated flow is a ChatRing extension where Chatwoot does not alrea
 
 It must reuse native Contact, Conversation, agent presence, Inbox membership and assignment.
 
-## 21.2 One PSTN provider for v1
+## 21.2 Twilio is the PSTN provider for v1
 
-Choose exactly one:
+The current CE source provides native Twilio SMS, credentials and messaging delivery, but
+the PSTN Voice backend—Call model, controllers, provider services and lifecycle—is
+Enterprise-only. CE schema/UI fragments do not make that runtime available. Enterprise
+code must not be copied, ported or unlocked.
 
-```text
-Twilio
-OR
-Telnyx
-```
-
-Do not require both while claiming scope simplification.
-
-Whether Twilio native Chatwoot Voice is reused depends on the deployed edition and licensing audit.
-
-If the native deployed feature is unavailable or inappropriate, implement one narrow provider adapter.
+Twilio Voice is therefore a genuinely missing CE capability. Implement it independently
+from Twilio's public SDK/contracts as one narrow provider adapter subordinate to native
+Account, Inbox, Contact, ContactInbox, Conversation, Message, agent presence and
+AssignmentService. Reuse only CE-owned Twilio/channel seams that survive the implementation
+audit; do not create another conversation, assignment or delivery authority.
 
 Conceptually:
 
@@ -2312,7 +2377,7 @@ Sales Brain
 Chatwoot / ChatRing call policy
 → determines eligibility, routing and assignment
 
-RealtimeKit or selected PSTN provider
+RealtimeKit or Twilio PSTN provider
 → owns media transport
 
 Chatwoot
@@ -2597,7 +2662,7 @@ final Chatwoot Message/action commit
 
 RealtimeKit call requests
 
-selected PSTN provider events
+Twilio PSTN provider events
 ```
 
 Foundation requirements include:
@@ -2913,13 +2978,21 @@ human-visible sales notes/memory
 Foundation PRs - Omnichannel Sales Certification
 one shared Brain
 Inbox-owned Playbooks and Tool policies
-all approved Sales v1 Inboxes/providers certified
+Web Widget first
+Twilio SMS, Email, WhatsApp Cloud, Facebook and available Instagram certified through native providers
 
         ->
 
-Foundation PR - Human Voice
-RealtimeKit agent and visitor call flows
-one selected PSTN provider or audited native equivalent
+Foundation PR - Native RealtimeKit Website Calls
+fix participant authorization, credential, timeout and role-presets first
+then agent and visitor call flows through native integration Messages
+native hours, presence, routing and assignment
+
+        ->
+
+Foundation PR - Twilio PSTN Voice
+independently implement only the missing CE provider/call boundary
+signed callbacks, durable provider-leg idempotency and native Conversation projection
 native hours, presence, routing and assignment
 
         ->
@@ -3230,6 +3303,17 @@ native ingress
 
 Test identity, threading/reopen behavior, media/attachments, renderer fallbacks, provider templates/session rules, human takeover and delivery failure/status.
 
+Additional mandatory provider checks:
+
+```text
+Twilio SMS: signed inbound/status webhooks, SID deduplication, monotonic status,
+bounded authenticated MMS fetch, STOP/consent and real provider delivery
+
+Facebook / Instagram: AI output never uses Meta's HUMAN_AGENT tag
+
+All channels: server-side provider length/capability enforcement before Message creation
+```
+
 ## 30.8 Human voice
 
 ```text
@@ -3247,7 +3331,7 @@ native assignment updates once
 
 visitor decline / no answer / microphone denial / provider failure
 
-one selected PSTN provider flow
+Twilio PSTN provider flow
 
 chat/booking/callback fallback
 
@@ -3474,7 +3558,7 @@ native Contact / Conversation / hours / availability
 native assignment/routing
         ->
 RealtimeKit Website call
-OR selected Twilio/Telnyx adapter
+OR audited Twilio PSTN adapter
         ->
 normalized call status
         ->
@@ -3741,6 +3825,11 @@ media-aware Microsite generation and image review concepts
 
 shared artifact renderer and share page
 ```
+
+The donor `IncomingCallBanner` is a visual interaction reference only. The donor
+`voice-server` is an AI voice WebSocket/STT/TTS/LLM runtime with in-memory sessions and
+Supabase functions; it is outside Sales Core v1 and must not be copied into Chatwoot's
+human-call path.
 
 Do not copy donor weaknesses as production authority:
 

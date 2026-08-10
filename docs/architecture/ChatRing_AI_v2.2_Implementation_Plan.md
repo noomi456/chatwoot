@@ -368,6 +368,31 @@ the approved channel set, human voice/calls and the full production proof in
 AI Navigator, media-aware Knowledge and Microsites are separately gated later stages.
 Any failed Sales Core gate leaves the constant false.
 
+### Post-PR G — locked native channel and human-call certification
+
+Do not clone the Web Widget lifecycle or build provider transports. Extend the same
+BrainInvocation/commit core through each existing native writer/delivery path:
+
+```text
+Web Widget proof
+-> Twilio SMS hardening and native-path certification
+-> Email certification
+-> WhatsApp Cloud certification
+-> Facebook Messenger certification
+-> Instagram certification when the deployed Meta app is available
+-> hardened native Cloudflare RealtimeKit Website calls
+-> independently implemented Twilio PSTN Voice CE capability
+```
+
+Twilio SMS must first add synchronous signed-webhook validation to the existing callback
+controllers, durable provider-SID deduplication, monotonic status, safe MMS ingestion and
+STOP/consent enforcement. Facebook/Instagram AI Messages must never use the native
+`HUMAN_AGENT` tag. RealtimeKit must close its Widget participant-token authorization and
+credential/timeout/role issues before visitor-initiated routing is extended. Agent call
+start/accept must complete native human takeover through the existing serialization and
+`Conversations::AssignmentService`, including a pending-AITurn race proof. Twilio Voice
+must not copy or unlock the Enterprise implementation.
+
 ## 5. Migration and deployment safety
 
 - Batch 0 migrations only clear managed self-webhook URLs and add no destructive data
