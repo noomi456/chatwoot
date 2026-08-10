@@ -242,6 +242,7 @@ RSpec.describe 'Conversation Messages API', type: :request do
       end
 
       it 'conditionally commits through an authenticated account-owned managed AgentBot' do
+        stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', true)
         stub_const('ChatRing::AssistantSpike::EXTERNAL_RUNTIME_ENABLED', true)
         workspace = account.chat_ring_workspace
         assistant = ChatRing::Assistant.create!(workspace: workspace, name: 'Support')
@@ -256,6 +257,7 @@ RSpec.describe 'Conversation Messages API', type: :request do
                                         inbox_assistant_binding: binding, binding_version: binding.binding_version,
                                         assistant: assistant, assistant_version: version,
                                         expected_agent_bot: connection.agent_bot, status: :ready_to_commit,
+                                        deadline_at: 2.minutes.from_now,
                                         decision_type: 'reply',
                                         decision_payload: { 'decision_type' => 'reply', 'response_text' => 'Grounded answer',
                                                             'reason_code' => 'answered', 'evidence_ids' => ['evidence-1'] })

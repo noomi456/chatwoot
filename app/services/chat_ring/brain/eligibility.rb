@@ -10,7 +10,7 @@ class ChatRing::Brain::Eligibility
   end
 
   def check
-    reason = configuration_failure || freshness_failure || ownership_failure
+    reason = runtime_failure || deadline_failure || configuration_failure || freshness_failure || ownership_failure
     Result.new(eligible: reason.nil?, reason: reason)
   end
 
@@ -18,13 +18,36 @@ class ChatRing::Brain::Eligibility
 
   attr_reader :turn
 
+  def runtime_failure
+    return 'public_response_gate_closed' unless ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY
+  end
+
+  def deadline_failure
+    'turn_deadline_expired' if turn.deadline_at.blank? || turn.deadline_at <= Time.current
+  end
+
   def configuration_failure
     return 'workspace_inactive' unless turn.workspace.status == 'active'
+    return binding_failure if binding_failure
+    return assistant_failure if assistant_failure
+    return policy_failure if policy_failure
+    return 'outside_inbox_hours' if turn.conversation.inbox.out_of_office?
+    return 'automation_conflict' if automation_conflict?
+  end
+
+  def binding_failure
     return 'binding_inactive' unless turn.inbox_assistant_binding.active?
     return 'binding_version_changed' unless turn.inbox_assistant_binding.binding_version == turn.binding_version
+  end
+
+  def assistant_failure
     return 'assistant_inactive' unless turn.assistant.active?
     return 'assistant_version_changed' unless turn.assistant.current_version_id == turn.assistant_version_id
-    return 'automation_conflict' if automation_conflict?
+  end
+
+  def policy_failure
+    return 'unsupported_audience_policy' if turn.assistant_version.audience_policy.present?
+    return 'unsupported_availability_policy' if turn.assistant_version.availability_policy.present?
   end
 
   def ownership_failure

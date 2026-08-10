@@ -1,6 +1,10 @@
 require 'rails_helper'
 
 RSpec.describe Conversations::AgentBotConditionalCommitService do
+  before do
+    stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', true)
+  end
+
   let(:account) { create(:account) }
   let(:workspace) { account.chat_ring_workspace }
   let(:inbox) { create(:inbox, account: account, channel: create(:channel_widget, account: account)) }
@@ -33,6 +37,7 @@ RSpec.describe Conversations::AgentBotConditionalCommitService do
       assistant_version: version,
       expected_agent_bot: connection.agent_bot,
       status: :ready_to_commit,
+      deadline_at: 2.minutes.from_now,
       decision_type: 'reply',
       decision_payload: {
         'decision_type' => 'reply',
@@ -67,6 +72,15 @@ RSpec.describe Conversations::AgentBotConditionalCommitService do
     expect(result.message).to have_attributes(sender: connection.agent_bot, content: 'Widgets are supported.', private: false)
     expect(outbound_commit.reload).to be_status_committed
     expect(outbound_commit.message).to eq(result.message)
+  end
+
+  it 'cannot bypass the compile-time public response gate' do
+    stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', false)
+
+    expect { service.perform }
+      .to raise_error(described_class::PreconditionFailed, 'public_response_gate_closed')
+    expect(outbound_commit.reload).to have_attributes(status: 'rejected', failure_code: 'public_response_gate_closed')
+    expect(conversation.messages.outgoing.where(sender: connection.agent_bot)).to be_empty
   end
 
   it 'returns the original message when the same idempotency key is retried' do

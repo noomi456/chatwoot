@@ -1,6 +1,8 @@
 require 'digest'
 
-class ChatRing::Brain::Runner
+class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
+  class DeadlineExpired < StandardError; end
+
   class RetryableError < StandardError
     attr_reader :code
 
@@ -23,6 +25,9 @@ class ChatRing::Brain::Runner
     handle_provider_failure(attempt, e.code)
   rescue ChatRing::Brain::Decision::Invalid
     handle_provider_failure(attempt, 'provider_invalid_decision')
+  rescue DeadlineExpired
+    fail_attempt!(attempt, 'turn_deadline_expired') if attempt&.status_running?
+    expire_turn!
   rescue RetryableError => e
     release_for_retry!(e.code)
     raise
@@ -33,15 +38,17 @@ class ChatRing::Brain::Runner
   attr_reader :turn, :provider, :attempt
 
   def execute_claimed_turn
-    context = ChatRing::Brain::ContextBuilder.new(turn).build
-    context_digest = Digest::SHA256.hexdigest(context.to_json)
-    evidence_set = retrieve_evidence
+    invocation = ChatRing::Brain::InboundInvocationBuilder.new(turn).build
+    persist_invocation_metadata!(invocation)
+    ensure_within_deadline!
+    evidence_set = retrieve_evidence(invocation)
+    ensure_within_deadline!
     raise RetryableError, evidence_set.error_code || 'knowledge_provider_failed' if evidence_set.status == 'provider_error'
 
     persist_evidence!(evidence_set)
-    return complete_without_evidence!(context_digest) if evidence_set.status != 'accepted'
+    return complete_without_evidence!(invocation.digest) if evidence_set.status != 'accepted'
 
-    run_inference(context, evidence_set)
+    run_inference(invocation, evidence_set)
   end
 
   def complete_without_evidence!(context_digest)
@@ -49,21 +56,25 @@ class ChatRing::Brain::Runner
     complete!(decision, context_digest: context_digest)
   end
 
-  def run_inference(context, evidence_set)
-    messages = ChatRing::Brain::PromptBuilder.messages(context: context, evidence_set: evidence_set)
+  def run_inference(invocation, evidence_set)
+    ensure_within_deadline!
+    messages = ChatRing::Brain::PromptBuilder.messages(context: invocation.model_context, evidence_set: evidence_set)
     @attempt = start_attempt!(messages)
     result = provider.call(messages: messages)
+    ensure_within_deadline!
     decision = ChatRing::Brain::Decision.from_payload(
       result.payload,
       allowed_evidence_ids: evidence_set.items.map(&:id),
       evidence_status: evidence_set.status
     )
     complete_attempt!(attempt, result)
-    complete!(decision, context_digest: Digest::SHA256.hexdigest(messages.to_json))
+    complete!(decision, context_digest: invocation.digest)
   end
 
   def handle_provider_failure(attempt, code)
     fail_attempt!(attempt, code) if attempt
+    return expire_turn! if deadline_expired?
+
     release_for_retry!(code)
     raise RetryableError, code
   end
@@ -92,13 +103,42 @@ class ChatRing::Brain::Runner
     turn.update!(status: status, decision_type: reason, completed_at: Time.current)
   end
 
-  def retrieve_evidence
+  def retrieve_evidence(invocation)
     ChatRing::Knowledge::Retriever.retrieve(
       inbox: turn.conversation.inbox,
-      query: turn.trigger_message.content_for_llm.to_s,
+      query: invocation.query,
       knowledge_scope: turn.assistant_version.knowledge_scope,
       knowledge_index_id: turn.knowledge_index_id
     )
+  end
+
+  def persist_invocation_metadata!(invocation)
+    turn.with_lock do
+      turn.reload
+      turn.update!(context_metadata: invocation.audit_metadata) if turn.status_running?
+    end
+  end
+
+  def ensure_within_deadline!
+    raise DeadlineExpired if deadline_expired?
+  end
+
+  def deadline_expired?
+    turn.deadline_at.blank? || turn.deadline_at <= Time.current
+  end
+
+  def expire_turn!
+    turn.with_lock do
+      turn.reload
+      next unless turn.status_running? || turn.status_received? || turn.status_eligible?
+
+      turn.update!(
+        status: :ineligible,
+        decision_type: 'turn_deadline_expired',
+        failure_code: 'turn_deadline_expired',
+        completed_at: Time.current
+      )
+    end
   end
 
   def persist_evidence!(evidence_set)
@@ -172,7 +212,13 @@ class ChatRing::Brain::Runner
   def release_for_retry!(code)
     turn.with_lock do
       turn.reload
-      turn.update!(status: :received, failure_code: code) if turn.status_running?
+      next unless turn.status_running?
+
+      if code == 'turn_deadline_expired' || turn.deadline_at.blank? || turn.deadline_at <= Time.current
+        turn.update!(status: :ineligible, decision_type: 'turn_deadline_expired', failure_code: code, completed_at: Time.current)
+      else
+        turn.update!(status: :received, failure_code: code)
+      end
     end
   end
 

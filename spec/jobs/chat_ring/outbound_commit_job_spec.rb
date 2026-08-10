@@ -34,6 +34,7 @@ RSpec.describe ChatRing::OutboundCommitJob, type: :job do
       assistant_version: version,
       expected_agent_bot: connection.agent_bot,
       status: :ready_to_commit,
+      deadline_at: 2.minutes.from_now,
       decision_type: 'reply',
       decision_payload: {
         'decision_type' => 'reply',
@@ -186,6 +187,16 @@ RSpec.describe ChatRing::OutboundCommitJob, type: :job do
       expect(turn.failure_code).to eq('newer_human_reply')
       expect(turn.outbound_commit.reload).to have_attributes(status: 'rejected', failure_code: 'newer_human_reply')
       expect(conversation.messages.outgoing.where(sender: connection.agent_bot)).to be_empty
+    end
+
+    it 'rejects a reply after the turn deadline expires' do
+      travel_to(turn.deadline_at + 1.second)
+
+      expect { described_class.perform_now(turn.id) }.not_to(change { conversation.messages.outgoing.count })
+
+      expect(turn.reload).to be_status_cancelled
+      expect(turn.failure_code).to eq('turn_deadline_expired')
+      expect(turn.outbound_commit.reload).to have_attributes(status: 'rejected', failure_code: 'turn_deadline_expired')
     end
   end
 

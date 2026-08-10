@@ -40,8 +40,10 @@ class ChatRing::AiTurn < ApplicationRecord
           dependent: :destroy
 
   validates :binding_version, numericality: { only_integer: true, greater_than: 0 }
+  validates :deadline_at, presence: true
   validates :context_digest, format: { with: /\A[0-9a-f]{64}\z/ }, allow_nil: true
   validate :decision_payload_shape
+  validate :context_metadata_shape
   validate :native_handling_snapshot_shape
   validate :conversation_ownership_matches
   validate :trigger_message_matches
@@ -96,6 +98,10 @@ class ChatRing::AiTurn < ApplicationRecord
 
   def decision_payload_shape
     errors.add(:decision_payload, 'must be an object') unless decision_payload.is_a?(Hash)
+  end
+
+  def context_metadata_shape
+    errors.add(:context_metadata, 'must be an object') unless context_metadata.is_a?(Hash)
   end
 
   def native_handling_snapshot_shape
