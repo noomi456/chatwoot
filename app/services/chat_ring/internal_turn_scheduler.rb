@@ -1,9 +1,9 @@
 class ChatRing::InternalTurnScheduler
   TURN_DEADLINE = 2.minutes
 
-  def initialize(message:, template_ids_before:)
+  def initialize(message:, native_handling_snapshot:)
     @message = message
-    @template_ids_before = Array(template_ids_before).map { |id| Integer(id) }
+    @native_handling_snapshot = native_handling_snapshot
   end
 
   def call
@@ -14,22 +14,20 @@ class ChatRing::InternalTurnScheduler
     relationship = active_relationship
     return unless relationship
 
-    turn, created = create_turn(relationship)
-    enqueue_turn(turn) if created && turn.status_received?
-    turn
+    create_turn(relationship).first
   end
 
   private
 
   Relationship = Data.define(:workspace, :binding, :assistant, :assistant_version, :agent_bot)
 
-  attr_reader :message, :template_ids_before
+  attr_reader :message, :native_handling_snapshot
 
   def customer_widget_message?
     message.incoming? &&
       !message.private? &&
       message.sender_type == 'Contact' &&
-      message.inbox.channel_type == 'Channel::WebWidget'
+      message.conversation.inbox.channel_type == 'Channel::WebWidget'
   end
 
   def active_relationship
@@ -115,58 +113,27 @@ class ChatRing::InternalTurnScheduler
   end
 
   def native_terminal_reason
+    return 'automation_observation_failed' if automation_observation_failed?
     return 'automation_conflict' if automation_conflict?
-    return 'native_out_of_office' if message.inbox.out_of_office?
+    return 'native_out_of_office' if message.conversation.inbox.out_of_office?
     return 'native_email_collection' if email_collection_required?
   end
 
   def automation_conflict?
     ChatRing::AutomationConflictClassifier.new(
-      account: message.account,
-      inbox: message.inbox
+      account: message.conversation.account,
+      inbox: message.conversation.inbox
     ).conflicting?
   end
 
-  def native_handling_snapshot
-    templates = message.conversation.messages.template.reorder(:id).to_a
-    current_ids = templates.map(&:id)
-    delta = templates.reject { |template| template_ids_before.include?(template.id) }
-    {
-      trigger_message_id: message.id,
-      template_ids_before: template_ids_before,
-      template_ids_after: current_ids,
-      template_delta_ids: current_ids - template_ids_before,
-      greeting_message_ids: greeting_message_ids(delta),
-      email_input_message_ids: templates.select(&:input_email?).map(&:id),
-      out_of_office_message_ids: out_of_office_message_ids(delta),
-      inbox_out_of_office: message.inbox.out_of_office?,
-      email_collection_required: email_collection_required?
-    }
-  end
-
-  def greeting_message_ids(templates)
-    matching_template_ids(templates, message.inbox.greeting_message)
-  end
-
-  def out_of_office_message_ids(templates)
-    matching_template_ids(templates, message.inbox.out_of_office_message)
-  end
-
-  def matching_template_ids(templates, content)
-    return [] if content.blank?
-
-    templates.select { |template| template.content == content }.map(&:id)
+  def automation_observation_failed?
+    Array(native_handling_snapshot.dig('automation', 'effects')).any? do |effect|
+      effect.dig('before', 'observation_error').present? || effect.dig('after', 'observation_error').present?
+    end
   end
 
   def email_collection_required?
-    inbox = message.inbox
+    inbox = message.conversation.inbox
     inbox.enable_email_collect? && inbox.web_widget? && message.conversation.contact.email.blank?
-  end
-
-  def enqueue_turn(turn)
-    job = ChatRing::AiTurnJob.perform_later(turn.id)
-    return if job&.successfully_enqueued?
-
-    turn.update!(failure_code: 'turn_enqueue_failed')
   end
 end

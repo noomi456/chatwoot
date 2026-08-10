@@ -44,11 +44,13 @@ RSpec.describe 'ChatRing internal Web Widget message lifecycle', type: :request 
     message = post_widget_message('What plans do you offer?')
 
     expect(ChatRing::AiTurn.where(trigger_message: message)).not_to exist
+    expect(ChatRing::NativeHandlingCompletion.where(trigger_message: message)).not_to exist
     expect(ChatRing::AiTurnJob).not_to have_been_enqueued
   end
 
   it 'cancels an already-enqueued received turn if the gate closes before execution' do
     message = post_widget_message('What plans do you offer?')
+    complete_automation_for(message)
     turn = ChatRing::AiTurn.find_by!(trigger_message: message)
     stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', false)
 
@@ -63,6 +65,7 @@ RSpec.describe 'ChatRing internal Web Widget message lifecycle', type: :request 
 
   it 'backfills an unstarted legacy received turn to cancelled' do
     message = post_widget_message('What plans do you offer?')
+    complete_automation_for(message)
     turn = ChatRing::AiTurn.find_by!(trigger_message: message)
     turn.update!(native_handling_snapshot: {})
 
@@ -77,6 +80,9 @@ RSpec.describe 'ChatRing internal Web Widget message lifecycle', type: :request 
 
   it 'creates one internally sourced turn after native handling without a webhook delivery' do
     message = post_widget_message('What plans do you offer?')
+    expect(ChatRing::AiTurn.where(trigger_message: message)).not_to exist
+
+    complete_automation_for(message)
     turn = ChatRing::AiTurn.find_by!(trigger_message: message)
 
     expect(turn).to be_status_received
@@ -86,14 +92,107 @@ RSpec.describe 'ChatRing internal Web Widget message lifecycle', type: :request 
       'email_input_message_ids' => [],
       'out_of_office_message_ids' => []
     )
+    expect(turn.native_handling_snapshot.fetch('automation')).to include(
+      'completed' => true,
+      'matched_rule_ids' => [],
+      'effects' => []
+    )
     expect(ChatRing::WebhookDelivery.count).to eq(0)
     expect(ChatRing::AiTurnJob).to have_been_enqueued.once.with(turn.id)
+  end
+
+  it 'waits for template completion when native Automation finishes first' do
+    automation_finished_before_template = false
+    allow(EventDispatcherJob).to receive(:perform_later).and_wrap_original do |original, event_name, timestamp, data|
+      event_message = data[:message]
+      if event_name == Message::MESSAGE_CREATED && event_message&.content == 'Automation wins the race'
+        EventDispatcherJob.perform_now(event_name, timestamp, data)
+        automation_finished_before_template = !ChatRing::AiTurn.exists?(trigger_message: event_message)
+      else
+        original.call(event_name, timestamp, data)
+      end
+    end
+
+    message = post_widget_message('Automation wins the race')
+    turn = ChatRing::AiTurn.find_by!(trigger_message: message)
+
+    expect(automation_finished_before_template).to be(true)
+    expect(turn.native_handling_snapshot.dig('automation', 'completed')).to be(true)
+    expect(ChatRing::AiTurnJob).to have_been_enqueued.once.with(turn.id)
+  end
+
+  it 'records actual benign Automation effects without re-running the rule' do
+    rule = create(
+      :automation_rule,
+      account: account,
+      event_name: 'message_created',
+      conditions: [inbox_condition],
+      actions: [{ 'action_name' => 'add_label', 'action_params' => ['priority_customer'] }]
+    )
+
+    message = post_widget_message('Please label this conversation')
+    expect(message.conversation.reload.label_list).not_to include('priority_customer')
+    expect(AutomationRules::ConditionsFilterService).to receive(:new).once.and_call_original
+
+    complete_automation_for(message)
+    turn = ChatRing::AiTurn.find_by!(trigger_message: message)
+    effect = turn.native_handling_snapshot.dig('automation', 'effects').sole
+
+    expect(message.conversation.reload.label_list).to include('priority_customer')
+    expect(effect).to include(
+      'rule_id' => rule.id,
+      'action_names' => ['add_label']
+    )
+    expect(effect.dig('before', 'labels')).not_to include('priority_customer')
+    expect(effect.dig('after', 'labels')).to include('priority_customer')
+  end
+
+  it 'releases one turn when native completion is delivered more than once' do
+    message = post_widget_message('Only one turn please')
+
+    2.times { complete_automation_for(message) }
+
+    expect(ChatRing::AiTurn.where(trigger_message: message).count).to eq(1)
+    expect(ChatRing::NativeHandlingCompletion.find_by!(trigger_message: message).released_at).to be_present
+    expect(ChatRing::AiTurnJob).to have_been_enqueued.once
+  end
+
+  it 'preserves the native Widget write when template observation fails' do
+    allow(ChatRing::NativeHandling::CompletionRecorder).to receive(:record_template).and_raise(ActiveRecord::ConnectionNotEstablished)
+
+    message = post_widget_message('Native handling must survive')
+
+    expect(message).to be_persisted
+    completion = ChatRing::NativeHandlingCompletion.find_by!(trigger_message: message)
+    expect(completion.template_completed_at).to be_nil
+    expect(completion.released_at).to be_nil
+    expect(ChatRing::AiTurn.where(trigger_message: message)).not_to exist
+  end
+
+  it 'preserves native Automation effects when completion persistence fails' do
+    create(
+      :automation_rule,
+      account: account,
+      event_name: 'message_created',
+      conditions: [inbox_condition],
+      actions: [{ 'action_name' => 'add_label', 'action_params' => ['native_effect'] }]
+    )
+    message = post_widget_message('Keep the native effect')
+    allow(ChatRing::NativeHandling::CompletionRecorder).to receive(:record_automation).and_raise(ActiveRecord::ConnectionNotEstablished)
+
+    expect { complete_automation_for(message) }.not_to raise_error
+
+    expect(message.conversation.reload.label_list).to include('native_effect')
+    expect(ChatRing::AiTurn.where(trigger_message: message)).not_to exist
   end
 
   it 'records the native greeting and allows one AI turn afterward' do
     inbox.update!(greeting_enabled: true, greeting_message: 'Welcome to ChatRing')
 
     message = post_widget_message('What plans do you offer?')
+    expect(ChatRing::AiTurn.where(trigger_message: message)).not_to exist
+
+    complete_automation_for(message)
     turn = ChatRing::AiTurn.find_by!(trigger_message: message)
     greeting = message.conversation.messages.template.find_by!(content: 'Welcome to ChatRing')
 
@@ -108,6 +207,10 @@ RSpec.describe 'ChatRing internal Web Widget message lifecycle', type: :request 
 
     first_message = post_widget_message('I need help')
     second_message = post_widget_message('Are you there?')
+    expect(ChatRing::AiTurn.where(trigger_message: [first_message, second_message])).to be_empty
+
+    complete_automation_for(first_message)
+    complete_automation_for(second_message)
     first_turn = ChatRing::AiTurn.find_by!(trigger_message: first_message)
     second_turn = ChatRing::AiTurn.find_by!(trigger_message: second_message)
 
@@ -124,6 +227,9 @@ RSpec.describe 'ChatRing internal Web Widget message lifecycle', type: :request 
     inbox.working_hours.find_by!(day_of_week: Time.zone.today.wday).update!(closed_all_day: true, open_all_day: false)
 
     message = post_widget_message('What plans do you offer?')
+    expect(ChatRing::AiTurn.where(trigger_message: message)).not_to exist
+
+    complete_automation_for(message)
     turn = ChatRing::AiTurn.find_by!(trigger_message: message)
     out_of_office = message.conversation.messages.template.find_by!(content: 'We are currently closed')
 
@@ -140,8 +246,24 @@ RSpec.describe 'ChatRing internal Web Widget message lifecycle', type: :request 
     AgentBotInbox.where(inbox_id: inbox.id).delete_all
 
     message = post_widget_message('Hello')
+    complete_automation_for(message)
 
     expect(message).to be_persisted
+    expect(ChatRing::AiTurn.where(trigger_message: message)).not_to exist
+    expect(ChatRing::NativeHandlingCompletion.where(trigger_message: message)).not_to exist
+  end
+
+  it 'does not adopt a message that committed before the first Assistant binding' do
+    current_binding = workspace.inbox_assistant_bindings.find_by!(chatwoot_inbox_id: inbox.id)
+    current_binding.update!(status: :inactive)
+    AgentBotInbox.where(inbox_id: inbox.id).delete_all
+
+    message = post_widget_message('This message predates the binding')
+    AgentBotInbox.create!(inbox: inbox, agent_bot: assistant.agent_bot_connection.agent_bot, status: :active)
+    current_binding.update!(status: :active)
+    complete_automation_for(message)
+
+    expect(ChatRing::NativeHandlingCompletion.where(trigger_message: message)).not_to exist
     expect(ChatRing::AiTurn.where(trigger_message: message)).not_to exist
   end
 
@@ -157,6 +279,9 @@ RSpec.describe 'ChatRing internal Web Widget message lifecycle', type: :request 
     clear_enqueued_jobs
 
     message = post_widget_message('Can the Assistant answer this?')
+    expect(ChatRing::AiTurn.where(trigger_message: message)).not_to exist
+
+    complete_automation_for(message)
     turn = ChatRing::AiTurn.find_by!(trigger_message: message)
 
     expect(turn).to be_status_ineligible
@@ -279,6 +404,7 @@ RSpec.describe 'ChatRing internal Web Widget message lifecycle', type: :request 
   end
 
   def ready_turn_for(trigger_message, outcome_type: :reply)
+    complete_automation_for(trigger_message) unless ChatRing::AiTurn.exists?(trigger_message: trigger_message)
     turn = ChatRing::AiTurn.find_by!(trigger_message: trigger_message)
     turn.update!(
       status: :ready_to_commit,
@@ -358,5 +484,22 @@ RSpec.describe 'ChatRing internal Web Widget message lifecycle', type: :request 
 
   def wait_for(queue)
     Timeout.timeout(10) { queue.pop }
+  end
+
+  def complete_automation_for(message)
+    EventDispatcherJob.perform_now(
+      Message::MESSAGE_CREATED,
+      message.created_at,
+      { message: message, performed_by: nil }
+    )
+  end
+
+  def inbox_condition
+    {
+      'values' => [inbox.id],
+      'attribute_key' => 'inbox_id',
+      'query_operator' => nil,
+      'filter_operator' => 'equal_to'
+    }
   end
 end
