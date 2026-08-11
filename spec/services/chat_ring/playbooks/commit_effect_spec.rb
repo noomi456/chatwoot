@@ -216,7 +216,7 @@ RSpec.describe ChatRing::Playbooks::CommitEffect do
   end
 
   it 'stops the pinned Playbook and preserves a callback request when no eligible human is online' do
-    context = ChatRing::Playbooks::InitialQuestionPreparerSpecSupport.build
+    context = ChatRingPlaybookSpecSupport.build
     handoff_turn = context.fetch(:turn)
     handoff_turn.update!(
       status: :ready_to_commit,
