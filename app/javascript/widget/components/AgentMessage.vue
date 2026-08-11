@@ -1,6 +1,7 @@
 <script>
 import UserMessage from 'widget/components/UserMessage.vue';
 import AgentMessageBubble from 'widget/components/AgentMessageBubble.vue';
+import AgentCitations from 'widget/components/AgentCitations.vue';
 import MessageReplyButton from 'widget/components/MessageReplyButton.vue';
 import { messageStamp } from 'shared/helpers/timeHelper';
 import ImageBubble from 'widget/components/ImageBubble.vue';
@@ -19,6 +20,7 @@ export default {
   name: 'AgentMessage',
   components: {
     AgentMessageBubble,
+    AgentCitations,
     ImageBubble,
     VideoBubble,
     Avatar,
@@ -203,6 +205,9 @@ export default {
               :message-id="message.id"
               :message-type="messageType"
               :message="message.content"
+            />
+            <AgentCitations
+              :citations="messageContentAttributes.chatring_citations || []"
             />
             <div
               v-if="hasAttachments"

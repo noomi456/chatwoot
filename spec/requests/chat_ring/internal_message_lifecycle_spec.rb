@@ -38,6 +38,16 @@ RSpec.describe 'ChatRing internal Web Widget message lifecycle', type: :request 
     publish_and_bind_assistant!
   end
 
+  it 'starts native handling for the actual fresh Widget conversation endpoint' do
+    message = post_widget_conversation('What plans do you offer?')
+
+    complete_automation_for(message)
+
+    expect(ChatRing::NativeHandlingCompletion.find_by!(trigger_message: message).released_at).to be_present
+    expect(ChatRing::AiTurn.find_by!(trigger_message: message)).to be_status_received
+    expect(ChatRing::AiTurnJob).to have_been_enqueued.once.with(ChatRing::AiTurn.find_by!(trigger_message: message).id)
+  end
+
   it 'does not create or enqueue a turn while the public-response gate is closed' do
     stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', false)
 
@@ -783,6 +793,20 @@ RSpec.describe 'ChatRing internal Web Widget message lifecycle', type: :request 
 
     expect(response).to have_http_status(:success)
     Message.find(response.parsed_body.fetch('id'))
+  end
+
+  def post_widget_conversation(content)
+    post api_v1_widget_conversations_url,
+         params: {
+           website_token: channel.website_token,
+           contact: { name: 'Visitor' },
+           message: { content: content, timestamp: Time.current }
+         },
+         headers: { 'X-Auth-Token' => token },
+         as: :json
+
+    expect(response).to have_http_status(:success)
+    Message.find(response.parsed_body.fetch('messages').first.fetch('id'))
   end
 
   def ready_turn_for(trigger_message, outcome_type: :reply)

@@ -1,0 +1,278 @@
+x-chatring-proof-app: &chatring-proof-app
+  image: ${PROOF_IMAGE:?PROOF_IMAGE must be the immutable derived proof image}
+  environment: &chatring-proof-environment
+    ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY: ${ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY:?required}
+    ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT: ${ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT:?required}
+    ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY: ${ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY:?required}
+    CHATRING_LLM_API_BASE: http://llm-proxy:8080/v1
+    CHATRING_LLM_API_KEY: ${CHATRING_LLM_API_KEY:?required}
+    CW_EDITION: ce
+    DISABLE_ENTERPRISE: "true"
+    DOCSGPT_BASE_URL: http://docs-gpt-backend:7091
+    DOCSGPT_INTERNAL_KEY: ${DOCSGPT_INTERNAL_KEY:?required}
+    DOCSGPT_JWT_SECRET: ${DOCSGPT_JWT_SECRET:?required}
+    DOCSGPT_RELEASE: ${DOCSGPT_RELEASE:?required}
+    DOCSGPT_SCORE_THRESHOLD: ${DOCSGPT_SCORE_THRESHOLD:?required}
+    DOCSGPT_SERVICE_SECRET: ${DOCSGPT_SERVICE_SECRET:?required}
+    ENABLE_ACCOUNT_SIGNUP: "false"
+    FIRECRAWL_API_KEY: ${FIRECRAWL_API_KEY:?required}
+    FORCE_SSL: "false"
+    FRONTEND_URL: http://rails:3000
+    INSTALLATION_ENV: docker
+    NODE_ENV: production
+    POSTGRES_DATABASE: chatring_proof
+    POSTGRES_HOST: postgres
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+    POSTGRES_PORT: "5432"
+    POSTGRES_USERNAME: chatring
+    PROOF_APP_URL: http://rails:3000
+    PROOF_ISOLATED_RUN: "true"
+    PROOF_RUN_ID: ${PROOF_RUN_ID:?required}
+    PROOF_STATE_DIR: /proof-state
+    RAILS_ENV: production
+    RAILS_LOG_TO_STDOUT: "true"
+    RAILS_MAX_THREADS: "15"
+    RAILS_SERVE_STATIC_FILES: "true"
+    REDIS_PASSWORD: ${REDIS_PASSWORD:?required}
+    REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+    SECRET_KEY_BASE: ${SECRET_KEY_BASE:?required}
+  networks:
+    - proof
+  volumes:
+    - proof_state:/proof-state
+    - storage:/app/storage
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:?POSTGRES_IMAGE must be immutable}
+    environment:
+      POSTGRES_DB: chatring_proof
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+      POSTGRES_USER: chatring
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chatring -d chatring_proof"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - proof
+    volumes:
+      - postgres:/var/lib/postgresql/data
+
+  redis:
+    image: ${REDIS_IMAGE:?REDIS_IMAGE must be immutable}
+    command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass \"$$REDIS_PASSWORD\""]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?required}
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - proof
+    volumes:
+      - redis:/data
+
+  docs-postgres:
+    image: ${POSTGRES_IMAGE:?POSTGRES_IMAGE must be immutable}
+    environment:
+      POSTGRES_DB: docsgpt_proof
+      POSTGRES_PASSWORD: ${DOCSGPT_POSTGRES_PASSWORD:?required}
+      POSTGRES_USER: docsgpt
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U docsgpt -d docsgpt_proof"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - proof
+    volumes:
+      - docs_postgres:/var/lib/postgresql/data
+
+  docs-postgres-vector-init:
+    image: ${POSTGRES_IMAGE:?POSTGRES_IMAGE must be immutable}
+    command:
+      - sh
+      - -c
+      - >-
+        PGPASSWORD="$$DOCSGPT_POSTGRES_PASSWORD"
+        psql -h docs-postgres -U docsgpt -d docsgpt_proof
+        -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION IF NOT EXISTS vector'
+    environment:
+      DOCSGPT_POSTGRES_PASSWORD: ${DOCSGPT_POSTGRES_PASSWORD:?required}
+    depends_on:
+      docs-postgres:
+        condition: service_healthy
+    networks:
+      - proof
+    restart: "no"
+
+  docs-redis:
+    image: ${REDIS_IMAGE:?REDIS_IMAGE must be immutable}
+    command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass \"$$REDIS_PASSWORD\""]
+    environment:
+      REDIS_PASSWORD: ${DOCSGPT_REDIS_PASSWORD:?required}
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - proof
+    volumes:
+      - docs_redis:/data
+
+  docs-gpt-volume-init:
+    image: ${DOCSGPT_IMAGE:?DOCSGPT_IMAGE must be immutable}
+    user: "0:0"
+    network_mode: none
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["chown -R appuser:appuser /app/inputs /app/indexes /app/vectors"]
+    volumes: &docs-gpt-volumes
+      - docs_inputs:/app/inputs
+      - docs_indexes:/app/indexes
+      - docs_vectors:/app/vectors
+
+  docs-gpt-backend:
+    image: ${DOCSGPT_IMAGE:?DOCSGPT_IMAGE must be immutable}
+    environment: &docs-gpt-environment
+      API_URL: http://docs-gpt-backend:7091
+      AUTH_TYPE: simple_jwt
+      AUTO_CREATE_DB: "false"
+      AUTO_MIGRATE: "true"
+      CACHE_REDIS_URL: redis://:${DOCSGPT_REDIS_PASSWORD}@docs-redis:6379/2
+      CELERY_BROKER_URL: redis://:${DOCSGPT_REDIS_PASSWORD}@docs-redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${DOCSGPT_REDIS_PASSWORD}@docs-redis:6379/1
+      CHATRING_SERVICE_SECRET: ${DOCSGPT_SERVICE_SECRET:?required}
+      EMBEDDINGS_NAME: huggingface_sentence-transformers/all-mpnet-base-v2
+      FLASK_DEBUG_MODE: "false"
+      GRAPHRAG_ENABLED: "false"
+      INTERNAL_KEY: ${DOCSGPT_INTERNAL_KEY:?required}
+      JWT_SECRET_KEY: ${DOCSGPT_JWT_SECRET:?required}
+      LOCAL_MODE_ADMIN: "false"
+      PGVECTOR_CONNECTION_STRING: postgresql://docsgpt:${DOCSGPT_POSTGRES_PASSWORD}@docs-postgres:5432/docsgpt_proof
+      POSTGRES_URI: postgresql://docsgpt:${DOCSGPT_POSTGRES_PASSWORD}@docs-postgres:5432/docsgpt_proof
+      STORAGE_TYPE: local
+      VECTOR_STORE: pgvector
+      VERSION_CHECK: "false"
+      WSGI_THREADPOOL_WORKERS: "12"
+    depends_on:
+      docs-gpt-volume-init:
+        condition: service_completed_successfully
+      docs-postgres-vector-init:
+        condition: service_completed_successfully
+      docs-postgres:
+        condition: service_healthy
+      docs-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:7091/api/health', timeout=5)"]
+      interval: 10s
+      timeout: 6s
+      retries: 18
+      start_period: 90s
+    networks:
+      - proof
+    volumes: *docs-gpt-volumes
+
+  docs-gpt-worker:
+    image: ${DOCSGPT_IMAGE:?DOCSGPT_IMAGE must be immutable}
+    command: celery -A application.app.celery worker -l INFO -Q docsgpt,parsing --concurrency=1 --max-tasks-per-child=20
+    environment:
+      <<: *docs-gpt-environment
+      AUTO_MIGRATE: "false"
+    depends_on:
+      docs-gpt-backend:
+        condition: service_healthy
+    networks:
+      - proof
+    volumes: *docs-gpt-volumes
+
+  llm-proxy:
+    image: ${PROOF_IMAGE:?PROOF_IMAGE must be the immutable derived proof image}
+    command: ["bundle", "exec", "ruby", "/app/deploy/proof/llm_proxy.rb"]
+    environment:
+      PORT: "8080"
+      PROOF_LLM_UPSTREAM: https://api.openai.com
+      PROOF_STATE_DIR: /proof-state
+    healthcheck:
+      test: ["CMD", "ruby", "-rnet/http", "-e", "Net::HTTP.get_response(URI('http://127.0.0.1:8080/health')).is_a?(Net::HTTPSuccess) or exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - proof
+    volumes:
+      - proof_state:/proof-state
+
+  prepare:
+    <<: *chatring-proof-app
+    command: ["bundle", "exec", "rails", "db:chatwoot_prepare"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    entrypoint: docker/entrypoints/rails.sh
+    restart: "no"
+
+  rails:
+    <<: *chatring-proof-app
+    command: ["bundle", "exec", "rails", "server", "-p", "3000", "-b", "0.0.0.0"]
+    depends_on:
+      docs-gpt-backend:
+        condition: service_healthy
+      llm-proxy:
+        condition: service_healthy
+      prepare:
+        condition: service_completed_successfully
+    entrypoint: docker/entrypoints/rails.sh
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- --header='X-Forwarded-Proto: https' http://127.0.0.1:3000/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 60s
+    ports:
+      - "127.0.0.1:${PROOF_RAILS_PORT:-32100}:3000"
+
+  sidekiq:
+    <<: *chatring-proof-app
+    command: ["bundle", "exec", "sidekiq", "-C", "config/sidekiq.yml"]
+    environment:
+      <<: *chatring-proof-environment
+      SIDEKIQ_CONCURRENCY: "10"
+    depends_on:
+      docs-gpt-backend:
+        condition: service_healthy
+      llm-proxy:
+        condition: service_healthy
+      prepare:
+        condition: service_completed_successfully
+    entrypoint: docker/entrypoints/rails.sh
+
+  driver:
+    <<: *chatring-proof-app
+    command: ["bundle", "exec", "rails", "runner", "/app/deploy/proof/web_widget_driver.rb"]
+    depends_on:
+      rails:
+        condition: service_healthy
+      sidekiq:
+        condition: service_started
+    profiles: ["driver"]
+
+networks:
+  proof:
+    internal: false
+
+volumes:
+  docs_indexes:
+  docs_inputs:
+  docs_postgres:
+  docs_redis:
+  docs_vectors:
+  postgres:
+  proof_state:
+  redis:
+  storage:
