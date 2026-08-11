@@ -50,9 +50,8 @@ class ChatRing::Playbooks::CommitPlan # rubocop:disable Metrics/ClassLength
   private
 
   attr_reader :turn, :execution, :control
-  attr_writer :content
   attr_accessor :execution_attributes, :transition_action, :from_step_id, :to_step_id
-  attr_writer :content_type, :content_attributes
+  attr_writer :content, :content_type, :content_attributes
 
   def validate_snapshot!
     raise Invalid, 'playbook_commit_control_stale' unless execution.id == turn.inbox_playbook_execution_id
@@ -208,7 +207,7 @@ class ChatRing::Playbooks::CommitPlan # rubocop:disable Metrics/ClassLength
     raise Invalid, e.code
   end
 
-  def navigate_tool_step(step) # rubocop:disable Metrics/MethodLength
+  def navigate_tool_step(step)
     tool = step.fetch('tool')
     raise Invalid, 'playbook_tool_unsupported' unless tool.values_at('key', 'version') == ['request_appointment', 1]
 
