@@ -72,35 +72,37 @@ RSpec.describe ChatRing::Brain::InboundInvocationBuilder do
     invocation = described_class.new(turn.reload).build
 
     expect(invocation.model_context.dig('trigger_message', 'content').length).to eq(4000)
-    expect(invocation.query.length).to eq(ChatRing::Knowledge::DocsGptProvider::MAX_QUERY_LENGTH)
+    expect(invocation.retrieval_queries).to all(satisfy { |query| query.length <= ChatRing::Knowledge::DocsGptProvider::MAX_QUERY_LENGTH })
   end
 
   it 'keeps the proven identity anchor for a standalone retrieval query without adding unrelated history' do
     invocation = described_class.new(turn).build
 
     expect(invocation.query).to eq("ChatRing AI\nCurrent question")
+    expect(invocation.retrieval_queries).to eq(["ChatRing AI\nCurrent question"])
     expect(invocation.audit_metadata.fetch('retrieval_query')).to include(
-      'strategy' => 'standalone_with_identity_anchor', 'contextualized' => false, 'history_message_ids' => []
+      'strategy' => 'current_turn_only', 'contextualized' => false, 'history_message_ids' => [], 'query_count' => 1
     )
   end
 
   it 'contextualizes a reference-dependent follow-up from bounded native public history' do
     prior_question = turn.conversation.messages.find_by!(content: 'Earlier customer')
-    prior_response = turn.conversation.messages.find_by!(content: 'External bot answer')
     turn.trigger_message.update!(content: 'How does it work?')
 
     invocation = described_class.new(turn.reload).build
 
-    expect(invocation.query).to include(
-      'ChatRing AI',
-      'Current question: How does it work?',
-      'Customer: Earlier customer',
-      'Previous response: External bot answer'
-    )
+    contextual_query = <<~QUERY.chomp
+      ChatRing AI
+      Earlier customer
+      How does it work?
+    QUERY
+    expect(invocation.retrieval_queries).to contain_exactly("ChatRing AI\nHow does it work?", contextual_query)
+    expect(invocation.query).to eq("ChatRing AI\nHow does it work?")
     expect(invocation.audit_metadata.fetch('retrieval_query')).to include(
-      'strategy' => 'bounded_native_history',
+      'strategy' => 'dual_query_minimum_antecedent',
       'contextualized' => true,
-      'history_message_ids' => [prior_question.id, prior_response.id]
+      'history_message_ids' => [prior_question.id],
+      'query_count' => 2
     )
   end
 

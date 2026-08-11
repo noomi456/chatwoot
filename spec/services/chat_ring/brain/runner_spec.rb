@@ -52,6 +52,39 @@ RSpec.describe ChatRing::Brain::Runner do
     expect(turn.evidence.first.heading_path).to eq([])
   end
 
+  it 'retrieves the raw follow-up and its bounded native context before one model call' do
+    history_turn = build_turn(with_history: true)
+    history_turn.trigger_message.update!(content: 'How does it work?')
+    queries = []
+    retrieved_sets = []
+    allow(ChatRing::Knowledge::Retriever).to receive(:retrieve) do |query:, **|
+      queries << query
+      result = query.include?('Earlier question about the Website Widget') ? evidence_set : empty_evidence_set
+      retrieved_sets << result
+      result
+    end
+    allow(provider).to receive(:call).and_return(
+      provider_result(
+        'decision_type' => 'reply', 'response_text' => 'Widgets are supported.',
+        'reason_code' => 'answered', 'evidence_ids' => ['evidence-1']
+      )
+    )
+
+    described_class.new(history_turn, provider: provider).call
+
+    contextual_query = <<~QUERY.chomp
+      Earlier question about the Website Widget
+      How does it work?
+    QUERY
+    expect(queries).to contain_exactly('How does it work?', contextual_query)
+    expect(retrieved_sets.map { |set| [set.knowledge_index_id, set.provider, set.provider_release, set.status] }).to eq(
+      [[nil, 'docs_gpt', 'release', 'insufficient_evidence'], [nil, 'docs_gpt', 'release', 'accepted']]
+    )
+    expect(history_turn.reload).to have_attributes(status: 'ready_to_commit', failure_code: nil)
+    expect(provider).to have_received(:call).once
+    expect(history_turn.reload.evidence.pluck(:evidence_id)).to eq(['evidence-1'])
+  end
+
   it 'uses bounded native history for a typed Conversation reply when retrieval has insufficient evidence' do
     history_turn = build_turn(with_history: true)
     allow(ChatRing::Knowledge::Retriever).to receive(:retrieve).and_return(empty_evidence_set)

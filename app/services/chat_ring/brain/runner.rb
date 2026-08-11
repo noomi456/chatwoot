@@ -165,12 +165,25 @@ class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
 
   def retrieve_evidence(invocation)
     ensure_within_deadline!
+    queries = invocation.retrieval_queries
+    timeout_per_query = [remaining_timeout(RETRIEVAL_TIMEOUT) / queries.length, 1].max
+    evidence_sets = queries.map do |query|
+      retrieve_query(query, timeout_per_query)
+    end
+    ChatRing::Knowledge::EvidenceSetMerger.call(
+      evidence_sets,
+      limit: ChatRing::Knowledge::DocsGptProvider::DEFAULT_EVIDENCE_LIMIT
+    )
+  end
+
+  def retrieve_query(query, timeout_per_query)
+    ensure_within_deadline!
     ChatRing::Knowledge::Retriever.retrieve(
       inbox: turn.conversation.inbox,
-      query: invocation.query,
+      query: query,
       knowledge_scope: turn.assistant_version.knowledge_scope,
       knowledge_index_id: turn.knowledge_index_id,
-      timeout_seconds: remaining_timeout(RETRIEVAL_TIMEOUT)
+      timeout_seconds: [remaining_timeout(RETRIEVAL_TIMEOUT), timeout_per_query].min
     )
   end
 

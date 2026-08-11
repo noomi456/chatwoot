@@ -1071,6 +1071,14 @@ manual retrain/delete/status administration
 
 The native Widget, Playbooks and omni-channel Brain use this text evidence.
 
+### Conversation context is not Business Knowledge
+
+Conversation history may be used only to resolve discourse references in the current visitor question. For example, a previous customer turn, managed-AI reply or human-agent reply may identify what “the other one” refers to. That text remains untrusted reference context and must never be converted into Knowledge evidence or treated as proof that a business claim is true.
+
+> **Conversation text may resolve what the customer is referring to. Only accepted evidence from the turn-pinned Knowledge index may establish business facts.**
+
+For a reference-dependent follow-up, retrieval preserves the raw current question and may add one contextual retrieval path built from the minimum sufficient native public antecedent window. The audit records the exact native Message IDs used. The resulting answer must independently retrieve and cite accepted Knowledge evidence; a previous AI or human statement cannot satisfy that requirement.
+
 ## 7.3 Image/media capability is a separate Visual Sales dependency
 
 AI Navigator and Microsites require an explicit media-aware Knowledge extension.

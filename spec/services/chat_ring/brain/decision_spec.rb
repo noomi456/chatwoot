@@ -91,6 +91,20 @@ RSpec.describe ChatRing::Brain::Decision do
     end.to raise_error(described_class::Invalid, 'Grounded replies require accepted evidence')
   end
 
+  it 'does not allow Conversation history to satisfy a factual reply' do
+    expect do
+      described_class.from_payload(
+        {
+          decision_type: 'reply', response_text: 'Salesforce is supported.',
+          reason_code: 'answered', evidence_ids: []
+        },
+        allowed_evidence_ids: [],
+        evidence_status: 'insufficient_evidence',
+        conversation_history_available: true
+      )
+    end.to raise_error(described_class::Invalid, 'Grounded replies require accepted evidence')
+  end
+
   it 'accepts a history-only Conversation reply and rejects it without native history' do
     decision = described_class.from_payload(
       {
