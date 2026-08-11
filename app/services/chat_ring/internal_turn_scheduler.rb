@@ -79,14 +79,34 @@ class ChatRing::InternalTurnScheduler
     return [existing, false] if existing
 
     reason = native_terminal_reason
-    playbook_execution = resolve_playbook_execution(relationship.workspace) unless reason
-    [ChatRing::AiTurn.create!(turn_attributes(relationship, playbook_execution, reason)), true]
+    playbook_execution = reason ? controlling_playbook_execution(relationship.workspace) : resolve_playbook_execution(relationship.workspace)
+    turn = ChatRing::AiTurn.create!(turn_attributes(relationship, playbook_execution, reason))
+    finalize_native_owned_playbook!(turn, playbook_execution, reason)
+    [turn, true]
   rescue ActiveRecord::RecordNotUnique
     [find_turn(relationship.workspace), false]
   end
 
   def resolve_playbook_execution(workspace)
     ChatRing::Playbooks::TurnResolver.new(message: message, workspace: workspace).call.execution
+  end
+
+  def controlling_playbook_execution(workspace)
+    ChatRing::InboxPlaybookExecution.controlling.lock.find_by(
+      workspace: workspace,
+      conversation: message.conversation
+    )
+  end
+
+  def finalize_native_owned_playbook!(turn, execution, reason)
+    return unless execution && reason
+
+    ChatRing::Playbooks::ExecutionFinalizer.apply_locked!(
+      turn: turn,
+      execution: execution,
+      conversation: message.conversation,
+      failure_code: reason
+    )
   end
 
   def find_turn(workspace)

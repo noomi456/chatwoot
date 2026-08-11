@@ -62,6 +62,64 @@ RSpec.describe ChatRing::Brain::Runner do
     expect(guided_turn.inbox_playbook_execution.reload).to be_status_active
   end
 
+  it 'classifies a typed Playbook answer without evidence and commits the server-selected branch natively' do
+    _, answer_turn = progress_playbook_to_waiting('Internet service')
+    allow(ChatRing::Knowledge::Retriever).to receive(:retrieve).and_return(empty_evidence_set)
+    allow(provider).to receive(:call).and_return(
+      provider_result(
+        'decision_type' => 'playbook',
+        'response_text' => '',
+        'reason_code' => 'answered_pending_question',
+        'evidence_ids' => [],
+        'playbook_control' => { 'action' => 'submit_answer', 'answer_value' => 'Internet service' }
+      )
+    )
+
+    described_class.new(answer_turn, provider: provider).call
+    ChatRing::OutboundCommitJob.perform_now(answer_turn.id)
+
+    expect(provider).to have_received(:call).once
+    expect(answer_turn.reload).to be_status_committed
+    expect(answer_turn.inbox_playbook_execution.reload).to have_attributes(
+      status: 'completed',
+      current_step_id: 'complete',
+      collected_fields: { 'need' => 'Internet service' }
+    )
+    expect(answer_turn.outbound_commit.message).to have_attributes(
+      content: 'Thank you. Your request is complete.',
+      sender: answer_turn.expected_agent_bot
+    )
+  end
+
+  it 'answers a grounded side question and resumes the exact pending Playbook question' do
+    _, side_turn = progress_playbook_to_waiting('Does the Website Widget work?')
+    allow(provider).to receive(:call).and_return(
+      provider_result(
+        'decision_type' => 'playbook',
+        'response_text' => 'Widgets are supported.',
+        'reason_code' => 'answered_side_question',
+        'evidence_ids' => ['evidence-1'],
+        'playbook_control' => { 'action' => 'answer_side_question' }
+      )
+    )
+
+    described_class.new(side_turn, provider: provider).call
+    ChatRing::OutboundCommitJob.perform_now(side_turn.id)
+
+    expect(side_turn.reload).to be_status_committed
+    expect(side_turn.inbox_playbook_execution.reload).to have_attributes(
+      status: 'waiting_for_customer',
+      current_step_id: 'ask_need',
+      collected_fields: {}
+    )
+    expect(side_turn.outbound_commit.message.content).to eq(
+      "Widgets are supported.\n\nWhat service do you need?"
+    )
+    expect(side_turn.outbound_commit.message.content_attributes.fetch('chatring_citations')).to contain_exactly(
+      include('title' => 'Widgets', 'url' => 'https://example.com/widgets')
+    )
+  end
+
   it 'allows an authorized semantic appointment request without evidence and prepares no Message directly' do
     appointment_turn = build_turn(appointment_tool: true)
     ChatRing::Tools::PolicyPublisher.new(
@@ -265,6 +323,29 @@ RSpec.describe ChatRing::Brain::Runner do
     expect(turn.decision_payload).to eq({})
   end
 
+  it 'supersedes the exact active Playbook when its native Assistant binding changes during inference' do
+    _, playbook_turn = progress_playbook_to_waiting('Internet service')
+    allow(provider).to receive(:call) do
+      playbook_turn.inbox_assistant_binding.update!(status: :inactive)
+      provider_result(
+        'decision_type' => 'playbook',
+        'response_text' => '',
+        'reason_code' => 'answered_pending_question',
+        'evidence_ids' => [],
+        'playbook_control' => { 'action' => 'submit_answer', 'answer_value' => 'Internet service' }
+      )
+    end
+
+    described_class.new(playbook_turn, provider: provider).call
+
+    expect(playbook_turn.reload).to have_attributes(status: 'ineligible', decision_type: 'binding_inactive')
+    expect(playbook_turn.inbox_playbook_execution.reload).to be_status_superseded
+    expect(playbook_turn.inbox_playbook_execution.transition_history.last).to include(
+      'action' => 'native_runtime_superseded',
+      'failure_code' => 'binding_inactive'
+    )
+  end
+
   it 'does not call the model when native ownership changes during retrieval' do
     allow(ChatRing::Knowledge::Retriever).to receive(:retrieve) do
       turn.conversation.update!(status: :open, assignee_agent_bot: nil)
@@ -338,7 +419,7 @@ RSpec.describe ChatRing::Brain::Runner do
         tool_allowlist: [],
         steps: [
           { id: 'ask_need', kind: 'ask_text', prompt: prompt, field_key: 'need', next_step_id: 'complete' },
-          { id: 'complete', kind: 'terminal', outcome: 'complete' }
+          { id: 'complete', kind: 'terminal', outcome: 'complete', message: 'Thank you. Your request is complete.' }
         ],
         safety_rules: { on_human_request: 'native_availability', on_side_question: 'answer_then_resume' }
       }
@@ -348,6 +429,31 @@ RSpec.describe ChatRing::Brain::Runner do
 
   def complete_native_automation(message)
     EventDispatcherJob.perform_now(Message::MESSAGE_CREATED, message.created_at, { message: message, performed_by: nil })
+  end
+
+  def progress_playbook_to_waiting(customer_content)
+    initial_turn = build_turn(playbook_question: 'What service do you need?')
+    described_class.new(initial_turn, provider: provider).call
+    ChatRing::OutboundCommitJob.perform_now(initial_turn.id)
+
+    trigger = create_managed_message(
+      account: initial_turn.conversation.account,
+      inbox: initial_turn.conversation.inbox,
+      conversation: initial_turn.conversation,
+      content: customer_content
+    )
+    complete_native_automation(trigger)
+    follow_up = ChatRing::AiTurn.find_by!(conversation: initial_turn.conversation, trigger_message: trigger)
+    [initial_turn, follow_up]
+  end
+
+  def provider_result(payload)
+    ChatRing::Brain::RubyLlmProvider::Result.new(
+      payload: payload,
+      input_tokens: 20,
+      output_tokens: 8,
+      response_digest: Digest::SHA256.hexdigest(payload.to_json)
+    )
   end
 
   def accepted_evidence_set

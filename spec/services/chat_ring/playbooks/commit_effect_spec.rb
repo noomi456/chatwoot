@@ -35,7 +35,8 @@ RSpec.describe ChatRing::Playbooks::CommitEffect do
     expect(execution.transition_history).to contain_exactly(
       include(
         'action' => 'ask_current_step',
-        'step_id' => 'ask_need',
+        'from_step_id' => 'ask_need',
+        'to_step_id' => 'ask_need',
         'trigger_message_id' => turn.trigger_message_id,
         'outcome_message_id' => result.message.id
       )
@@ -83,6 +84,134 @@ RSpec.describe ChatRing::Playbooks::CommitEffect do
     expect(turn.outbound_commit.reload.failure_code).to eq('newer_customer_message')
   end
 
+  it 'coerces a submitted answer and advances the pinned execution in the same native Message commit' do
+    service.perform
+    answer_turn = build_follow_up_turn(
+      'decision_type' => 'playbook',
+      'response_text' => '',
+      'reason_code' => 'answered_pending_question',
+      'evidence_ids' => [],
+      'playbook_control' => { 'action' => 'submit_answer', 'answer_value' => 'Internet service' }
+    )
+
+    result = service_for(answer_turn).perform
+
+    expect(result.message.content).to eq('Thank you. Your request is complete.')
+    expect(execution.reload).to have_attributes(status: 'completed', current_step_id: 'complete')
+    expect(execution.collected_fields).to eq('need' => 'Internet service')
+    expect(execution.field_sources.fetch('need')).to include(
+      'message_id' => answer_turn.trigger_message_id,
+      'ai_turn_id' => answer_turn.id,
+      'playbook_version_id' => execution.inbox_playbook_version_id,
+      'step_id' => 'ask_need'
+    )
+    expect(execution.transition_history.last).to include(
+      'action' => 'submit_answer',
+      'from_step_id' => 'ask_need',
+      'to_step_id' => 'complete',
+      'outcome_message_id' => result.message.id
+    )
+  end
+
+  it 'answers a grounded side question and resumes the exact published pending question without advancing' do
+    service.perform
+    side_turn = build_follow_up_turn(
+      'decision_type' => 'playbook',
+      'response_text' => 'Installation is included.',
+      'reason_code' => 'answered_side_question',
+      'evidence_ids' => ['evidence-1'],
+      'playbook_control' => { 'action' => 'answer_side_question' }
+    )
+
+    result = service_for(side_turn).perform
+
+    expect(result.message.content).to eq("Installation is included.\n\nWhat service do you need?")
+    expect(execution.reload).to have_attributes(status: 'waiting_for_customer', current_step_id: 'ask_need')
+    expect(execution.collected_fields).to eq({})
+    expect(execution.transition_history.last).to include(
+      'action' => 'answer_side_question',
+      'from_step_id' => 'ask_need',
+      'to_step_id' => 'ask_need'
+    )
+  end
+
+  it 'declines an unsupported side question with approved copy and resumes the exact pending question' do
+    service.perform
+    resume_turn = build_follow_up_turn(
+      'decision_type' => 'playbook',
+      'response_text' => '',
+      'reason_code' => 'side_question_unsupported',
+      'evidence_ids' => [],
+      'playbook_control' => { 'action' => 'resume_pending_question' }
+    )
+
+    result = service_for(resume_turn).perform
+
+    expect(result.message.content).to eq(
+      "I don't have enough verified information to answer that.\n\nWhat service do you need?"
+    )
+    expect(execution.reload).to have_attributes(status: 'waiting_for_customer', current_step_id: 'ask_need')
+    expect(execution.transition_history.last).to include('action' => 'resume_pending_question')
+  end
+
+  it 'terminalizes the pinned execution when a native public human reply supersedes the AI outcome' do
+    agent = create(:user, account: conversation.account, role: :agent)
+    create(:inbox_member, inbox: conversation.inbox, user: agent)
+    create(:message, account: conversation.account, inbox: conversation.inbox, conversation: conversation,
+                     sender: agent, message_type: :outgoing, private: false, content: 'I will take this')
+
+    ChatRing::OutboundCommitJob.perform_now(turn.id)
+
+    expect(turn.reload).to have_attributes(status: 'superseded', failure_code: 'newer_human_reply')
+    expect(execution.reload).to be_status_handed_off
+    expect(execution.transition_history.last).to include(
+      'action' => 'native_human_takeover',
+      'failure_code' => 'newer_human_reply'
+    )
+    expect(conversation.messages.outgoing.where(sender: turn.expected_agent_bot)).to be_empty
+  end
+
+  it 'supersedes the pinned execution when the native Inbox binding changes before commit' do
+    turn.inbox_assistant_binding.update!(status: :inactive)
+
+    ChatRing::OutboundCommitJob.perform_now(turn.id)
+
+    expect(turn.reload).to have_attributes(status: 'cancelled', failure_code: 'binding_inactive')
+    expect(execution.reload).to be_status_superseded
+    expect(execution.transition_history.last).to include(
+      'action' => 'native_runtime_superseded',
+      'failure_code' => 'binding_inactive'
+    )
+    expect(conversation.messages.outgoing.where(sender: turn.expected_agent_bot)).to be_empty
+  end
+
+  it 'terminalizes the exact pinned execution in the same successful native AI handoff transaction' do
+    context = ChatRing::Playbooks::InitialQuestionPreparerSpecSupport.build
+    handoff_turn = context.fetch(:turn)
+    handoff_turn.update!(
+      status: :ready_to_commit,
+      decision_type: 'handoff',
+      decision_payload: {
+        'decision_type' => 'handoff',
+        'response_text' => '',
+        'reason_code' => 'human_requested',
+        'evidence_ids' => []
+      }
+    )
+    ChatRing::OutboundCommitPreparer.call(handoff_turn, 'handoff')
+
+    ChatRing::OutboundCommitJob.perform_now(handoff_turn.id)
+
+    expect(handoff_turn.reload).to be_status_handed_off
+    expect(handoff_turn.conversation.reload).to be_open
+    expect(handoff_turn.conversation.assignee_agent_bot).to be_nil
+    expect(handoff_turn.inbox_playbook_execution.reload).to be_status_handed_off
+    expect(handoff_turn.inbox_playbook_execution.transition_history.last).to include(
+      'action' => 'native_ai_handoff',
+      'failure_code' => 'human_requested'
+    )
+  end
+
   private
 
   def build_prepared_turn
@@ -92,5 +221,47 @@ RSpec.describe ChatRing::Playbooks::CommitEffect do
       context_digest: Digest::SHA256.hexdigest('playbook-context')
     )
     base
+  end
+
+  def build_follow_up_turn(decision_payload)
+    trigger = create(:message, account: conversation.account, inbox: conversation.inbox, conversation: conversation,
+                               sender: conversation.contact, message_type: :incoming, private: false,
+                               content: 'Follow-up Playbook input')
+    execution.reload.update!(last_trigger_message: trigger)
+    follow_up = ChatRing::AiTurn.create!(follow_up_attributes(trigger, decision_payload))
+    ChatRing::OutboundCommitPreparer.call(follow_up, 'playbook')
+    follow_up
+  end
+
+  def follow_up_attributes(trigger, decision_payload)
+    {
+      workspace: turn.workspace,
+      conversation: conversation,
+      trigger_message: trigger,
+      inbox_assistant_binding: turn.inbox_assistant_binding,
+      binding_version: turn.binding_version,
+      assistant: turn.assistant,
+      assistant_version: turn.assistant_version,
+      expected_agent_bot: turn.expected_agent_bot,
+      inbox_playbook_execution: execution,
+      playbook_execution_lock_version: execution.lock_version,
+      playbook_step_id: execution.current_step_id,
+      status: :ready_to_commit,
+      decision_type: 'playbook',
+      decision_payload: decision_payload,
+      native_handling_snapshot: { 'automation' => { 'completed' => true, 'effects' => [] } },
+      deadline_at: 2.minutes.from_now
+    }
+  end
+
+  def service_for(candidate_turn)
+    Conversations::AgentBotConditionalCommitService.new(
+      conversation: conversation,
+      agent_bot: candidate_turn.expected_agent_bot,
+      expected_agent_bot_id: candidate_turn.expected_agent_bot_id,
+      responding_to_message_id: candidate_turn.trigger_message_id,
+      idempotency_key: candidate_turn.outbound_commit.idempotency_key,
+      message: { content: 'Caller-controlled content', content_type: 'text' }
+    )
   end
 end

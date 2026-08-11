@@ -12,16 +12,17 @@ class ChatRing::Playbooks::DefinitionValidator # rubocop:disable Metrics/ClassLe
   end
 
   TOP_LEVEL_KEYS = %w[trigger_phrases entry_step_id steps collected_fields tool_allowlist safety_rules].freeze
-  STEP_KINDS = %w[ask_text ask_choice inform tool terminal transition].freeze
+  STEP_KINDS = %w[ask_text ask_choice inform terminal].freeze
+  QUESTION_STEP_KINDS = %w[ask_text ask_choice].freeze
   FIELD_TYPES = %w[string email phone number boolean choice].freeze
-  TERMINAL_OUTCOMES = %w[complete stop handoff].freeze
+  TERMINAL_OUTCOMES = %w[complete stop].freeze
   COMMON_STEP_KEYS = %w[id kind tool_allowlist].freeze
   STEP_KEYS = {
     'ask_text' => %w[prompt field_key next_step_id],
     'ask_choice' => %w[prompt field_key choices],
     'inform' => %w[message next_step_id],
     'tool' => %w[tool next_step_id],
-    'terminal' => %w[outcome],
+    'terminal' => %w[outcome message],
     'transition' => %w[target_playbook_version_id carry_fields]
   }.freeze
   MAX_TRIGGERS = 20
@@ -33,15 +34,6 @@ class ChatRing::Playbooks::DefinitionValidator # rubocop:disable Metrics/ClassLe
   MAX_CHOICE_LABEL_LENGTH = 160
   MAX_CHOICE_VALUE_LENGTH = 160
   SIMPLE_PHRASES = %w[hello hi hey thanks thank-you ok okay yes no].freeze
-  CONTACT_DISPLAY_TYPES = {
-    'string' => ['text'],
-    'email' => ['text'],
-    'phone' => ['text'],
-    'number' => %w[number currency percent],
-    'boolean' => ['checkbox'],
-    'choice' => ['list']
-  }.freeze
-
   def initialize(playbook:, definition:)
     @playbook = playbook
     @source = definition
@@ -200,32 +192,20 @@ class ChatRing::Playbooks::DefinitionValidator # rubocop:disable Metrics/ClassLe
     end
     add_error('invalid_field_type', "#{path}.type", "must be one of #{FIELD_TYPES.join(', ')}") unless FIELD_TYPES.include?(type)
     add_error('invalid_required_flag', "#{path}.required", 'must be true or false') unless [true, false].include?(field['required'])
-    validate_native_contact_attribute(field, type, path)
+    validate_native_contact_attribute(field, path)
     field
   end
 
-  def validate_native_contact_attribute(field, type, path)
+  def validate_native_contact_attribute(field, path)
     key = field['native_contact_attribute_key'].to_s.presence
     field['native_contact_attribute_key'] = key
     return unless key
 
-    definition_record = CustomAttributeDefinition.find_by(
-      account_id: playbook.workspace.chatwoot_account_id,
-      attribute_model: 'contact_attribute',
-      attribute_key: key
+    add_error(
+      'native_contact_projection_unsupported',
+      "#{path}.native_contact_attribute_key",
+      'is unavailable until the native Contact update seam is certified'
     )
-    unless definition_record
-      add_error('unknown_contact_attribute', "#{path}.native_contact_attribute_key", 'must identify a native Contact custom attribute')
-      return
-    end
-
-    return if compatible_contact_attribute_type?(type, definition_record.attribute_display_type)
-
-    add_error('contact_attribute_type_mismatch', "#{path}.native_contact_attribute_key", 'does not match the native Contact attribute type')
-  end
-
-  def compatible_contact_attribute_type?(field_type, display_type)
-    CONTACT_DISPLAY_TYPES.fetch(field_type, []).include?(display_type)
   end
 
   def validate_steps
@@ -285,7 +265,7 @@ class ChatRing::Playbooks::DefinitionValidator # rubocop:disable Metrics/ClassLe
     add_error('unknown_step_keys', path, "contains unknown settings: #{unknown_keys.join(', ')}") if unknown_keys.present?
   end
 
-  def validate_step_contract(step, path) # rubocop:disable Metrics/CyclomaticComplexity
+  def validate_step_contract(step, path)
     case step['kind']
     when 'ask_text'
       validate_prompt_and_field(step, path)
@@ -299,12 +279,17 @@ class ChatRing::Playbooks::DefinitionValidator # rubocop:disable Metrics/ClassLe
     when 'tool'
       normalize_tool_step(step, path)
     when 'terminal'
-      unless TERMINAL_OUTCOMES.include?(step['outcome'])
-        add_error('invalid_terminal_outcome', "#{path}.outcome", "must be one of #{TERMINAL_OUTCOMES.join(', ')}")
-      end
+      validate_terminal_step(step, path)
     when 'transition'
       normalize_transition_step(step, path)
     end
+  end
+
+  def validate_terminal_step(step, path)
+    unless TERMINAL_OUTCOMES.include?(step['outcome'])
+      add_error('invalid_terminal_outcome', "#{path}.outcome", "must be one of #{TERMINAL_OUTCOMES.join(', ')}")
+    end
+    require_text(step, 'message', path)
   end
 
   def validate_prompt_and_field(step, path)
@@ -420,6 +405,48 @@ class ChatRing::Playbooks::DefinitionValidator # rubocop:disable Metrics/ClassLe
     add_error('step_depth', 'steps', "must not exceed #{MAX_DEPTH} transitions") if depth > MAX_DEPTH
     unreachable = ids - reachable
     add_error('unreachable_step', 'steps', "contains unreachable steps: #{unreachable.join(', ')}") if unreachable.present?
+    validate_required_fields_before_completion(steps)
+  end
+
+  def validate_required_fields_before_completion(steps)
+    required = definition.fetch('collected_fields', []).select { |field| field['required'] }.pluck('key').to_set
+    return if required.empty?
+
+    by_id = steps.index_by { |step| step['id'] }
+    traverse_required_field_paths(by_id, required)
+  end
+
+  def traverse_required_field_paths(steps_by_id, required)
+    stack = [[definition['entry_step_id'], Set.new]]
+    visited = Set.new
+    until stack.empty?
+      step_id, collected = stack.pop
+      visit_key = [step_id, collected.to_a.sort]
+      next if visited.include?(visit_key)
+
+      visited << visit_key
+      step = steps_by_id[step_id]
+      next unless step
+
+      next_collected = collected_fields_after(step, collected)
+      validate_terminal_required_fields(step, required, next_collected)
+      outgoing_step_ids(step).each { |target| stack << [target, next_collected] }
+    end
+  end
+
+  def collected_fields_after(step, collected)
+    result = collected.dup
+    result << step['field_key'] if QUESTION_STEP_KINDS.include?(step['kind'])
+    result
+  end
+
+  def validate_terminal_required_fields(step, required, collected)
+    return unless step['kind'] == 'terminal' && step['outcome'] == 'complete'
+
+    missing = required - collected
+    return if missing.empty?
+
+    add_error('required_fields_incomplete', "steps.#{step['id']}", "can complete without fields: #{missing.to_a.sort.join(', ')}")
   end
 
   def outgoing_step_ids(step)

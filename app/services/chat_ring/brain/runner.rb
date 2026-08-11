@@ -60,7 +60,7 @@ class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
     return handle_retrieval_failure!(evidence_set.error_code || 'knowledge_provider_failed') if evidence_set.status == 'provider_error'
 
     persist_evidence!(evidence_set)
-    return complete_without_evidence!(invocation.digest) if evidence_set.status != 'accepted' && !tools_available?(invocation)
+    return complete_without_evidence!(invocation.digest) if evidence_set.status != 'accepted' && !semantic_action_available?(invocation)
     return unless recheck_eligibility!
 
     run_inference(invocation, evidence_set)
@@ -84,6 +84,10 @@ class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
 
   def tools_available?(invocation)
     invocation.model_context.fetch('available_tools').present?
+  end
+
+  def semantic_action_available?(invocation)
+    tools_available?(invocation) || invocation.model_context['active_playbook'].present?
   end
 
   def run_inference(invocation, evidence_set)
@@ -118,6 +122,7 @@ class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
 
   def claim_turn!
     claimed = false
+    finalization_reason = nil
     turn.with_lock do
       turn.reload
       next unless turn.status_received? || turn.status_eligible?
@@ -125,12 +130,14 @@ class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
       eligibility = ChatRing::Brain::Eligibility.check(turn)
       unless eligibility.eligible
         mark_ineligible!(eligibility.reason)
+        finalization_reason = eligibility.reason
         next
       end
 
       pin_current_index!
       claimed = true
     end
+    finalize_playbook_execution!(finalization_reason)
     claimed
   end
 
@@ -181,6 +188,7 @@ class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
 
   def recheck_eligibility!
     eligible = false
+    finalization_reason = nil
     turn.with_lock do
       turn.reload
       next unless turn.status_running?
@@ -190,8 +198,10 @@ class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
         eligible = true
       else
         mark_ineligible!(eligibility.reason)
+        finalization_reason = eligibility.reason
       end
     end
+    finalize_playbook_execution!(finalization_reason)
     eligible
   end
 
@@ -295,27 +305,40 @@ class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
   end
 
   def complete_conversation_decision!(decision, context_digest)
+    finalization_reason = nil
     turn.with_lock do
       turn.reload
       next unless turn.status_running?
 
-      eligibility = ChatRing::Brain::Eligibility.check(turn)
-      unless eligibility.eligible
-        mark_ineligible!(eligibility.reason)
-        next
-      end
-
-      effectful = ChatRing::OutboundCommitPreparer::EFFECTFUL_DECISIONS.key?(decision.decision_type)
-      ChatRing::OutboundCommitPreparer.call(turn, decision.decision_type) if effectful
-      turn.update!(
-        status: effectful ? :ready_to_commit : :cancelled,
-        decision_type: decision.decision_type,
-        decision_payload: decision.to_h,
-        context_digest: context_digest,
-        failure_code: nil,
-        completed_at: Time.current
-      )
+      finalization_reason = apply_conversation_decision!(decision, context_digest)
     end
+    finalize_playbook_execution!(finalization_reason)
+  end
+
+  def apply_conversation_decision!(decision, context_digest)
+    eligibility = ChatRing::Brain::Eligibility.check(turn)
+    unless eligibility.eligible
+      mark_ineligible!(eligibility.reason)
+      return eligibility.reason
+    end
+
+    effectful = ChatRing::OutboundCommitPreparer::EFFECTFUL_DECISIONS.key?(decision.decision_type)
+    ChatRing::OutboundCommitPreparer.call(turn, decision.decision_type) if effectful
+    turn.update!(
+      status: effectful ? :ready_to_commit : :cancelled,
+      decision_type: decision.decision_type,
+      decision_payload: decision.to_h,
+      context_digest: context_digest,
+      failure_code: nil,
+      completed_at: Time.current
+    )
+    nil
+  end
+
+  def finalize_playbook_execution!(reason)
+    return unless reason && turn.inbox_playbook_execution_id
+
+    ChatRing::Playbooks::ExecutionFinalizer.call(turn, reason)
   end
 
   def finish_rejected_tool!(failure_code)

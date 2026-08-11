@@ -17,7 +17,8 @@ class ChatRing::Brain::Reasoner
     decision = ChatRing::Brain::Decision.from_payload(
       provider_result.payload,
       allowed_evidence_ids: evidence_set.items.map(&:id),
-      evidence_status: evidence_set.status
+      evidence_status: evidence_set.status,
+      playbook_context: invocation.model_context['active_playbook']
     )
     Result.new(decision: decision, provider_result: provider_result, messages: messages.freeze)
   end

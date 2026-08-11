@@ -34,12 +34,12 @@ class ChatRing::Playbooks::InitialQuestionPreparer
   private
 
   attr_reader :source_turn, :context_digest
-  attr_accessor :turn, :execution
+  attr_accessor :turn, :execution, :conversation
 
   def lock_native_scope!
     Account.lock.find(source_turn.conversation.account_id)
     Inbox.lock.find(source_turn.conversation.inbox_id)
-    Conversation.lock.find(source_turn.chatwoot_conversation_id)
+    self.conversation = Conversation.lock.find(source_turn.chatwoot_conversation_id)
     self.turn = ChatRing::AiTurn.lock.find(source_turn.id)
     self.execution = ChatRing::InboxPlaybookExecution.lock.find_by(id: turn.inbox_playbook_execution_id)
   end
@@ -79,5 +79,11 @@ class ChatRing::Playbooks::InitialQuestionPreparer
   def mark_ineligible!(reason)
     status = %w[newer_customer_message newer_human_reply].include?(reason) ? :superseded : :ineligible
     turn.update!(status: status, decision_type: reason, completed_at: Time.current)
+    ChatRing::Playbooks::ExecutionFinalizer.apply_locked!(
+      turn: turn,
+      execution: execution,
+      conversation: conversation,
+      failure_code: reason
+    )
   end
 end

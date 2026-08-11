@@ -54,6 +54,37 @@ describe Conversations::AssignmentService do
         end
       end
 
+      it 'ends the exact waiting Playbook through the native managed-bot takeover transaction' do
+        workspace = account.chat_ring_workspace
+        inbox = conversation.inbox
+        assistant = ChatRing::Assistant.create!(workspace: workspace, name: 'Sales')
+        ChatRing::AssistantVersions::Publisher.new(
+          assistant: assistant,
+          knowledge_scope: workspace.knowledge_scopes.find_by!(business_wide: true)
+        ).call
+        connection = ChatRing::AssistantProvisioning::AgentBotProvisioner.new(assistant: assistant).call
+        ChatRing::AssistantProvisioning::InboxBindingActivator.new(assistant: assistant, inbox: inbox).call
+        conversation.update!(assignee_agent_bot: connection.agent_bot, assignee: nil, status: :pending)
+        trigger = create(:message, account: account, inbox: inbox, conversation: conversation,
+                                   sender: conversation.contact, message_type: :incoming)
+        execution = ChatRing::Playbooks::InitialQuestionPreparerSpecSupport.create_execution(
+          workspace,
+          inbox,
+          conversation,
+          trigger
+        )
+        execution.update!(status: :waiting_for_customer)
+
+        described_class.new(conversation: conversation, assignee_id: agent.id).perform
+
+        expect(conversation.reload).to have_attributes(status: 'open', assignee_id: agent.id, assignee_agent_bot_id: nil)
+        expect(execution.reload).to be_status_handed_off
+        expect(execution.transition_history.last).to include(
+          'action' => 'native_human_takeover',
+          'failure_code' => 'human_assigned'
+        )
+      end
+
       it 'preserves status for ordinary human assignment changes' do
         conversation.update!(assignee_agent_bot: nil, status: :resolved)
 

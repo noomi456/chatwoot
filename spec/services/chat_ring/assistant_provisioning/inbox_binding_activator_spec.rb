@@ -240,7 +240,7 @@ RSpec.describe ChatRing::AssistantProvisioning::InboxBindingActivator do
     expect(described_class.new(assistant: assistant, inbox: inbox).call).to be_active
   end
 
-  it 'hands off old-bot Conversations and cancels unfinished turns before switching Assistants' do
+  it 'hands off old-bot Conversations and cancels unfinished turns before switching Assistants', :aggregate_failures do
     stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', true)
     publish
     connection = provision
@@ -262,6 +262,12 @@ RSpec.describe ChatRing::AssistantProvisioning::InboxBindingActivator do
         message_type: :incoming
       )
     end
+    execution = ChatRing::Playbooks::InitialQuestionPreparerSpecSupport.create_execution(
+      workspace,
+      inbox,
+      conversation,
+      trigger_message
+    )
     EventDispatcherJob.perform_now(
       Message::MESSAGE_CREATED,
       trigger_message.created_at,
@@ -281,6 +287,54 @@ RSpec.describe ChatRing::AssistantProvisioning::InboxBindingActivator do
     expect(conversation.assignee_agent_bot).to be_nil
     expect(turn.reload).to be_status_cancelled
     expect(turn.failure_code).to eq('binding_rebound')
+    expect(execution.reload).to be_status_handed_off
+    expect(execution.transition_history.last).to include(
+      'action' => 'native_binding_handoff',
+      'failure_code' => 'binding_rebound'
+    )
+  end
+
+  it 'hands off a waiting Playbook execution even when no AI turn is running' do
+    publish
+    connection = provision
+    first = described_class.new(assistant: assistant, inbox: inbox).call
+    conversation = create(
+      :conversation,
+      account: account,
+      inbox: inbox,
+      status: :pending,
+      assignee_agent_bot: connection.agent_bot
+    )
+    trigger = create(
+      :message,
+      account: account,
+      inbox: inbox,
+      conversation: conversation,
+      sender: conversation.contact,
+      message_type: :incoming
+    )
+    execution = ChatRing::Playbooks::InitialQuestionPreparerSpecSupport.create_execution(
+      workspace,
+      inbox,
+      conversation,
+      trigger
+    )
+    execution.update!(status: :waiting_for_customer)
+    replacement = ChatRing::Assistant.create!(workspace: workspace, name: 'Sales')
+    publish(replacement)
+    provision(replacement)
+
+    second = described_class.new(assistant: replacement, inbox: inbox).call
+
+    expect(first.reload).to be_draining
+    expect(second).to have_attributes(status: 'active', binding_version: 2)
+    expect(conversation.reload).to be_open
+    expect(conversation.assignee_agent_bot).to be_nil
+    expect(execution.reload).to be_status_handed_off
+    expect(execution.transition_history.last).to include(
+      'action' => 'native_binding_handoff',
+      'failure_code' => 'binding_rebound'
+    )
   end
 
   it 'rolls back a replacement when native handoff fails' do

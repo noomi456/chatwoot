@@ -46,6 +46,7 @@ RSpec.describe ChatRing::Playbooks::InitialQuestionPreparer do
       .to eq(described_class::TERMINALIZED)
     expect(turn.reload).to have_attributes(status: 'ineligible', decision_type: 'conversation_not_pending')
     expect(turn.outbound_commit).to be_nil
+    expect(turn.inbox_playbook_execution.reload).to be_status_superseded
   end
 
   private

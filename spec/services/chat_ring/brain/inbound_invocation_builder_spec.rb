@@ -94,7 +94,7 @@ RSpec.describe ChatRing::Brain::InboundInvocationBuilder do
       'collected_field_keys' => []
     )
     expect(invocation.model_context.fetch('active_playbook').to_json).not_to include(
-      'target_playbook_version_id', 'native_contact_attribute_key'
+      'target_playbook_version_id', 'native_contact_attribute_key', 'next_step_id', 'inbox_playbook_execution_id'
     )
   end
 
@@ -197,7 +197,7 @@ RSpec.describe ChatRing::Brain::InboundInvocationBuilder do
       tool_allowlist: [],
       steps: [
         { id: 'ask_need', kind: 'ask_text', prompt: 'What service do you need?', field_key: 'need', next_step_id: 'complete' },
-        { id: 'complete', kind: 'terminal', outcome: 'complete' }
+        { id: 'complete', kind: 'terminal', outcome: 'complete', message: 'Thank you. Your request is complete.' }
       ],
       safety_rules: { on_human_request: 'native_availability', on_side_question: 'answer_then_resume' }
     }
