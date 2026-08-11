@@ -6,7 +6,8 @@ class ChatRing::OutboundCommitPreparer
     'clarification' => :reply,
     'playbook' => :reply,
     'request_appointment' => :tool,
-    'handoff' => :handoff
+    'handoff' => :human_route,
+    'provider_failure_handoff' => :handoff
   }.freeze
 
   def self.call(turn, decision_type)

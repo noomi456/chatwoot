@@ -16,12 +16,32 @@ class AutoAssignment::AssignmentService
     assigned_count
   end
 
+  # Reuses the native assignment-v2 policy, team, online-state, rate-limit,
+  # and round-robin selection without mutating the Conversation.
+  def available_agent_for(conversation)
+    return unless inbox.auto_assignment_v2_enabled?
+    return unless inbox.enable_auto_assignment?
+
+    find_available_agent(conversation)
+  end
+
+  # Records a committed assignment in the native v2 fair-distribution window.
+  # The Conversation mutation and events remain owned by Conversations::AssignmentService.
+  def account_assignment(conversation:, agent:)
+    return false unless inbox.auto_assignment_v2_enabled?
+    return false unless conversation.inbox_id == inbox.id
+    return false unless inbox.members.exists?(agent.id)
+
+    build_rate_limiter(agent).track_assignment(conversation)
+    true
+  end
+
   private
 
   def perform_for_conversation(conversation)
     return false unless assignable?(conversation)
 
-    agent = find_available_agent(conversation)
+    agent = available_agent_for(conversation)
     return false unless agent
 
     assign_conversation(conversation, agent)

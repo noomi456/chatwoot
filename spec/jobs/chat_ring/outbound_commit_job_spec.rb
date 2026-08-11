@@ -7,7 +7,13 @@ RSpec.describe ChatRing::OutboundCommitJob, type: :job do
   let(:inbox) { create(:inbox, account: account, channel: create(:channel_widget, account: account)) }
   let(:assistant) { ChatRing::Assistant.create!(workspace: workspace, name: 'Support') }
   let(:scope) { workspace.knowledge_scopes.find_by!(business_wide: true) }
-  let(:version) { ChatRing::AssistantVersions::Publisher.new(assistant: assistant, knowledge_scope: scope).call }
+  let(:version) do
+    ChatRing::AssistantVersions::Publisher.new(
+      assistant: assistant,
+      knowledge_scope: scope,
+      configuration: { tool_grants: [{ key: 'request_appointment', version: 1 }] }
+    ).call
+  end
   let(:connection) do
     version
     ChatRing::AssistantProvisioning::AgentBotProvisioner.new(assistant: assistant).call
@@ -110,7 +116,8 @@ RSpec.describe ChatRing::OutboundCommitJob, type: :job do
       expect(turn.outbound_commit.reload.chatwoot_message_id).to eq(committed_message_id)
     end
 
-    it 'performs an expected-owner handoff without creating a public message' do
+    it 'performs an expected-owner handoff without creating a public message', :aggregate_failures do
+      agent = make_human_available
       turn.update!(decision_type: 'handoff', decision_payload: {
                      'decision_type' => 'handoff', 'response_text' => '',
                      'reason_code' => 'human_requested', 'evidence_ids' => []
@@ -119,13 +126,15 @@ RSpec.describe ChatRing::OutboundCommitJob, type: :job do
       expect { described_class.perform_now(turn.id) }.not_to change(Message, :count)
       expect(turn.reload).to be_status_handed_off
       expect(turn.outbound_commit).to be_status_committed
-      expect(turn.outbound_commit).to be_outcome_type_handoff
+      expect(turn.outbound_commit).to be_outcome_type_human_route
       expect(turn.outbound_commit.message).to be_nil
       expect(conversation.reload).to be_open
       expect(conversation.assignee_agent_bot).to be_nil
+      expect(conversation.assignee).to eq(agent)
     end
 
     it 'creates one handoff ledger when duplicate jobs race before ledger creation' do
+      make_human_available
       turn.update!(decision_type: 'handoff', decision_payload: {
                      'decision_type' => 'handoff', 'response_text' => '',
                      'reason_code' => 'human_requested', 'evidence_ids' => []
@@ -133,12 +142,13 @@ RSpec.describe ChatRing::OutboundCommitJob, type: :job do
       run_duplicate_jobs_at_ledger_creation
 
       expect(turn.reload).to be_status_handed_off
-      expect(ChatRing::OutboundCommit.where(ai_turn: turn, outcome_type: :handoff).count).to eq(1)
+      expect(ChatRing::OutboundCommit.where(ai_turn: turn, outcome_type: :human_route).count).to eq(1)
       expect(conversation.reload).to be_open
       expect(conversation.assignee_agent_bot).to be_nil
     end
 
-    it 'records the handoff before dispatching the native event and remains idempotent on service retry' do
+    it 'uses native assignment callbacks once and remains idempotent on service retry' do
+      agent = make_human_available
       turn.update!(decision_type: 'handoff', decision_payload: {
                      'decision_type' => 'handoff', 'response_text' => '',
                      'reason_code' => 'human_requested', 'evidence_ids' => []
@@ -146,12 +156,12 @@ RSpec.describe ChatRing::OutboundCommitJob, type: :job do
       turn
       observed_commit_statuses = []
       allow(Rails.configuration.dispatcher).to receive(:dispatch).and_wrap_original do |original, event, *arguments|
-        observed_commit_statuses << ChatRing::OutboundCommit.find_by(ai_turn: turn)&.status if event == Conversation::CONVERSATION_BOT_HANDOFF
+        observed_commit_statuses << ChatRing::OutboundCommit.find_by(ai_turn: turn)&.status if event == Events::Types::ASSIGNEE_CHANGED
         original.call(event, *arguments)
       end
 
       described_class.perform_now(turn.id)
-      result = Conversations::AgentBotConditionalHandoffService.new(
+      result = Conversations::AgentBotConditionalHumanRouteService.new(
         turn: turn.reload,
         outbound_commit: turn.outbound_commit
       ).perform
@@ -159,6 +169,134 @@ RSpec.describe ChatRing::OutboundCommitJob, type: :job do
       expect(result.idempotent).to be(true)
       expect(observed_commit_statuses).to eq(%w[committed])
       expect(ChatRing::OutboundCommit.where(ai_turn: turn).count).to eq(1)
+      expect(conversation.reload.assignee).to eq(agent)
+    end
+
+    it 'recovers native v2 accounting after assignment commits without reassigning', :aggregate_failures do
+      agent = make_human_available
+      account.enable_features('assignment_v2')
+      account.save!
+      assignment_policy = create(:assignment_policy, account: account, enabled: true)
+      create(:inbox_assignment_policy, inbox: inbox, assignment_policy: assignment_policy)
+      turn.update!(decision_type: 'handoff', decision_payload: {
+                     'decision_type' => 'handoff', 'response_text' => '',
+                     'reason_code' => 'human_requested', 'evidence_ids' => []
+                   })
+      limiter = AutoAssignment::RateLimiter.new(inbox: inbox, agent: agent)
+      assignment_service = AutoAssignment::AssignmentService.new(inbox: inbox)
+      assignment_events = 0
+      fail_accounting = true
+      allow(AutoAssignment::AssignmentService).to receive(:new).with(inbox: inbox).and_return(assignment_service)
+      allow(Rails.configuration.dispatcher).to receive(:dispatch).and_wrap_original do |original, event, *arguments|
+        assignment_events += 1 if event == Events::Types::ASSIGNEE_CHANGED
+        original.call(event, *arguments)
+      end
+      allow(assignment_service).to receive(:account_assignment).and_wrap_original do |original, *args, **kwargs|
+        if fail_accounting
+          fail_accounting = false
+          raise Timeout::Error, 'simulated Redis loss after native assignment commit'
+        end
+
+        original.call(*args, **kwargs)
+      end
+
+      expect { described_class.perform_now(turn.id) }.to raise_error(Timeout::Error)
+      expect(turn.outbound_commit.reload).to be_status_committed
+      expect(turn.reload).to be_status_ready_to_commit
+      expect(turn.decision_payload.fetch('assigned_agent_id')).to eq(agent.id)
+      expect(conversation.reload.assignee).to eq(agent)
+      expect(limiter.current_count).to eq(0)
+
+      expect { described_class.perform_now(turn.id) }.to change(limiter, :current_count).from(0).to(1)
+      expect(turn.reload).to be_status_handed_off
+      expect(conversation.reload.assignee).to eq(agent)
+      expect(assignment_events).to eq(1)
+
+      turn.update!(status: :ready_to_commit)
+      expect { described_class.perform_now(turn.id) }.not_to change(limiter, :current_count)
+      expect(assignment_events).to eq(1)
+    end
+
+    it 'truthfully requests a callback without handing off when no eligible agent is online' do
+      allow(OnlineStatusTracker).to receive(:get_available_users).and_return({})
+      turn.update!(decision_type: 'handoff', decision_payload: {
+                     'decision_type' => 'handoff', 'response_text' => '',
+                     'reason_code' => 'human_requested', 'evidence_ids' => []
+                   })
+
+      described_class.perform_now(turn.id)
+
+      expect(turn.reload).to be_status_committed
+      expect(turn.decision_payload.fetch('routing_outcome')).to eq('human_unavailable_callback_requested')
+      expect(turn.outbound_commit).to have_attributes(status: 'committed', outcome_type: 'human_route')
+      expect(turn.outbound_commit.message.content).to eq(
+        'Our team is currently unavailable. Please leave your preferred callback time here, and a human can follow up in this conversation.'
+      )
+      expect(conversation.reload).to be_pending
+      expect(conversation.assignee_agent_bot).to eq(connection.agent_bot)
+    end
+
+    it 'uses the Inbox-approved Calendly Tool outside native business hours without a model-supplied URL' do
+      publish_appointment_policy
+      inbox.update!(working_hours_enabled: true)
+      inbox.working_hours.today.update!(closed_all_day: true, open_all_day: false)
+      turn.update!(decision_type: 'handoff', decision_payload: {
+                     'decision_type' => 'handoff', 'response_text' => '',
+                     'reason_code' => 'human_requested', 'evidence_ids' => []
+                   })
+
+      described_class.perform_now(turn.id)
+
+      execution = turn.reload.tool_execution
+      expect(turn).to be_status_committed
+      expect(turn.outbound_commit).to have_attributes(status: 'committed', outcome_type: 'human_route')
+      expect(execution).to have_attributes(
+        status: 'committed',
+        tool_key: 'request_appointment',
+        authorization_result: 'authorized_human_outside_hours'
+      )
+      expect(execution.validated_arguments).to eq('reason_code' => 'human_unavailable')
+      expect(turn.outbound_commit.message.content).to eq(
+        "Our team is currently outside business hours. You can choose an appointment time here:\n\n" \
+        "Book a 30 minute meeting\nhttps://calendly.com/cqalerts3/30min"
+      )
+      expect(conversation.reload).to be_pending
+      expect(conversation.assignee_agent_bot).to eq(connection.agent_bot)
+    end
+
+    it 'does not treat an online agent outside the current Conversation team as eligible' do
+      agent = create(:user, account: account, role: :agent)
+      create(:inbox_member, inbox: inbox, user: agent)
+      other_team = create(:team, account: account)
+      conversation.update!(team: other_team)
+      allow(OnlineStatusTracker).to receive(:get_available_users).and_return(agent.id.to_s => 'online')
+      turn.update!(decision_type: 'handoff', decision_payload: {
+                     'decision_type' => 'handoff', 'response_text' => '',
+                     'reason_code' => 'human_requested', 'evidence_ids' => []
+                   })
+
+      described_class.perform_now(turn.id)
+
+      expect(turn.reload).to be_status_committed
+      expect(turn.outbound_commit.message.content).to start_with('Our team is currently unavailable.')
+      expect(conversation.reload).to be_pending
+    end
+
+    it 'does not claim a transfer when native auto assignment is disabled' do
+      make_human_available
+      inbox.update!(enable_auto_assignment: false)
+      turn.update!(decision_type: 'handoff', decision_payload: {
+                     'decision_type' => 'handoff', 'response_text' => '',
+                     'reason_code' => 'human_requested', 'evidence_ids' => []
+                   })
+
+      described_class.perform_now(turn.id)
+
+      expect(turn.reload).to be_status_committed
+      expect(turn.outbound_commit.message.content).to start_with('We could not connect you to an available human right now.')
+      expect(conversation.reload).to be_pending
+      expect(conversation.assignee).to be_nil
+      expect(conversation.assignee_agent_bot).to eq(connection.agent_bot)
     end
 
     it 'persists a rejected handoff before reporting the failed precondition' do
@@ -176,7 +314,7 @@ RSpec.describe ChatRing::OutboundCommitJob, type: :job do
       expect(turn.outbound_commit.reload).to have_attributes(status: 'rejected', failure_code: 'conversation_not_pending')
 
       conversation.update!(status: :pending, assignee_agent_bot: connection.agent_bot)
-      service = Conversations::AgentBotConditionalHandoffService.new(
+      service = Conversations::AgentBotConditionalHumanRouteService.new(
         turn: turn,
         outbound_commit: turn.outbound_commit
       )
@@ -246,5 +384,31 @@ RSpec.describe ChatRing::OutboundCommitJob, type: :job do
     threads.each(&:join)
 
     expect(errors).to be_empty
+  end
+
+  def make_human_available
+    agent = create(:user, account: account, role: :agent)
+    create(:inbox_member, inbox: inbox, user: agent)
+    allow(OnlineStatusTracker).to receive(:get_available_users).and_return(agent.id.to_s => 'online')
+    agent
+  end
+
+  def publish_appointment_policy
+    actor = create(:user, account: account, role: :administrator)
+    ChatRing::Tools::PolicyPublisher.new(
+      workspace: workspace,
+      inbox: inbox,
+      actor: actor,
+      expected_lock_version: 0,
+      enabled_tools: [{ key: 'request_appointment', version: 1 }],
+      tool_configurations: {
+        request_appointment: {
+          provider: 'calendly',
+          url: 'https://calendly.com/cqalerts3/30min',
+          fallback_mode: 'approved_link',
+          link_label: 'Book a 30 minute meeting'
+        }
+      }
+    ).call
   end
 end

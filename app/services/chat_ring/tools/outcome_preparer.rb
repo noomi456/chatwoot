@@ -61,10 +61,9 @@ class ChatRing::Tools::OutcomePreparer
 
   def prepare_outcome!
     validate_turn!
-    policy_version, capability = authorize_request!
-    renderer_result = ChatRing::Tools::RequestAppointmentRenderer.call(policy_version)
+    authorization = authorize_request!
     outbound_commit = ChatRing::OutboundCommitPreparer.call(turn, decision.decision_type)
-    create_execution!(policy_version, capability, outbound_commit, renderer_result)
+    create_execution!(authorization, outbound_commit)
     mark_turn_ready!
   end
 
@@ -81,51 +80,17 @@ class ChatRing::Tools::OutcomePreparer
   def authorize_request!
     request = decision.tool_request
     reject!('tool_request_missing') unless request
-    reject!('tool_not_granted') unless grant_set.include?(request.definition.key, request.definition.version)
-
-    policy = current_policy
-    reject!('tool_policy_unavailable') if policy&.current_version.blank?
-
-    capability = capability_for(policy.current_version, request)
-    reject!(capability.reason || 'tool_renderer_unavailable') unless capability.available
-    [policy.current_version, capability]
+    ChatRing::Tools::RequestAppointmentAuthorization.call(turn, enforce_playbook_allowlist: true)
   end
 
-  def current_policy
-    ChatRing::InboxToolPolicy.active.includes(:current_version).find_by(
-      workspace_id: turn.workspace_id,
-      chatwoot_inbox_id: inbox.id
-    )
-  end
-
-  def capability_for(policy_version, request)
-    ChatRing::Tools::InboxCapabilityProfile.new(inbox: inbox, policy_version: policy_version)
-                                           .fetch(request.definition.key, request.definition.version)
-  end
-
-  def grant_set
-    ChatRing::Tools::GrantSet.new(turn.assistant_version.tool_grants)
-  rescue ChatRing::Tools::GrantSet::Invalid
-    reject!('tool_grants_invalid')
-  end
-
-  def create_execution!(policy_version, capability, outbound_commit, renderer_result)
+  def create_execution!(authorization, outbound_commit)
     request = decision.tool_request
-    ChatRing::ToolExecution.create!(
-      ai_turn: turn,
-      inbox_tool_policy_version: policy_version,
+    ChatRing::Tools::RequestAppointmentExecutionBuilder.call(
+      turn: turn,
       outbound_commit: outbound_commit,
-      tool_key: request.definition.key,
-      tool_version: request.definition.version,
-      status: :pending,
-      validated_arguments: request.arguments,
-      result_payload: renderer_result.payload,
-      authorization_result: 'authorized',
-      renderer: capability.renderer,
-      rendered_content: renderer_result.content,
-      idempotency_key: Digest::SHA256.hexdigest(
-        "chatring:tool:#{turn.workspace_id}:#{turn.id}:#{request.definition.identifier}"
-      )
+      authorization: authorization,
+      arguments: request.arguments,
+      authorization_result: 'authorized'
     )
   end
 

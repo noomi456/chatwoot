@@ -37,7 +37,6 @@ class ChatRing::Brain::Eligibility
     return assistant_failure if assistant_failure
     return policy_failure if policy_failure
     return template_effect_failure if template_effect_failure
-    return 'outside_inbox_hours' if turn.conversation.inbox.out_of_office?
 
     automation_failure
   end

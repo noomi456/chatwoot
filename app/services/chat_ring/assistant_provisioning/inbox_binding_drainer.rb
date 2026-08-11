@@ -53,8 +53,10 @@ class ChatRing::AssistantProvisioning::InboxBindingDrainer
   end
 
   def reconcile_committed_turn!(turn, outcome)
-    turn.tool_execution&.mark_committed!(timestamp: outcome.committed_at || Time.current) if outcome.outcome_type_tool?
-    turn.update!(status: outcome.outcome_type_handoff? ? :handed_off : :committed, failure_code: nil)
+    if outcome.outcome_type_tool? || outcome.outcome_type_human_route?
+      turn.tool_execution&.mark_committed!(timestamp: outcome.committed_at || Time.current)
+    end
+    turn.update!(status: outcome.native_handoff_committed? ? :handed_off : :committed, failure_code: nil)
   end
 
   def cancel_turn!(turn, execution, conversation)
