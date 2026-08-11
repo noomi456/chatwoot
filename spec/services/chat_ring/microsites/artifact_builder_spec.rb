@@ -1,10 +1,6 @@
 require 'rails_helper'
 
 RSpec.describe ChatRing::Microsites::ArtifactBuilder do
-  before do # rubocop:disable RSpec/ScatteredSetup
-    stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', true)
-  end
-
   let(:account) { create(:account) }
   let(:workspace) { account.chat_ring_workspace }
   let(:inbox) { create(:channel_widget, account: account).inbox }
@@ -55,7 +51,8 @@ RSpec.describe ChatRing::Microsites::ArtifactBuilder do
     )
   end
 
-  before do # rubocop:disable RSpec/ScatteredSetup
+  before do
+    stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', true)
     turn.evidence.create!(
       position: 0,
       evidence_id: 'evidence-1',
