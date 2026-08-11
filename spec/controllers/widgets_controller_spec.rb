@@ -21,6 +21,34 @@ describe '/widget', type: :request do
       expect(response.body).to include(token)
     end
 
+    it 'renders active Inbox-owned starters without adding a second visitor action path' do
+      ChatRing::InboxEngagement.create!(
+        workspace: ChatRing::Workspace.for_account!(account),
+        inbox: web_widget.inbox,
+        starters: [{ 'label' => 'See pricing', 'prompt' => 'What pricing plans do you offer?' }]
+      )
+
+      get widget_url(website_token: web_widget.website_token)
+
+      expect(response).to be_successful
+      expect(response.body).to include('conversationStarters')
+      expect(response.body).to include('What pricing plans do you offer?')
+    end
+
+    it 'escapes configured starter text at the HTML script boundary' do
+      ChatRing::InboxEngagement.create!(
+        workspace: ChatRing::Workspace.for_account!(account),
+        inbox: web_widget.inbox,
+        starters: [{ 'label' => 'Unsafe', 'prompt' => '</script><script>alert(1)</script>' }]
+      )
+
+      get widget_url(website_token: web_widget.website_token)
+
+      expect(response).to be_successful
+      expect(response.body).not_to include('</script><script>alert(1)</script>')
+      expect(response.body).to include('\\u003c/script\\u003e')
+    end
+
     it 'returns 404 when called with out website_token' do
       get widget_url
       expect(response).to have_http_status(:not_found)

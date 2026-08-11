@@ -1,0 +1,20 @@
+{
+  "CHATRING_ENGAGEMENTS": {
+    "TITLE": "Engagements",
+    "DESCRIPTION": "Configure ordered starter prompts for each Website Inbox.",
+    "INBOX": "Website Inbox",
+    "NATIVE_MESSAGE_NOTE": "A visitor click sends the configured prompt through the existing Website Widget message path.",
+    "STARTERS": "Conversation starters",
+    "STARTERS_DESCRIPTION": "Labels are shown to visitors. Prompts are sent as their ordinary customer messages.",
+    "ENABLED": "Enabled",
+    "LABEL": "Visitor label",
+    "PROMPT": "Message prompt",
+    "MOVE_UP": "Move starter up",
+    "MOVE_DOWN": "Move starter down",
+    "REMOVE": "Remove starter",
+    "ADD": "Add starter",
+    "SAVE": "Save engagements",
+    "SAVED": "Engagements saved.",
+    "ERROR": "Could not update Engagements."
+  }
+}
