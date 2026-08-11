@@ -49,9 +49,9 @@ RSpec.describe 'ChatRing microsite shares', type: :request do
   end
 
   it 'returns not found after expiry' do
-    artifact.update_column(:expires_at, 1.minute.ago)
-
-    get "/s/#{artifact.public_token}"
+    travel_to(2.days.from_now) do
+      get "/s/#{artifact.public_token}"
+    end
 
     expect(response).to have_http_status(:not_found)
   end

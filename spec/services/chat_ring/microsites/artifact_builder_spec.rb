@@ -1,7 +1,7 @@
 require 'rails_helper'
 
 RSpec.describe ChatRing::Microsites::ArtifactBuilder do
-  before do
+  before do # rubocop:disable RSpec/ScatteredSetup
     stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', true)
   end
 
@@ -55,7 +55,7 @@ RSpec.describe ChatRing::Microsites::ArtifactBuilder do
     )
   end
 
-  before do
+  before do # rubocop:disable RSpec/ScatteredSetup
     turn.evidence.create!(
       position: 0,
       evidence_id: 'evidence-1',

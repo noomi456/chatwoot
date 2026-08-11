@@ -22,7 +22,7 @@ class ChatRing::Brain::Decision
     )
   end
 
-  def initialize(payload, allowed_evidence_ids:, evidence_status:, playbook_context: nil,
+  def initialize(payload, allowed_evidence_ids:, evidence_status:, playbook_context: nil, # rubocop:disable Metrics/AbcSize
                  conversation_history_available: false)
     attributes = payload.to_h.stringify_keys
     @decision_type = attributes['decision_type'].to_s
@@ -79,7 +79,7 @@ class ChatRing::Brain::Decision
     validate_playbook_control!
   end
 
-  def validate_suggested_questions!(evidence_status)
+  def validate_suggested_questions!(evidence_status) # rubocop:disable Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
     if suggested_questions.length > MAX_SUGGESTED_QUESTIONS ||
        suggested_questions.any? { |question| question.length > MAX_SUGGESTED_QUESTION_LENGTH }
       raise Invalid, 'Suggested questions exceed the bounded contract'
@@ -89,7 +89,7 @@ class ChatRing::Brain::Decision
     raise Invalid, 'Active Playbooks cannot emit suggested questions' if suggested_questions.present? && @playbook_context.present?
   end
 
-  def validate_response_options!
+  def validate_response_options! # rubocop:disable Metrics/CyclomaticComplexity
     return if response_options.empty?
 
     if response_options.length > MAX_RESPONSE_OPTIONS || response_options.any? { |option| option.length > 160 }
@@ -118,7 +118,7 @@ class ChatRing::Brain::Decision
     raise Invalid, 'Non-reply decisions cannot contain response text'
   end
 
-  def validate_evidence!(allowed_evidence_ids, evidence_status)
+  def validate_evidence!(allowed_evidence_ids, evidence_status) # rubocop:disable Metrics/CyclomaticComplexity
     raise Invalid, 'Brain cited evidence outside the supplied set' unless evidence_ids.all? { |id| allowed_evidence_ids.include?(id) }
     return validate_reply_evidence!(evidence_status) if decision_type == 'reply'
     return validate_context_reply! if decision_type == 'context_reply'

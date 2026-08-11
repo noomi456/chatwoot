@@ -47,7 +47,7 @@ RSpec.describe ChatRing::Brain::Decision do
       described_class.from_payload(
         {
           decision_type: 'reply', response_text: 'Choose one.', reason_code: 'choose', evidence_ids: ['evidence-1'],
-          response_options: ['A', 'B'], suggested_questions: ['What next?']
+          response_options: %w[A B], suggested_questions: ['What next?']
         },
         allowed_evidence_ids: ['evidence-1'],
         evidence_status: 'accepted'

@@ -168,6 +168,7 @@ RSpec.describe ChatRing::Playbooks::Publisher do
     expect(publish(playbook, lock_version: playbook.lock_version).definition['steps'].pluck('kind'))
       .to eq(%w[ask_text tool terminal])
 
+    playbook.reload
     playbook.draft_definition = definition.deep_merge(
       steps: [{ id: 'switch', kind: 'transition', target_playbook_version_id: 123, carry_fields: [] }],
       entry_step_id: 'switch',

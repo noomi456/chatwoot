@@ -129,7 +129,7 @@ class Campaign < ApplicationRecord
     errors.add(:url, 'invalid') if inbox.inbox_type == 'Website' && !use_http_protocol
   end
 
-  def validate_website_trigger
+  def validate_website_trigger # rubocop:disable Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
     return unless inbox&.inbox_type == 'Website'
 
     rules = trigger_rules.to_h.stringify_keys

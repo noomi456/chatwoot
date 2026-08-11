@@ -41,7 +41,7 @@ RSpec.describe ChatRing::InboxConversationStarter do
   end
 
   it 'stores at most four starters and projects only the first two' do
-    starters = 4.times.map { |index| { 'label' => "Question #{index}", 'prompt' => "Prompt #{index}" } }
+    starters = Array.new(4) { |index| { 'label' => "Question #{index}", 'prompt' => "Prompt #{index}" } }
     configuration = described_class.create!(workspace: workspace, inbox: inbox, starters: starters)
 
     expect(ChatRing::ConversationStarters::StarterProjection.call(inbox)).to eq(starters.first(2))
