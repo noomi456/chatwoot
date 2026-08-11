@@ -2,8 +2,6 @@
 
 # This isolated fault-injection proxy deliberately keeps its request bridge in one
 # place so the proof does not introduce production middleware.
-# rubocop:disable Metrics/AbcSize, Metrics/MethodLength
-
 require 'fileutils'
 require 'json'
 require 'net/http'
@@ -96,29 +94,45 @@ class ChatRingProofLlmProxy
   end
 
   def forward(request, body)
+    uri = upstream_uri(request)
+    upstream_response = perform_upstream_request(uri, upstream_request(request, uri, body))
+    proxy_response(upstream_response)
+  end
+
+  def upstream_uri(request)
     uri = upstream.dup
     uri.path = request.path
     uri.query = request.query_string unless request.query_string.to_s.empty?
-    upstream_request = Net::HTTP::Post.new(uri)
+    uri
+  end
+
+  def upstream_request(request, uri, body)
+    result = Net::HTTP::Post.new(uri)
     request.env.each do |key, value|
       next unless key.start_with?('HTTP_')
 
       name = key.delete_prefix('HTTP_').downcase.tr('_', '-')
       next if HOP_BY_HOP_HEADERS.include?(name.downcase)
 
-      upstream_request[name] = value
+      result[name] = value
     end
-    upstream_request['content-type'] = request.content_type if request.content_type
-    upstream_request.body = body
-    upstream_response = Net::HTTP.start(
+    result['content-type'] = request.content_type if request.content_type
+    result.body = body
+    result
+  end
+
+  def perform_upstream_request(uri, request)
+    Net::HTTP.start(
       uri.host,
       uri.port,
       use_ssl: uri.scheme == 'https',
       open_timeout: 10,
       read_timeout: 60,
       write_timeout: 10
-    ) { |http| http.request(upstream_request) }
+    ) { |http| http.request(request) }
+  end
 
+  def proxy_response(upstream_response)
     headers = {}
     COPY_RESPONSE_HEADERS.each do |header|
       value = upstream_response[header]
@@ -136,4 +150,3 @@ server.add_tcp_listener('0.0.0.0', Integer(ENV.fetch('PORT', '8080')))
 trap('TERM') { server.stop(true) }
 trap('INT') { server.stop(true) }
 server.run.join
-# rubocop:enable Metrics/AbcSize, Metrics/MethodLength
