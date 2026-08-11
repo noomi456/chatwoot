@@ -2,7 +2,7 @@ class Api::V1::Widget::Integrations::DyteController < Api::V1::Widget::BaseContr
   before_action :set_message
 
   def add_participant_to_meeting
-    if @message.content_type != 'integrations'
+    unless visitor_visible_meeting_message?
       return render json: {
         error: I18n.t('errors.dyte.invalid_message_type')
       }, status: :unprocessable_entity
@@ -26,9 +26,20 @@ class Api::V1::Widget::Integrations::DyteController < Api::V1::Widget::BaseContr
     Integrations::Dyte::ProcessorService.new(account: @web_widget.inbox.account, conversation: @conversation)
   end
 
+  def visitor_visible_meeting_message?
+    attributes = @message.content_attributes.with_indifferent_access
+
+    @message.content_type == 'integrations' &&
+      @message.outgoing? &&
+      !@message.private? &&
+      attributes[:type] == 'dyte' &&
+      attributes[:data].is_a?(Hash) &&
+      attributes.dig(:data, :meeting_id).present?
+  end
+
   def set_message
-    @message = @web_widget.inbox.messages.find(permitted_params[:message_id])
-    @conversation = @message.conversation
+    @conversation = conversations.joins(:messages).find_by!(messages: { id: permitted_params[:message_id] })
+    @message = @conversation.messages.find(permitted_params[:message_id])
   end
 
   def permitted_params
