@@ -55,7 +55,7 @@ RSpec.describe ChatRing::Playbooks::Publisher do
       { id: 'complete', kind: 'terminal', outcome: 'complete', message: 'Thank you. Your request is complete.' }
     ]
 
-    expect { publish(playbook) }.to raise_error(ChatRing::Playbooks::Publisher::InvalidDefinition) do |error|
+    expect { publish(playbook) }.to raise_error(described_class::InvalidDefinition) do |error|
       expect(error.result.errors.pluck(:code)).to include('choice_label_too_long', 'choice_value_too_long')
     end
   end
