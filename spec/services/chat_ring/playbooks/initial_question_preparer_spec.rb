@@ -52,6 +52,6 @@ RSpec.describe ChatRing::Playbooks::InitialQuestionPreparer do
   private
 
   def build_context
-    ChatRing::Playbooks::InitialQuestionPreparerSpecSupport.build
+    ChatRingPlaybookSpecSupport.build
   end
 end

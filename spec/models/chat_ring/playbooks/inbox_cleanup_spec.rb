@@ -2,7 +2,7 @@ require 'rails_helper'
 
 RSpec.describe ChatRing::Playbooks::InboxCleanup do
   it 'removes only the subordinate Playbook runtime before native Inbox deletion' do
-    context = ChatRing::Playbooks::InitialQuestionPreparerSpecSupport.build
+    context = ChatRingPlaybookSpecSupport.build
     turn = context.fetch(:turn)
     inbox = turn.conversation.inbox
     other_inbox = create(:channel_widget, account: inbox.account).inbox

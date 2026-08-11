@@ -67,7 +67,7 @@ describe Conversations::AssignmentService do
         conversation.update!(assignee_agent_bot: connection.agent_bot, assignee: nil, status: :pending)
         trigger = create(:message, account: account, inbox: inbox, conversation: conversation,
                                    sender: conversation.contact, message_type: :incoming)
-        execution = ChatRing::Playbooks::InitialQuestionPreparerSpecSupport.create_execution(
+        execution = ChatRingPlaybookSpecSupport.create_execution(
           workspace,
           inbox,
           conversation,

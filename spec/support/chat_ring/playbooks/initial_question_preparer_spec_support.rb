@@ -1,4 +1,4 @@
-module ChatRing::Playbooks::InitialQuestionPreparerSpecSupport
+module ChatRingPlaybookSpecSupport
   module_function
 
   def build

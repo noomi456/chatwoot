@@ -262,7 +262,7 @@ RSpec.describe ChatRing::AssistantProvisioning::InboxBindingActivator do
         message_type: :incoming
       )
     end
-    execution = ChatRing::Playbooks::InitialQuestionPreparerSpecSupport.create_execution(
+    execution = ChatRingPlaybookSpecSupport.create_execution(
       workspace,
       inbox,
       conversation,
@@ -313,7 +313,7 @@ RSpec.describe ChatRing::AssistantProvisioning::InboxBindingActivator do
       sender: conversation.contact,
       message_type: :incoming
     )
-    execution = ChatRing::Playbooks::InitialQuestionPreparerSpecSupport.create_execution(
+    execution = ChatRingPlaybookSpecSupport.create_execution(
       workspace,
       inbox,
       conversation,

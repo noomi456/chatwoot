@@ -186,7 +186,7 @@ RSpec.describe ChatRing::Playbooks::CommitEffect do
   end
 
   it 'terminalizes the exact pinned execution in the same successful native AI handoff transaction' do
-    context = ChatRing::Playbooks::InitialQuestionPreparerSpecSupport.build
+    context = ChatRingPlaybookSpecSupport.build
     handoff_turn = context.fetch(:turn)
     handoff_turn.update!(
       status: :ready_to_commit,
@@ -215,7 +215,7 @@ RSpec.describe ChatRing::Playbooks::CommitEffect do
   private
 
   def build_prepared_turn
-    base = ChatRing::Playbooks::InitialQuestionPreparerSpecSupport.build
+    base = ChatRingPlaybookSpecSupport.build
     ChatRing::Playbooks::InitialQuestionPreparer.call(
       base.fetch(:turn),
       context_digest: Digest::SHA256.hexdigest('playbook-context')

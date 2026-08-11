@@ -54,7 +54,7 @@ RSpec.describe ChatRing::AiTurnRecoverySweepJob, type: :job do
 
   it 'terminalizes a waiting Playbook with no recoverable AI turn while the public gate is closed' do
     stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', false)
-    context = ChatRing::Playbooks::InitialQuestionPreparerSpecSupport.build
+    context = ChatRingPlaybookSpecSupport.build
     turn = context.fetch(:turn)
     execution = turn.inbox_playbook_execution
     execution.update!(status: :waiting_for_customer)

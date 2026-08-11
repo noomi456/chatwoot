@@ -60,7 +60,7 @@ RSpec.describe ChatRing::OutboundCommitJob, type: :job do
     end
 
     it 'commits one server-rendered Playbook question and then finalizes the historical turn pin' do
-      context = ChatRing::Playbooks::InitialQuestionPreparerSpecSupport.build
+      context = ChatRingPlaybookSpecSupport.build
       playbook_turn = context.fetch(:turn)
       playbook_turn.update!(status: :received)
       allow(ChatRing::Knowledge::Retriever).to receive(:active_index_id).and_return(nil)
