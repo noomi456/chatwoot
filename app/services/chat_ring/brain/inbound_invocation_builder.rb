@@ -22,6 +22,7 @@ class ChatRing::Brain::InboundInvocationBuilder
       model_context: model_context(history, trigger, native_messages),
       audit_metadata: audit_metadata(provenance, query_resolution),
       query: query_resolution.retrieval_query,
+      retrieval_queries: query_resolution.retrieval_queries,
       deadline_at: turn.deadline_at
     )
   end
