@@ -47,10 +47,9 @@ describe('Widget Messages conversation starters', () => {
   it('sends a starter through the existing native Widget message action', async () => {
     const wrapper = mountView([]);
 
-    await wrapper.getComponent({ name: 'ConversationStarters' }).vm.$emit(
-      'select',
-      'What pricing plans do you offer?'
-    );
+    await wrapper
+      .getComponent({ name: 'ConversationStarters' })
+      .vm.$emit('select', 'What pricing plans do you offer?');
 
     expect(sendMessage).toHaveBeenCalledWith(expect.anything(), {
       content: 'What pricing plans do you offer?',
@@ -61,16 +60,16 @@ describe('Widget Messages conversation starters', () => {
   it('does not show starters after the native conversation contains a message', () => {
     const wrapper = mountView([{ id: 1, content: 'Existing message' }]);
 
-    expect(wrapper.findComponent({ name: 'ConversationStarters' }).exists()).toBe(
-      false
-    );
+    expect(
+      wrapper.findComponent({ name: 'ConversationStarters' }).exists()
+    ).toBe(false);
   });
 
   it('does not show starters before native message history has loaded', () => {
     const wrapper = mountView([], { allMessagesLoaded: false });
 
-    expect(wrapper.findComponent({ name: 'ConversationStarters' }).exists()).toBe(
-      false
-    );
+    expect(
+      wrapper.findComponent({ name: 'ConversationStarters' }).exists()
+    ).toBe(false);
   });
 });

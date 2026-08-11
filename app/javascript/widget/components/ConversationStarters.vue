@@ -10,10 +10,7 @@ const emit = defineEmits(['select']);
 </script>
 
 <template>
-  <section
-    class="px-5 pt-4"
-    :aria-label="$t('CONVERSATION_STARTERS_TITLE')"
-  >
+  <section class="px-5 pt-4" :aria-label="$t('CONVERSATION_STARTERS_TITLE')">
     <p class="mb-2 text-sm font-medium text-n-slate-11">
       {{ $t('CONVERSATION_STARTERS_TITLE') }}
     </p>

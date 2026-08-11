@@ -174,31 +174,28 @@ onMounted(load);
               />
               <div class="flex items-end gap-1">
                 <Button
+                  icon="i-lucide-arrow-up"
                   variant="outline"
                   color="slate"
                   :disabled="index === 0"
                   :aria-label="t('CHATRING_ENGAGEMENTS.MOVE_UP')"
                   @click="moveStarter(index, -1)"
-                >
-                  ↑
-                </Button>
+                />
                 <Button
+                  icon="i-lucide-arrow-down"
                   variant="outline"
                   color="slate"
                   :disabled="index === form.starters.length - 1"
                   :aria-label="t('CHATRING_ENGAGEMENTS.MOVE_DOWN')"
                   @click="moveStarter(index, 1)"
-                >
-                  ↓
-                </Button>
+                />
                 <Button
+                  icon="i-lucide-x"
                   variant="outline"
                   color="ruby"
                   :aria-label="t('CHATRING_ENGAGEMENTS.REMOVE')"
                   @click="removeStarter(index)"
-                >
-                  ×
-                </Button>
+                />
               </div>
             </div>
 

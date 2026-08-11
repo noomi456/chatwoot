@@ -43,8 +43,12 @@ describe('ChatRing Engagements administration page', () => {
     await flushPromises();
 
     expect(mocks.list).toHaveBeenCalledOnce();
-    expect(wrapper.text()).toContain('See pricing');
-    expect(wrapper.text()).toContain('Book a demo');
+    expect(wrapper.findAll('input').map(input => input.element.value)).toEqual([
+      'See pricing',
+      'What pricing plans do you offer?',
+      'Book a demo',
+      'I would like to book a demo.',
+    ]);
     expect(wrapper.text()).toContain('CHATRING_ENGAGEMENTS.NATIVE_MESSAGE_NOTE');
   });
 
@@ -54,7 +58,11 @@ describe('ChatRing Engagements administration page', () => {
 
     const moveDown = wrapper
       .findAll('button')
-      .find(button => button.attributes('aria-label') === 'CHATRING_ENGAGEMENTS.MOVE_DOWN');
+      .find(
+        button =>
+          button.attributes('aria-label') ===
+          'CHATRING_ENGAGEMENTS.MOVE_DOWN'
+      );
     await moveDown.trigger('click');
 
     const save = wrapper
