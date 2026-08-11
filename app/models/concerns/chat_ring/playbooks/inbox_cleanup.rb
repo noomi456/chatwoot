@@ -11,7 +11,7 @@ module ChatRing::Playbooks::InboxCleanup
   # Runtime executions intentionally restrict ordinary version deletion, so
   # remove only this Inbox's subordinate runtime records before that cascade.
   def destroy_chat_ring_playbook_runtime_records
-    workspace = account.chat_ring_workspace
+    workspace = account&.chat_ring_workspace
     return unless workspace
 
     execution_ids = ChatRing::InboxPlaybookExecution

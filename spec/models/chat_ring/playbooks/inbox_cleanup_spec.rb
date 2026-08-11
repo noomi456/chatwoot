@@ -18,4 +18,12 @@ RSpec.describe ChatRing::Playbooks::InboxCleanup do
     expect(ChatRing::InboxPlaybook.exists?(playbook.id)).to be(false)
     expect(Inbox.exists?(other_inbox.id)).to be(true)
   end
+
+  it 'does not interfere with native cleanup of an Inbox whose Account is already gone' do
+    account = create(:account)
+    inbox = create(:inbox, account: account)
+    account.delete
+
+    expect { Inbox.find(inbox.id).destroy! }.not_to raise_error
+  end
 end
