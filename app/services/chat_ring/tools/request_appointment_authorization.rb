@@ -1,18 +1,20 @@
 class ChatRing::Tools::RequestAppointmentAuthorization
   Result = Data.define(:policy_version, :capability, :renderer_result)
 
-  def self.call(turn, enforce_playbook_allowlist: false, presentation_context: nil)
+  def self.call(turn, enforce_playbook_allowlist: false, presentation_context: nil, playbook_step_id: nil)
     new(
       turn,
       enforce_playbook_allowlist: enforce_playbook_allowlist,
-      presentation_context: presentation_context
+      presentation_context: presentation_context,
+      playbook_step_id: playbook_step_id
     ).call
   end
 
-  def initialize(turn, enforce_playbook_allowlist:, presentation_context:)
+  def initialize(turn, enforce_playbook_allowlist:, presentation_context:, playbook_step_id:)
     @turn = turn
     @enforce_playbook_allowlist = enforce_playbook_allowlist
     @presentation_context = presentation_context
+    @playbook_step_id = playbook_step_id
   end
 
   def call
@@ -27,7 +29,7 @@ class ChatRing::Tools::RequestAppointmentAuthorization
 
   private
 
-  attr_reader :turn, :enforce_playbook_allowlist, :presentation_context
+  attr_reader :turn, :enforce_playbook_allowlist, :presentation_context, :playbook_step_id
 
   def grant_set
     ChatRing::Tools::GrantSet.new(turn.assistant_version.tool_grants)
@@ -77,7 +79,8 @@ class ChatRing::Tools::RequestAppointmentAuthorization
   def playbook_allows_tool?
     return true unless enforce_playbook_allowlist && turn.inbox_playbook_execution_id
 
-    Array(ChatRing::Playbooks::InvocationProjection.new(turn).tool_allowlist).any? do |item|
+    projection = ChatRing::Playbooks::InvocationProjection.new(turn, step_id: playbook_step_id)
+    Array(projection.tool_allowlist).any? do |item|
       attributes = item.to_h.deep_stringify_keys
       attributes['key'] == 'request_appointment' && attributes['version'].to_i == 1
     end

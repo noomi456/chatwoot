@@ -47,7 +47,7 @@ RSpec.describe ChatRing::Brain::Decision do
       described_class.from_payload(
         {
           decision_type: 'reply', response_text: 'Choose one.', reason_code: 'choose', evidence_ids: ['evidence-1'],
-          response_options: ['A', 'B'], suggested_questions: ['What next?']
+          response_options: %w[A B], suggested_questions: ['What next?']
         },
         allowed_evidence_ids: ['evidence-1'],
         evidence_status: 'accepted'
@@ -89,6 +89,63 @@ RSpec.describe ChatRing::Brain::Decision do
         evidence_status: 'insufficient_evidence'
       )
     end.to raise_error(described_class::Invalid, 'Grounded replies require accepted evidence')
+  end
+
+  it 'does not allow Conversation history to satisfy a factual reply' do
+    expect do
+      described_class.from_payload(
+        {
+          decision_type: 'reply', response_text: 'Salesforce is supported.',
+          reason_code: 'answered', evidence_ids: []
+        },
+        allowed_evidence_ids: [],
+        evidence_status: 'insufficient_evidence',
+        conversation_history_reply_allowed: false
+      )
+    end.to raise_error(described_class::Invalid, 'Grounded replies require accepted evidence')
+  end
+
+  it 'accepts a history-only Conversation reply and rejects it without native history' do
+    decision = described_class.from_payload(
+      {
+        decision_type: 'context_reply', response_text: 'You previously asked about pricing.',
+        reason_code: 'conversation_history', evidence_ids: []
+      },
+      allowed_evidence_ids: [],
+      evidence_status: 'insufficient_evidence',
+      conversation_history_reply_allowed: true
+    )
+
+    expect(decision.to_h).to include('decision_type' => 'context_reply', 'evidence_ids' => [])
+
+    expect do
+      described_class.from_payload(
+        {
+          decision_type: 'context_reply', response_text: 'You previously asked about pricing.',
+          reason_code: 'conversation_history', evidence_ids: []
+        },
+        allowed_evidence_ids: [],
+        evidence_status: 'insufficient_evidence'
+      )
+    end.to raise_error(
+      described_class::Invalid,
+      'Conversation replies require an explicit history request with prior public history'
+    )
+
+    expect do
+      described_class.from_payload(
+        {
+          decision_type: 'context_reply', response_text: 'Salesforce is supported.',
+          reason_code: 'conversation_history', evidence_ids: []
+        },
+        allowed_evidence_ids: [],
+        evidence_status: 'insufficient_evidence',
+        conversation_history_reply_allowed: false
+      )
+    end.to raise_error(
+      described_class::Invalid,
+      'Conversation replies require an explicit history request with prior public history'
+    )
   end
 
   it 'rejects evidence IDs that were not supplied to the model' do

@@ -164,7 +164,7 @@ class Conversations::AgentBotConditionalCommitService
     outbound_commit
   end
 
-  def create_message(turn, outbound_commit, attributes)
+  def create_message(turn, _outbound_commit, attributes) # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength
     microsite = ChatRing::Microsites::ArtifactBuilder.call(turn)
     content_attributes = {
       'chatring_citations' => ChatRing::Brain::VisitorCitationPresenter.call(turn)

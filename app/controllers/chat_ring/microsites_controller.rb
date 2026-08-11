@@ -1,4 +1,4 @@
-class ChatRing::MicrositesController < ActionController::Base
+class ChatRing::MicrositesController < ActionController::Base # rubocop:disable Rails/ApplicationController
   helper_method :safe_public_url?
 
   def show

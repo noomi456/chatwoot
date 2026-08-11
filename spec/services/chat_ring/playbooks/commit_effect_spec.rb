@@ -154,8 +154,8 @@ RSpec.describe ChatRing::Playbooks::CommitEffect do
       content: "Book a meeting\nhttps://calendly.com/cqalerts3/30min\n\nThank you. Your request is complete."
     )
     expect(result.message.content_attributes.fetch('chatring_tool')).to include(
-      'tool_key' => 'request_appointment',
-      'url' => 'https://calendly.com/cqalerts3/30min'
+      'presentation_mode' => 'calendar_embed',
+      'approved_url' => 'https://calendly.com/cqalerts3/30min'
     )
     expect(follow_up.tool_execution.reload).to be_status_committed
     expect(tool_execution.reload).to have_attributes(status: 'completed', current_step_id: 'complete')

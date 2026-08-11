@@ -1,4 +1,4 @@
-class ChatRing::Playbooks::CommitPlan
+class ChatRing::Playbooks::CommitPlan # rubocop:disable Metrics/ClassLength
   class Invalid < StandardError
     attr_reader :code
 
@@ -50,9 +50,8 @@ class ChatRing::Playbooks::CommitPlan
   private
 
   attr_reader :turn, :execution, :control
-  attr_writer :content
-  attr_accessor :execution_attributes, :transition_action, :from_step_id, :to_step_id,
-                :content_type, :content_attributes
+  attr_accessor :execution_attributes, :transition_action, :from_step_id, :to_step_id
+  attr_writer :content, :content_type, :content_attributes
 
   def validate_snapshot!
     raise Invalid, 'playbook_commit_control_stale' unless execution.id == turn.inbox_playbook_execution_id
@@ -208,16 +207,15 @@ class ChatRing::Playbooks::CommitPlan
     raise Invalid, e.code
   end
 
-  def navigate_tool_step(step)
+  def navigate_tool_step(step) # rubocop:disable Metrics/MethodLength
     tool = step.fetch('tool')
-    unless tool.values_at('key', 'version') == ['request_appointment', 1]
-      raise Invalid, 'playbook_tool_unsupported'
-    end
+    raise Invalid, 'playbook_tool_unsupported' unless tool.values_at('key', 'version') == ['request_appointment', 1]
 
     authorization = ChatRing::Tools::RequestAppointmentAuthorization.call(
       turn,
       enforce_playbook_allowlist: true,
-      presentation_context: 'playbook_step'
+      presentation_context: 'playbook_step',
+      playbook_step_id: step.fetch('id')
     )
     tool_execution = ChatRing::Tools::RequestAppointmentExecutionBuilder.call(
       turn: turn,

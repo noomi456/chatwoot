@@ -4,6 +4,7 @@ class ChatRing::OutboundCommitPreparer
   EFFECTFUL_DECISIONS = {
     'reply' => :reply,
     'clarification' => :reply,
+    'context_reply' => :reply,
     'playbook' => :reply,
     'request_appointment' => :tool,
     'handoff' => :human_route,

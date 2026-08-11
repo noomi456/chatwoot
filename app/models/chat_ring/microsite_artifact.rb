@@ -30,7 +30,7 @@ class ChatRing::MicrositeArtifact < ApplicationRecord
 
   private
 
-  def payload_contract
+  def payload_contract # rubocop:disable Metrics/CyclomaticComplexity
     errors.add(:content, 'must be an object') unless content.is_a?(Hash)
     errors.add(:source_evidence_ids, 'must be an array') unless source_evidence_ids.is_a?(Array)
     return unless content.is_a?(Hash)

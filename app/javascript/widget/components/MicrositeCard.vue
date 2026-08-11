@@ -38,7 +38,7 @@ const microsite = computed(() => {
     class="block w-full p-3 border rounded-lg border-n-weak bg-n-background hover:border-n-strong"
   >
     <span class="block text-xs font-medium uppercase text-n-brand">
-      Personalized page
+      {{ $t('PERSONALIZED_PAGE') }}
     </span>
     <span class="block mt-1 text-sm font-semibold text-n-slate-12">
       {{ microsite.title }}

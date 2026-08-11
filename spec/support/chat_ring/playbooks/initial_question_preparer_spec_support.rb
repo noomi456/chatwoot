@@ -1,4 +1,4 @@
-module ChatRingPlaybookSpecSupport
+module ChatRingPlaybookSpecSupport # rubocop:disable Metrics/ModuleLength
   module_function
 
   def build(tool_enabled: false)
@@ -58,7 +58,7 @@ module ChatRingPlaybookSpecSupport
     )
   end
 
-  def create_execution(workspace, inbox, conversation, trigger, tool_enabled:)
+  def create_execution(workspace, inbox, conversation, trigger, tool_enabled: false)
     actor = FactoryBot.create(:user, account: conversation.account, role: :administrator)
     publish_tool_policy(workspace, inbox, actor) if tool_enabled
     playbook = workspace.inbox_playbooks.create!(

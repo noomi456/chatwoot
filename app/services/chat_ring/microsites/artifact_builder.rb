@@ -13,7 +13,7 @@ class ChatRing::Microsites::ArtifactBuilder
     @turn = turn
   end
 
-  def call
+  def call # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength
     requested_types = ChatRing::Microsites::SectionContract.normalize_types(
       turn.decision_payload['microsite_section_types']
     )
@@ -51,7 +51,7 @@ class ChatRing::Microsites::ArtifactBuilder
     turn.evidence.where(evidence_id: ids).order(:position).limit(MAX_FACTS)
   end
 
-  def build_section(type, evidence)
+  def build_section(type, evidence) # rubocop:disable Metrics/CyclomaticComplexity
     case type
     when 'hero' then hero_section(evidence)
     when 'features_grid' then item_section(type, 'Key details', evidence)

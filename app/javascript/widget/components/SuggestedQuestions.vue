@@ -13,7 +13,7 @@ const emit = defineEmits(['select']);
   <div
     v-if="questions.length"
     class="flex flex-wrap gap-2"
-    aria-label="Suggested questions"
+    :aria-label="$t('SUGGESTED_QUESTIONS')"
   >
     <button
       v-for="question in questions.slice(0, 2)"

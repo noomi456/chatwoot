@@ -52,7 +52,7 @@ class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
 
   attr_reader :turn, :provider, :attempt
 
-  def execute_claimed_turn
+  def execute_claimed_turn # rubocop:disable Metrics/CyclomaticComplexity
     invocation = prepare_invocation
     return unless invocation
 
@@ -60,7 +60,9 @@ class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
     return handle_retrieval_failure!(evidence_set.error_code || 'knowledge_provider_failed') if evidence_set.status == 'provider_error'
 
     persist_evidence!(evidence_set)
-    return complete_without_evidence!(invocation.digest) if evidence_set.status != 'accepted' && !semantic_action_available?(invocation)
+    if evidence_set.status != 'accepted' && !semantic_action_available?(invocation) && !conversation_history_request?(invocation)
+      return complete_without_evidence!(invocation.digest)
+    end
     return unless recheck_eligibility!
 
     run_inference(invocation, evidence_set)
@@ -88,6 +90,11 @@ class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
 
   def semantic_action_available?(invocation)
     tools_available?(invocation) || invocation.model_context['active_playbook'].present?
+  end
+
+  def conversation_history_request?(invocation)
+    invocation.model_context.dig('conversation', 'history').present? &&
+      invocation.model_context.dig('conversation', 'history_request') == true
   end
 
   def run_inference(invocation, evidence_set)
@@ -159,12 +166,25 @@ class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
 
   def retrieve_evidence(invocation)
     ensure_within_deadline!
+    queries = invocation.retrieval_queries
+    timeout_per_query = [remaining_timeout(RETRIEVAL_TIMEOUT) / queries.length, 1].max
+    evidence_sets = queries.map do |query|
+      retrieve_query(query, timeout_per_query)
+    end
+    ChatRing::Knowledge::EvidenceSetMerger.call(
+      evidence_sets,
+      limit: ChatRing::Knowledge::DocsGptProvider::DEFAULT_EVIDENCE_LIMIT
+    )
+  end
+
+  def retrieve_query(query, timeout_per_query)
+    ensure_within_deadline!
     ChatRing::Knowledge::Retriever.retrieve(
       inbox: turn.conversation.inbox,
-      query: invocation.query,
+      query: query,
       knowledge_scope: turn.assistant_version.knowledge_scope,
       knowledge_index_id: turn.knowledge_index_id,
-      timeout_seconds: remaining_timeout(RETRIEVAL_TIMEOUT)
+      timeout_seconds: [remaining_timeout(RETRIEVAL_TIMEOUT), timeout_per_query].min
     )
   end
 

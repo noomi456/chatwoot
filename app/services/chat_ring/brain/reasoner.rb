@@ -18,7 +18,8 @@ class ChatRing::Brain::Reasoner
       provider_result.payload,
       allowed_evidence_ids: evidence_set.items.map(&:id),
       evidence_status: evidence_set.status,
-      playbook_context: invocation.model_context['active_playbook']
+      playbook_context: invocation.model_context['active_playbook'],
+      conversation_history_reply_allowed: conversation_history_reply_allowed?
     )
     Result.new(decision: decision, provider_result: provider_result, messages: messages.freeze)
   end
@@ -26,4 +27,9 @@ class ChatRing::Brain::Reasoner
   private
 
   attr_reader :invocation, :evidence_set, :provider
+
+  def conversation_history_reply_allowed?
+    invocation.model_context.dig('conversation', 'history').present? &&
+      invocation.model_context.dig('conversation', 'history_request') == true
+  end
 end
