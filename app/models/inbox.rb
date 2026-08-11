@@ -46,6 +46,7 @@ class Inbox < ApplicationRecord
   include AccountCacheRevalidator
   include InboxAgentAvailability
   include InboxBrandedEmailLayoutable
+  include ChatRing::Playbooks::InboxCleanup
 
   # Not allowing characters:
   validates :name, presence: true

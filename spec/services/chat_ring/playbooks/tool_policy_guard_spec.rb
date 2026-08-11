@@ -60,6 +60,6 @@ RSpec.describe ChatRing::Playbooks::ToolPolicyGuard do
         enabled_tools: [],
         tool_configurations: {}
       ).call
-    end.to raise_error(described_class::InvalidActivePlaybooks, /Book a demo/)
+    end.to raise_error(ChatRing::Playbooks::ToolPolicyGuard::InvalidActivePlaybooks, /Book a demo/)
   end
 end
