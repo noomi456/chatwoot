@@ -75,10 +75,42 @@ RSpec.describe ChatRing::Brain::InboundInvocationBuilder do
     expect(invocation.query.length).to eq(ChatRing::Knowledge::DocsGptProvider::MAX_QUERY_LENGTH)
   end
 
-  it 'adds the configured Assistant identity to a standalone retrieval query' do
+  it 'keeps the proven identity anchor for a standalone retrieval query without adding unrelated history' do
     invocation = described_class.new(turn).build
 
-    expect(invocation.query).to eq('ChatRing AI Current question')
+    expect(invocation.query).to eq("ChatRing AI\nCurrent question")
+    expect(invocation.audit_metadata.fetch('retrieval_query')).to include(
+      'strategy' => 'standalone_with_identity_anchor', 'contextualized' => false, 'history_message_ids' => []
+    )
+  end
+
+  it 'contextualizes a reference-dependent follow-up from bounded native public history' do
+    prior_question = turn.conversation.messages.find_by!(content: 'Earlier customer')
+    prior_response = turn.conversation.messages.find_by!(content: 'External bot answer')
+    turn.trigger_message.update!(content: 'How does it work?')
+
+    invocation = described_class.new(turn.reload).build
+
+    expect(invocation.query).to include(
+      'ChatRing AI',
+      'Current question: How does it work?',
+      'Customer: Earlier customer',
+      'Previous response: External bot answer'
+    )
+    expect(invocation.audit_metadata.fetch('retrieval_query')).to include(
+      'strategy' => 'bounded_native_history',
+      'contextualized' => true,
+      'history_message_ids' => [prior_question.id, prior_response.id]
+    )
+  end
+
+  it 'does not contaminate an explicit topic switch with earlier Conversation history' do
+    turn.trigger_message.update!(content: 'What integrations are available?')
+
+    invocation = described_class.new(turn.reload).build
+
+    expect(invocation.query).to eq("ChatRing AI\nWhat integrations are available?")
+    expect(invocation.query).not_to include('Earlier customer', 'External bot answer')
   end
 
   it 'projects a pinned Inbox Playbook step without exposing native target identifiers or collected values' do
