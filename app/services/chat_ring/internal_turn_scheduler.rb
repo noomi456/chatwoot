@@ -78,9 +78,15 @@ class ChatRing::InternalTurnScheduler
     existing = find_turn(relationship.workspace)
     return [existing, false] if existing
 
-    [ChatRing::AiTurn.create!(turn_attributes(relationship)), true]
+    reason = native_terminal_reason
+    playbook_execution = resolve_playbook_execution(relationship.workspace) unless reason
+    [ChatRing::AiTurn.create!(turn_attributes(relationship, playbook_execution, reason)), true]
   rescue ActiveRecord::RecordNotUnique
     [find_turn(relationship.workspace), false]
+  end
+
+  def resolve_playbook_execution(workspace)
+    ChatRing::Playbooks::TurnResolver.new(message: message, workspace: workspace).call.execution
   end
 
   def find_turn(workspace)
@@ -91,8 +97,7 @@ class ChatRing::InternalTurnScheduler
     )
   end
 
-  def turn_attributes(relationship)
-    reason = native_terminal_reason
+  def turn_attributes(relationship, playbook_execution, reason)
     {
       workspace: relationship.workspace,
       conversation: message.conversation,
@@ -108,6 +113,14 @@ class ChatRing::InternalTurnScheduler
       completed_at: reason ? Time.current : nil,
       native_handling_snapshot: native_handling_snapshot,
       deadline_at: Time.current + ChatRing::AiTurn::DEFAULT_DEADLINE
+    }.merge(playbook_turn_attributes(playbook_execution))
+  end
+
+  def playbook_turn_attributes(execution)
+    {
+      inbox_playbook_execution: execution,
+      playbook_execution_lock_version: execution&.lock_version,
+      playbook_step_id: execution&.current_step_id
     }
   end
 

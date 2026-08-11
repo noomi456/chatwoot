@@ -5,6 +5,10 @@ class ChatRing::InboxPlaybookVersion < ApplicationRecord
              class_name: 'ChatRing::InboxPlaybook',
              inverse_of: :versions
   belongs_to :created_by, class_name: 'User', inverse_of: false, optional: true
+  has_many :executions,
+           class_name: 'ChatRing::InboxPlaybookExecution',
+           inverse_of: :inbox_playbook_version,
+           dependent: :restrict_with_exception
 
   validates :version, numericality: { only_integer: true, greater_than: 0 }, uniqueness: { scope: :inbox_playbook_id }
   validates :name, :published_at, presence: true

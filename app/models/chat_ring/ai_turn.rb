@@ -31,6 +31,10 @@ class ChatRing::AiTurn < ApplicationRecord
   belongs_to :assistant_version, class_name: 'ChatRing::AssistantVersion', inverse_of: :ai_turns
   belongs_to :expected_agent_bot, class_name: 'AgentBot', inverse_of: false
   belongs_to :knowledge_index, class_name: 'ChatRing::KnowledgeIndex', optional: true
+  belongs_to :inbox_playbook_execution,
+             class_name: 'ChatRing::InboxPlaybookExecution',
+             inverse_of: :ai_turns,
+             optional: true
   has_many :attempts,
            class_name: 'ChatRing::AiTurnAttempt',
            inverse_of: :ai_turn,
@@ -63,6 +67,9 @@ class ChatRing::AiTurn < ApplicationRecord
   validates :binding_version, numericality: { only_integer: true, greater_than: 0 }
   validates :deadline_at, presence: true
   validates :context_digest, format: { with: /\A[0-9a-f]{64}\z/ }, allow_nil: true
+  validates :playbook_execution_lock_version,
+            numericality: { only_integer: true, greater_than_or_equal_to: 0 },
+            allow_nil: true
   validate :decision_payload_shape
   validate :context_metadata_shape
   validate :native_handling_snapshot_shape
@@ -71,6 +78,7 @@ class ChatRing::AiTurn < ApplicationRecord
   validate :binding_ownership_matches
   validate :assistant_snapshot_matches
   validate :expected_agent_bot_matches
+  validate :playbook_snapshot_matches
 
   attr_readonly :workspace_id,
                 :chatwoot_conversation_id,
@@ -82,7 +90,10 @@ class ChatRing::AiTurn < ApplicationRecord
                 :expected_agent_bot_id,
                 :runtime_mode,
                 :native_handling_snapshot,
-                :deadline_at
+                :deadline_at,
+                :inbox_playbook_execution_id,
+                :playbook_execution_lock_version,
+                :playbook_step_id
 
   def fail_running_attempts!(failure_code)
     attempts.status_running.find_each do |attempt|
@@ -122,6 +133,17 @@ class ChatRing::AiTurn < ApplicationRecord
     return if expected_agent_bot.account_id == workspace.chatwoot_account_id
 
     errors.add(:expected_agent_bot, 'must be account-owned by the selected Workspace Account')
+  end
+
+  def playbook_snapshot_matches
+    return if inbox_playbook_execution.blank?
+
+    errors.add(:inbox_playbook_execution, 'must belong to the selected Conversation') unless
+      inbox_playbook_execution.chatwoot_conversation_id == chatwoot_conversation_id
+    errors.add(:playbook_execution_lock_version, 'must pin the execution revision') unless
+      playbook_execution_lock_version == inbox_playbook_execution.lock_version
+    errors.add(:playbook_step_id, 'must pin the current execution step') unless
+      playbook_step_id == inbox_playbook_execution.current_step_id
   end
 
   def decision_payload_shape

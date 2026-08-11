@@ -75,6 +75,55 @@ RSpec.describe ChatRing::Brain::InboundInvocationBuilder do
     expect(invocation.query.length).to eq(ChatRing::Knowledge::DocsGptProvider::MAX_QUERY_LENGTH)
   end
 
+  it 'projects a pinned Inbox Playbook step without exposing native target identifiers or collected values' do
+    context = build_context
+    publish_playbook(context)
+    create_history(context)
+    turn = trigger_turn(context)
+
+    invocation = described_class.new(turn).build
+
+    expect(invocation.trusted_context).to include(
+      'inbox_playbook_execution_id' => turn.inbox_playbook_execution_id,
+      'playbook_step_id' => 'ask_need'
+    )
+    expect(invocation.model_context.fetch('active_playbook')).to include(
+      'goal' => 'Qualify pricing interest.',
+      'current_step' => include('kind' => 'ask_text', 'prompt' => 'What service do you need?'),
+      'pending_question' => 'What service do you need?',
+      'collected_field_keys' => []
+    )
+    expect(invocation.model_context.fetch('active_playbook').to_json).not_to include(
+      'target_playbook_version_id', 'native_contact_attribute_key'
+    )
+  end
+
+  it 'lets native Conversation deletion remove its pinned Playbook execution and AI turn in either cascade order' do
+    context = build_context
+    publish_playbook(context)
+    create_history(context)
+    turn = trigger_turn(context)
+    execution_id = turn.inbox_playbook_execution_id
+
+    expect { context.fetch(:conversation).destroy! }.not_to raise_error
+
+    expect(ChatRing::AiTurn.where(id: turn.id)).not_to exist
+    expect(ChatRing::InboxPlaybookExecution.where(id: execution_id)).not_to exist
+  end
+
+  it 'removes Playbook runtime records before immutable Playbook configuration during Workspace deletion' do
+    context = build_context
+    publish_playbook(context)
+    create_history(context)
+    turn = trigger_turn(context)
+    execution_id = turn.inbox_playbook_execution_id
+
+    expect { context.fetch(:workspace).destroy! }.not_to raise_error
+
+    expect(ChatRing::AiTurn.where(id: turn.id)).not_to exist
+    expect(ChatRing::InboxPlaybookExecution.where(id: execution_id)).not_to exist
+  end
+
   def build_turn
     context = build_context
     create_history(context)
@@ -126,5 +175,31 @@ RSpec.describe ChatRing::Brain::InboundInvocationBuilder do
     end
     EventDispatcherJob.perform_now(Message::MESSAGE_CREATED, message.created_at, { message: message, performed_by: nil })
     ChatRing::AiTurn.find_by!(workspace: context.fetch(:workspace), conversation: conversation, trigger_message: message)
+  end
+
+  def publish_playbook(context)
+    actor = create(:user, account: context.fetch(:account), role: :administrator)
+    playbook = context.fetch(:workspace).inbox_playbooks.create!(
+      inbox: context.fetch(:inbox),
+      created_by: actor,
+      name: 'Pricing discovery',
+      purpose: 'Qualify pricing interest.',
+      draft_definition: playbook_definition
+    )
+    ChatRing::Playbooks::Publisher.new(playbook: playbook, actor: actor, expected_lock_version: 0).call
+  end
+
+  def playbook_definition
+    {
+      trigger_phrases: ['current question'],
+      entry_step_id: 'ask_need',
+      collected_fields: [{ key: 'need', type: 'string', required: true, native_contact_attribute_key: nil }],
+      tool_allowlist: [],
+      steps: [
+        { id: 'ask_need', kind: 'ask_text', prompt: 'What service do you need?', field_key: 'need', next_step_id: 'complete' },
+        { id: 'complete', kind: 'terminal', outcome: 'complete' }
+      ],
+      safety_rules: { on_human_request: 'native_availability', on_side_question: 'answer_then_resume' }
+    }
   end
 end

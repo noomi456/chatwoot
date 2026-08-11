@@ -45,42 +45,53 @@ class ChatRing::Brain::InboundInvocationBuilder
       'conversation_id' => conversation.id,
       'contact_id' => conversation.contact_id,
       'trigger_message_id' => turn.trigger_message_id,
+      'channel_type' => conversation.inbox.channel_type,
+      'inbox_within_working_hours' => !conversation.inbox.out_of_office?
+    }.merge(assistant_relationship_context, playbook_projection.trusted_context)
+  end
+
+  def assistant_relationship_context
+    {
       'binding_id' => turn.inbox_assistant_binding_id,
       'binding_version' => turn.binding_version,
       'assistant_id' => turn.assistant_id,
       'assistant_version_id' => turn.assistant_version_id,
-      'expected_agent_bot_id' => turn.expected_agent_bot_id,
-      'channel_type' => conversation.inbox.channel_type,
-      'inbox_within_working_hours' => !conversation.inbox.out_of_office?
+      'expected_agent_bot_id' => turn.expected_agent_bot_id
     }
   end
 
   def model_context(history, trigger, native_messages)
     version = turn.assistant_version
     {
-      'assistant' => {
-        'identity' => version.identity,
-        'goals' => version.goals,
-        'instructions' => version.instructions,
-        'response_guidelines' => version.response_guidelines,
-        'guardrails' => version.guardrails,
-        'handoff_policy' => version.handoff_policy,
-        'conversation_policy' => version.conversation_policy
-      },
+      'assistant' => assistant_model_context(version),
       'conversation' => {
         'channel_type' => turn.conversation.inbox.channel_type,
         'history' => history
       },
+      'active_playbook' => playbook_projection.model_context,
       'current_turn_native_messages' => native_messages,
       'available_tools' => available_tools,
       'trigger_message' => trigger
     }
   end
 
+  def assistant_model_context(version)
+    {
+      'identity' => version.identity,
+      'goals' => version.goals,
+      'instructions' => version.instructions,
+      'response_guidelines' => version.response_guidelines,
+      'guardrails' => version.guardrails,
+      'handoff_policy' => version.handoff_policy,
+      'conversation_policy' => version.conversation_policy
+    }
+  end
+
   def available_tools
     ChatRing::Tools::AvailabilityResolver.new(
       inbox: turn.conversation.inbox,
-      assistant_version: turn.assistant_version
+      assistant_version: turn.assistant_version,
+      allowed_tools: playbook_projection.tool_allowlist
     ).call
   end
 
@@ -89,7 +100,11 @@ class ChatRing::Brain::InboundInvocationBuilder
       'projection_version' => 1,
       'contact_fields_included' => [],
       'speaker_provenance' => provenance
-    }
+    }.merge(playbook_projection.audit_metadata)
+  end
+
+  def playbook_projection
+    @playbook_projection ||= ChatRing::Playbooks::InvocationProjection.new(turn)
   end
 
   def bounded_history

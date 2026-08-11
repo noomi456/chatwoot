@@ -38,6 +38,10 @@ class ChatRing::Workspace < ApplicationRecord
            class_name: 'ChatRing::InboxPlaybook',
            inverse_of: :workspace,
            dependent: :destroy
+  has_many :inbox_playbook_executions,
+           class_name: 'ChatRing::InboxPlaybookExecution',
+           inverse_of: :workspace,
+           dependent: :destroy
   has_many :knowledge_scopes,
            class_name: 'ChatRing::KnowledgeScope',
            inverse_of: :workspace,
@@ -54,9 +58,11 @@ class ChatRing::Workspace < ApplicationRecord
   private
 
   # Turns retain immutable references to the knowledge index and evidence used.
-  # Remove those runtime records before the KnowledgeBase destroys its indexes.
+  # Remove runtime records before their immutable Knowledge and Playbook
+  # configuration references are destroyed.
   def destroy_ai_turns_before_knowledge_indexes
     ChatRing::AiTurn.where(workspace_id: id).delete_all
+    ChatRing::InboxPlaybookExecution.where(workspace_id: id).delete_all
     knowledge_base&.knowledge_indexes&.each do |index|
       index.association(:ai_turns).reset
       index.association(:ai_turn_evidence).reset
