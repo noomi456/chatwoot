@@ -336,6 +336,7 @@ RSpec.describe 'ChatRing internal Web Widget message lifecycle', type: :request 
 
     message = post_widget_message('What plans do you offer?')
     expect(ChatRing::AiTurn.where(trigger_message: message)).not_to exist
+    expect(ChatRing::Playbooks::TurnResolver).not_to receive(:new)
 
     complete_automation_for(message)
     turn = ChatRing::AiTurn.find_by!(trigger_message: message)

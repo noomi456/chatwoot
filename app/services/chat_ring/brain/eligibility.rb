@@ -11,7 +11,7 @@ class ChatRing::Brain::Eligibility
   end
 
   def check
-    reason = runtime_failure || deadline_failure || configuration_failure || freshness_failure || ownership_failure
+    reason = runtime_failure || deadline_failure || configuration_failure || playbook_failure || freshness_failure || ownership_failure
     Result.new(eligible: reason.nil?, reason: reason)
   end
 
@@ -66,6 +66,15 @@ class ChatRing::Brain::Eligibility
       inbox_id: conversation.inbox_id,
       agent_bot_id: turn.expected_agent_bot_id
     )
+  end
+
+  def playbook_failure
+    execution = turn.inbox_playbook_execution
+    return unless execution
+    return 'playbook_execution_terminal' unless execution.status.in?(ChatRing::InboxPlaybookExecution::CONTROLLING_STATUSES)
+    return 'playbook_execution_changed' unless execution.lock_version == turn.playbook_execution_lock_version
+    return 'playbook_step_changed' unless execution.current_step_id == turn.playbook_step_id
+    return 'playbook_newer_customer_message' unless execution.last_trigger_message_id == turn.trigger_message_id
   end
 
   def automation_conflict?

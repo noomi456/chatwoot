@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_08_10_008000) do
+ActiveRecord::Schema[7.1].define(version: 2026_08_10_009000) do
   # These extensions should be enabled to support this database
   enable_extension "pg_stat_statements"
   enable_extension "pg_trgm"
@@ -759,9 +759,13 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_10_008000) do
     t.datetime "deadline_at"
     t.jsonb "context_metadata", default: {}, null: false
     t.integer "runtime_mode", default: 0, null: false
+    t.bigint "inbox_playbook_execution_id"
+    t.integer "playbook_execution_lock_version"
+    t.string "playbook_step_id"
     t.index ["assistant_id"], name: "index_chat_ring_ai_turns_on_assistant_id"
     t.index ["assistant_version_id"], name: "index_chat_ring_ai_turns_on_assistant_version_id"
     t.index ["inbox_assistant_binding_id"], name: "idx_chatring_turns_on_inbox_binding"
+    t.index ["inbox_playbook_execution_id"], name: "idx_chatring_turns_on_playbook_execution"
     t.index ["knowledge_index_id"], name: "index_chat_ring_ai_turns_on_knowledge_index_id"
     t.index ["status", "deadline_at", "updated_at"], name: "idx_chatring_ai_turns_recovery_due", where: "(status = ANY (ARRAY[0, 1, 2, 3, 4]))"
     t.index ["workspace_id", "chatwoot_conversation_id", "trigger_message_id"], name: "idx_chatring_turns_one_per_trigger", unique: true
@@ -857,6 +861,27 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_10_008000) do
     t.index ["workspace_id", "chatwoot_inbox_id", "binding_version"], name: "idx_chatring_bindings_on_inbox_version", unique: true
     t.index ["workspace_id", "chatwoot_inbox_id"], name: "idx_chatring_bindings_one_active_per_inbox", unique: true, where: "(status = 1)"
     t.index ["workspace_id"], name: "index_chat_ring_inbox_assistant_bindings_on_workspace_id"
+  end
+
+  create_table "chat_ring_inbox_playbook_executions", force: :cascade do |t|
+    t.bigint "workspace_id", null: false
+    t.bigint "inbox_playbook_version_id", null: false
+    t.integer "chatwoot_conversation_id", null: false
+    t.integer "status", default: 0, null: false
+    t.string "current_step_id", null: false
+    t.jsonb "collected_fields", default: {}, null: false
+    t.jsonb "field_sources", default: {}, null: false
+    t.jsonb "transition_history", default: [], null: false
+    t.integer "last_trigger_message_id"
+    t.integer "last_outcome_message_id"
+    t.datetime "started_at", null: false
+    t.datetime "completed_at"
+    t.integer "lock_version", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["chatwoot_conversation_id"], name: "idx_chatring_one_controlling_playbook_execution", unique: true, where: "(status = ANY (ARRAY[0, 1, 2, 3]))"
+    t.index ["inbox_playbook_version_id", "status"], name: "idx_chatring_playbook_execution_version_status"
+    t.index ["workspace_id"], name: "index_chat_ring_inbox_playbook_executions_on_workspace_id"
   end
 
   create_table "chat_ring_inbox_playbook_versions", force: :cascade do |t|
@@ -2025,6 +2050,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_10_008000) do
   add_foreign_key "chat_ring_ai_turns", "chat_ring_assistant_versions", column: "assistant_version_id", on_delete: :restrict
   add_foreign_key "chat_ring_ai_turns", "chat_ring_assistants", column: "assistant_id", on_delete: :restrict
   add_foreign_key "chat_ring_ai_turns", "chat_ring_inbox_assistant_bindings", column: "inbox_assistant_binding_id", on_delete: :restrict
+  add_foreign_key "chat_ring_ai_turns", "chat_ring_inbox_playbook_executions", column: "inbox_playbook_execution_id", on_delete: :cascade
   add_foreign_key "chat_ring_ai_turns", "chat_ring_knowledge_indexes", column: "knowledge_index_id", on_delete: :restrict
   add_foreign_key "chat_ring_ai_turns", "chat_ring_workspaces", column: "workspace_id", on_delete: :cascade
   add_foreign_key "chat_ring_ai_turns", "conversations", column: "chatwoot_conversation_id", on_delete: :cascade
@@ -2043,6 +2069,11 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_10_008000) do
   add_foreign_key "chat_ring_inbox_assistant_bindings", "chat_ring_assistants", column: "assistant_id", on_delete: :cascade
   add_foreign_key "chat_ring_inbox_assistant_bindings", "chat_ring_workspaces", column: "workspace_id", on_delete: :cascade
   add_foreign_key "chat_ring_inbox_assistant_bindings", "inboxes", column: "chatwoot_inbox_id", on_delete: :cascade
+  add_foreign_key "chat_ring_inbox_playbook_executions", "chat_ring_inbox_playbook_versions", column: "inbox_playbook_version_id", on_delete: :restrict
+  add_foreign_key "chat_ring_inbox_playbook_executions", "chat_ring_workspaces", column: "workspace_id", on_delete: :cascade
+  add_foreign_key "chat_ring_inbox_playbook_executions", "conversations", column: "chatwoot_conversation_id", on_delete: :cascade
+  add_foreign_key "chat_ring_inbox_playbook_executions", "messages", column: "last_outcome_message_id", on_delete: :nullify
+  add_foreign_key "chat_ring_inbox_playbook_executions", "messages", column: "last_trigger_message_id", on_delete: :nullify
   add_foreign_key "chat_ring_inbox_playbook_versions", "chat_ring_inbox_playbooks", column: "inbox_playbook_id", on_delete: :cascade
   add_foreign_key "chat_ring_inbox_playbook_versions", "users", column: "created_by_id", on_delete: :nullify
   add_foreign_key "chat_ring_inbox_playbooks", "chat_ring_inbox_playbook_versions", column: "current_version_id", on_delete: :nullify
