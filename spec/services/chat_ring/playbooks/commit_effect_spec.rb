@@ -199,6 +199,9 @@ RSpec.describe ChatRing::Playbooks::CommitEffect do
       }
     )
     ChatRing::OutboundCommitPreparer.call(handoff_turn, 'handoff')
+    agent = create(:user, account: handoff_turn.conversation.account, role: :agent)
+    create(:inbox_member, inbox: handoff_turn.conversation.inbox, user: agent)
+    allow(OnlineStatusTracker).to receive(:get_available_users).and_return(agent.id.to_s => 'online')
 
     ChatRing::OutboundCommitJob.perform_now(handoff_turn.id)
 
@@ -207,9 +210,37 @@ RSpec.describe ChatRing::Playbooks::CommitEffect do
     expect(handoff_turn.conversation.assignee_agent_bot).to be_nil
     expect(handoff_turn.inbox_playbook_execution.reload).to be_status_handed_off
     expect(handoff_turn.inbox_playbook_execution.transition_history.last).to include(
-      'action' => 'native_ai_handoff',
-      'failure_code' => 'human_requested'
+      'action' => 'native_human_takeover',
+      'failure_code' => 'human_assigned'
     )
+  end
+
+  it 'stops the pinned Playbook and preserves a callback request when no eligible human is online' do
+    context = ChatRingPlaybookSpecSupport.build
+    handoff_turn = context.fetch(:turn)
+    handoff_turn.update!(
+      status: :ready_to_commit,
+      decision_type: 'handoff',
+      decision_payload: {
+        'decision_type' => 'handoff',
+        'response_text' => '',
+        'reason_code' => 'human_requested',
+        'evidence_ids' => []
+      }
+    )
+    ChatRing::OutboundCommitPreparer.call(handoff_turn, 'handoff')
+    allow(OnlineStatusTracker).to receive(:get_available_users).and_return({})
+
+    ChatRing::OutboundCommitJob.perform_now(handoff_turn.id)
+
+    expect(handoff_turn.reload).to be_status_committed
+    expect(handoff_turn.conversation.reload).to be_pending
+    expect(handoff_turn.inbox_playbook_execution.reload).to be_status_stopped
+    expect(handoff_turn.inbox_playbook_execution.transition_history.last).to include(
+      'action' => 'human_unavailable_callback_requested',
+      'failure_code' => 'no_eligible_agent_online'
+    )
+    expect(handoff_turn.outbound_commit.message.content).to start_with('Our team is currently unavailable.')
   end
 
   private

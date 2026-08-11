@@ -13,7 +13,7 @@ class ChatRing::OutboundCommitJob < ApplicationJob
     when 'reply', 'clarification', 'playbook'
       commit_reply(turn)
     when 'handoff'
-      commit_handoff(turn)
+      commit_human_route_or_fallback(turn)
     when 'request_appointment'
       commit_tool(turn)
     else
@@ -42,6 +42,18 @@ class ChatRing::OutboundCommitJob < ApplicationJob
     outbound_commit = required_outbound_commit(turn, :handoff)
     Conversations::AgentBotConditionalHandoffService.new(turn: turn, outbound_commit: outbound_commit).perform
     turn.update!(status: :handed_off, failure_code: nil)
+  rescue Conversations::AgentBotConditionalCommitService::PreconditionFailed => e
+    finish_rejected_turn(turn, e.code)
+  end
+
+  def commit_human_route_or_fallback(turn)
+    outbound_commit = turn.outbound_commit || ChatRing::OutboundCommitPreparer.call(turn, turn.decision_type)
+    return commit_handoff(turn) if outbound_commit.outcome_type_handoff?
+
+    raise ActiveRecord::RecordNotFound, 'Durable ChatRing human-routing outcome is missing' unless outbound_commit.outcome_type_human_route?
+
+    result = Conversations::AgentBotConditionalHumanRouteService.new(turn: turn, outbound_commit: outbound_commit).perform
+    turn.update!(status: result.handed_off ? :handed_off : :committed, failure_code: nil)
   rescue Conversations::AgentBotConditionalCommitService::PreconditionFailed => e
     finish_rejected_turn(turn, e.code)
   end

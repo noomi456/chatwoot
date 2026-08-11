@@ -269,17 +269,23 @@ RSpec.describe ChatRing::Brain::Runner do
     expect(ChatRing::Knowledge::Retriever).to have_received(:retrieve).with(hash_including(timeout_seconds: 3))
   end
 
-  it 'respects native Inbox working hours' do
+  it 'leaves native Inbox hours to template handling and final human routing instead of disabling AI globally' do
     turn
     inbox = turn.conversation.inbox
     inbox.update!(working_hours_enabled: true)
     inbox.working_hours.today.update!(closed_all_day: true, open_all_day: false)
+    allow(provider).to receive(:call).and_return(
+      provider_result(
+        'decision_type' => 'reply', 'response_text' => 'Widgets are supported.',
+        'reason_code' => 'answered', 'evidence_ids' => ['evidence-1']
+      )
+    )
 
     described_class.new(turn, provider: provider).call
 
-    expect(turn.reload).to be_status_ineligible
-    expect(turn.decision_type).to eq('outside_inbox_hours')
-    expect(provider).not_to have_received(:call)
+    expect(turn.reload).to be_status_ready_to_commit
+    expect(turn.decision_type).to eq('reply')
+    expect(provider).to have_received(:call).once
   end
 
   it 'suppresses a completed decision when a human takes ownership during inference' do

@@ -75,7 +75,10 @@ class ChatRing::Tools::CommitEligibility
   def rendered_result_matches?(policy_version)
     return false unless execution.tool_key == 'request_appointment'
 
-    result = ChatRing::Tools::RequestAppointmentRenderer.call(policy_version)
+    result = ChatRing::Tools::RequestAppointmentRenderer.call(
+      policy_version,
+      presentation_context: ChatRing::Tools::RequestAppointmentRenderer.presentation_context(execution.authorization_result)
+    )
     execution.rendered_content == result.content && execution.result_payload == result.payload
   end
 

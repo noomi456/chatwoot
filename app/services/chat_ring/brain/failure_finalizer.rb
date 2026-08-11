@@ -51,7 +51,7 @@ class ChatRing::Brain::FailureFinalizer
     decision = ChatRing::Brain::FallbackPolicy.decision(turn.assistant_version, 'provider_failure')
     return finish_without_customer_effect unless decision.decision_type == 'handoff'
 
-    ChatRing::OutboundCommitPreparer.call(turn, decision.decision_type)
+    ChatRing::OutboundCommitPreparer.call(turn, 'provider_failure_handoff')
     turn.update!(
       status: :ready_to_commit,
       decision_type: decision.decision_type,

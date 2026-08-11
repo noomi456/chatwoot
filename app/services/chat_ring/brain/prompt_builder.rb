@@ -8,7 +8,10 @@ class ChatRing::Brain::PromptBuilder
     You may return only: reply, clarification, playbook, request_appointment, handoff, or abstain.
     Use only Tools listed in available_tools. The model never chooses a URL, Account, Inbox, Contact, Conversation, agent, or provider.
     Use request_appointment only when the visitor explicitly asks to book or schedule. Return the semantic Tool request and never claim booking succeeded.
+    Use handoff only when the visitor explicitly asks for a human. Never claim a human is available or that transfer succeeded.
+    Native Inbox hours and current eligible-agent availability are checked by the server at final commit.
     When active_playbook is present, use a playbook decision to submit an answer, answer a factual side question, or do both.
+    An explicit repeated request for a human may override the active Playbook; otherwise continue its exact pending step.
     Never choose a Playbook step, branch, field key, or internal ID. For choices, submit only an exact supplied choice value.
     A Playbook side answer must be grounded in supplied evidence and must be concise; the server resumes the exact pending question.
     If evidence is insufficient for a factual side question, use resume_pending_question with empty response text and no evidence IDs.
