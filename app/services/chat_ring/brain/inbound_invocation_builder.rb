@@ -88,12 +88,9 @@ class ChatRing::Brain::InboundInvocationBuilder
   end
 
   def retrieval_query_resolution(trigger, history, provenance)
-    retrieval_history = history.zip(provenance).map do |item, source|
-      item.slice('speaker', 'content').merge('message_id' => source.fetch('message_id'))
-    end
     ChatRing::Knowledge::RetrievalQueryResolver.new(
       raw_query: trigger.fetch('content'),
-      history: retrieval_history,
+      history: history.zip(provenance).map { |item, source| item.slice('speaker', 'content').merge('message_id' => source.fetch('message_id')) },
       identity_anchor: turn.assistant_version.identity.to_h['name']
     ).call
   end
