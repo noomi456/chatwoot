@@ -9,6 +9,10 @@ class ChatRing::InboxToolPolicyVersion < ApplicationRecord
              class_name: 'ChatRing::InboxToolPolicy',
              inverse_of: :versions
   belongs_to :created_by, class_name: 'User', inverse_of: false, optional: true
+  has_many :tool_executions,
+           class_name: 'ChatRing::ToolExecution',
+           inverse_of: :inbox_tool_policy_version,
+           dependent: :restrict_with_exception
   validates :version, numericality: { only_integer: true, greater_than: 0 }, uniqueness: { scope: :inbox_tool_policy_id }
   validates :published_at, presence: true
   validate :configuration_shapes

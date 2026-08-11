@@ -1,4 +1,6 @@
 class ChatRing::AssistantDraft < ApplicationRecord
+  include ChatRing::ToolGrantNormalizable
+
   self.table_name = 'chat_ring_assistant_drafts'
 
   CONFIGURATION_ATTRIBUTES = %i[
@@ -16,6 +18,7 @@ class ChatRing::AssistantDraft < ApplicationRecord
   validates :llm_provider, inclusion: { in: %w[openai] }
   validate :llm_model_is_supported
   validate :configuration_shapes
+  validate :tool_grants_are_registered
   validate :handoff_policy_is_supported
   validate :knowledge_scope_belongs_to_workspace
   validate :published_version_belongs_to_assistant
@@ -58,6 +61,12 @@ class ChatRing::AssistantDraft < ApplicationRecord
     return if handoff_policy.values.all? { |outcome| HANDOFF_OUTCOMES.include?(outcome.to_s) }
 
     errors.add(:handoff_policy, 'contains an unsupported outcome')
+  end
+
+  def tool_grants_are_registered
+    ChatRing::Tools::GrantSet.new(tool_grants)
+  rescue ChatRing::Tools::GrantSet::Invalid => e
+    errors.add(:tool_grants, e.message)
   end
 
   def knowledge_scope_belongs_to_workspace

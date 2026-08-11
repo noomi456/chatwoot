@@ -20,6 +20,8 @@
     "RESPONSE_GUIDELINES_HINT": "One guideline per line",
     "GUARDRAILS": "Guardrails",
     "GUARDRAILS_HINT": "One guardrail per line",
+    "APPOINTMENT_TOOL": "Allow appointment requests",
+    "APPOINTMENT_TOOL_DESCRIPTION": "The Assistant may request the Inbox-approved appointment path. The server chooses the configured URL and renderer.",
     "MODEL": "Model",
     "MODEL_VALUE": "Model: {model}",
     "MODEL_FIXED": "The supported model is controlled by the server.",

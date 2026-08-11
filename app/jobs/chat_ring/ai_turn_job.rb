@@ -39,6 +39,7 @@ class ChatRing::AiTurnJob < ApplicationJob
   def reconcile_committed_outcome(turn, outcome)
     return false unless outcome&.status_committed?
 
+    reconcile_tool_execution(turn, outcome)
     turn.update!(
       status: outcome.outcome_type_handoff? ? :handed_off : :committed,
       failure_code: nil,
@@ -47,9 +48,16 @@ class ChatRing::AiTurnJob < ApplicationJob
     true
   end
 
+  def reconcile_tool_execution(turn, outcome)
+    return unless outcome.outcome_type_tool?
+
+    turn.tool_execution&.mark_committed!(timestamp: outcome.committed_at || Time.current)
+  end
+
   def reject_pending_outcome(outcome)
     return unless outcome&.status_pending?
 
     outcome.update!(status: :rejected, failure_code: 'public_response_gate_closed', attempted_at: Time.current)
+    outcome.tool_execution&.mark_rejected!('public_response_gate_closed') if outcome.outcome_type_tool?
   end
 end

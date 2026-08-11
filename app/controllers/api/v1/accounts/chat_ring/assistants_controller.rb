@@ -122,6 +122,7 @@ class Api::V1::Accounts::ChatRing::AssistantsController < Api::V1::Accounts::Cha
       goals: [],
       response_guidelines: [],
       guardrails: [],
+      tool_grants: [:key, :version],
       handoff_policy: {}
     )
   end

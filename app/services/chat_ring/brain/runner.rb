@@ -23,7 +23,7 @@ class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
     @provider = provider || ChatRing::Brain::RubyLlmProvider.new(turn.assistant_version, deadline_at: turn.deadline_at)
   end
 
-  def call # rubocop:disable Metrics/AbcSize -- explicit typed failure boundary
+  def call # rubocop:disable Metrics/AbcSize, Metrics/MethodLength -- explicit typed failure boundary
     return ChatRing::Brain::FailureFinalizer.call(turn.id, 'turn_deadline_expired') if deadline_expired?
     return unless claim_turn!
 
@@ -32,6 +32,8 @@ class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
     handle_execution_failure(attempt, e.code)
   rescue ChatRing::Brain::Decision::Invalid
     handle_execution_failure(attempt, 'provider_invalid_decision')
+  rescue ChatRing::Tools::OutcomePreparer::Rejected => e
+    finish_rejected_tool!(e.code)
   rescue ChatRing::Knowledge::Retriever::Error, ChatRing::Knowledge::DocsGptProvider::ConfigurationError => e
     handle_execution_failure(attempt, "knowledge_configuration_error:#{e.class.name}")
   rescue ArgumentError, KeyError, TypeError => e
@@ -59,7 +61,7 @@ class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
     return handle_retrieval_failure!(evidence_set.error_code || 'knowledge_provider_failed') if evidence_set.status == 'provider_error'
 
     persist_evidence!(evidence_set)
-    return complete_without_evidence!(invocation.digest) if evidence_set.status != 'accepted'
+    return complete_without_evidence!(invocation.digest) if evidence_set.status != 'accepted' && !tools_available?(invocation)
     return unless recheck_eligibility!
 
     run_inference(invocation, evidence_set)
@@ -68,6 +70,10 @@ class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
   def complete_without_evidence!(context_digest)
     decision = ChatRing::Brain::FallbackPolicy.decision(turn.assistant_version, 'insufficient_evidence')
     complete!(decision, context_digest: context_digest)
+  end
+
+  def tools_available?(invocation)
+    invocation.model_context.fetch('available_tools').present?
   end
 
   def run_inference(invocation, evidence_set)
@@ -273,6 +279,12 @@ class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
   end
 
   def complete!(decision, context_digest: nil)
+    return ChatRing::Tools::OutcomePreparer.call(turn, decision) if decision.decision_type == 'request_appointment'
+
+    complete_conversation_decision!(decision, context_digest)
+  end
+
+  def complete_conversation_decision!(decision, context_digest)
     turn.with_lock do
       turn.reload
       next unless turn.status_running?
@@ -291,6 +303,20 @@ class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
         decision_payload: decision.to_h,
         context_digest: context_digest,
         failure_code: nil,
+        completed_at: Time.current
+      )
+    end
+  end
+
+  def finish_rejected_tool!(failure_code)
+    turn.with_lock do
+      turn.reload
+      next unless turn.status_running?
+
+      turn.update!(
+        status: :failed,
+        decision_type: 'request_appointment',
+        failure_code: failure_code,
         completed_at: Time.current
       )
     end

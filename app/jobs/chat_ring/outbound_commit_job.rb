@@ -14,6 +14,8 @@ class ChatRing::OutboundCommitJob < ApplicationJob
       commit_reply(turn)
     when 'handoff'
       commit_handoff(turn)
+    when 'request_appointment'
+      commit_tool(turn)
     else
       turn.update!(status: :cancelled, failure_code: turn.decision_type)
     end
@@ -41,6 +43,26 @@ class ChatRing::OutboundCommitJob < ApplicationJob
     Conversations::AgentBotConditionalHandoffService.new(turn: turn, outbound_commit: outbound_commit).perform
     turn.update!(status: :handed_off, failure_code: nil)
   rescue Conversations::AgentBotConditionalCommitService::PreconditionFailed => e
+    finish_rejected_turn(turn, e.code)
+  end
+
+  def commit_tool(turn)
+    outbound_commit = required_outbound_commit(turn, :tool)
+    execution = turn.tool_execution || raise(ActiveRecord::RecordNotFound, 'Durable ChatRing Tool execution is missing')
+    result = Conversations::AgentBotConditionalCommitService.new(
+      conversation: turn.conversation,
+      agent_bot: turn.expected_agent_bot,
+      expected_agent_bot_id: turn.expected_agent_bot_id,
+      responding_to_message_id: turn.trigger_message_id,
+      idempotency_key: outbound_commit.idempotency_key,
+      message: { content: execution.rendered_content, content_type: 'text' }
+    ).perform
+    return if result.message.blank?
+
+    execution.mark_committed!(timestamp: outbound_commit.reload.committed_at || Time.current)
+    turn.update!(status: :committed, failure_code: nil)
+  rescue Conversations::AgentBotConditionalCommitService::PreconditionFailed => e
+    turn.tool_execution&.mark_rejected!(e.code)
     finish_rejected_turn(turn, e.code)
   end
 

@@ -62,13 +62,13 @@ class Conversations::AgentBotConditionalCommitService
 
   def validate_ledger!(outbound_commit)
     turn = outbound_commit.ai_turn
-    raise Unauthorized unless outbound_commit.outcome_type_reply?
+    raise Unauthorized unless outbound_commit.outcome_type_reply? || outbound_commit.outcome_type_tool?
     raise Unauthorized unless turn.chatwoot_conversation_id == conversation.id
     raise Unauthorized unless turn.expected_agent_bot_id == agent_bot.id
   end
 
   def commit_or_reject(outbound_commit)
-    failure_code = precondition_failure(outbound_commit.ai_turn)
+    failure_code = precondition_failure(outbound_commit)
     return reject(outbound_commit, failure_code) if failure_code
 
     message = create_message(outbound_commit.ai_turn)
@@ -82,13 +82,19 @@ class Conversations::AgentBotConditionalCommitService
     outbound_commit
   end
 
-  def precondition_failure(turn)
-    return outbound_failure(outbound_commit: turn.outbound_commit) if turn.outbound_commit.status_rejected?
+  def precondition_failure(outbound_commit)
+    turn = outbound_commit.ai_turn
+    return outbound_failure(outbound_commit: outbound_commit) if outbound_commit.status_rejected?
     return 'invalid_message' unless valid_message_payload?
     return 'invalid_trigger_message' unless valid_trigger_message?(turn)
 
     eligibility = ChatRing::Brain::Eligibility.check(turn.reload)
     return eligibility.reason unless eligibility.eligible
+
+    return unless outbound_commit.outcome_type_tool?
+
+    tool_eligibility = ChatRing::Tools::CommitEligibility.check(execution: outbound_commit.tool_execution, turn: turn)
+    return tool_eligibility.reason unless tool_eligibility.eligible
   end
 
   def outbound_failure(outbound_commit:)
@@ -121,7 +127,7 @@ class Conversations::AgentBotConditionalCommitService
       message_type: :outgoing,
       content_type: message_attributes[:content_type].presence || :text,
       content: message_attributes[:content],
-      source_id: "chatring:reply:#{idempotency_key}",
+      source_id: "chatring:#{turn.outbound_commit.outcome_type}:#{idempotency_key}",
       content_attributes: {
         'chatring_citations' => ChatRing::Brain::VisitorCitationPresenter.call(turn)
       }

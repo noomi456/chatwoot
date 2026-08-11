@@ -37,6 +37,7 @@ RSpec.describe 'ChatRing Assistant administration API', type: :request do
         instructions: 'Use the Business Knowledge Base.',
         response_guidelines: ['Be concise'],
         guardrails: ['Never invent pricing'],
+        tool_grants: [{ key: 'request_appointment', version: 1 }],
         handoff_policy: { on_insufficient_evidence: 'handoff', on_provider_failure: 'abstain' }
       }
     }
@@ -45,10 +46,27 @@ RSpec.describe 'ChatRing Assistant administration API', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('draft', 'instructions')).to eq('Use the Business Knowledge Base.')
+    expect(response.parsed_body.dig('draft', 'tool_grants')).to eq([{ 'key' => 'request_appointment', 'version' => 1 }])
 
     patch "#{base_path}/assistants/#{assistant.id}/update_draft", params: payload, headers: admin.create_new_auth_token
 
     expect(response).to have_http_status(:conflict)
+  end
+
+  it 'rejects Assistant grants outside the code-owned Tool registry' do
+    assistant = create_assistant
+
+    patch "#{base_path}/assistants/#{assistant.id}/update_draft",
+          params: {
+            draft: {
+              lock_version: assistant.configuration_draft.lock_version,
+              tool_grants: [{ key: 'arbitrary_webhook', version: 1 }]
+            }
+          },
+          headers: admin.create_new_auth_token
+
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(assistant.configuration_draft.reload.tool_grants).to eq([])
   end
 
   it 'rejects a malformed draft revision without mutating configuration' do

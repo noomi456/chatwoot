@@ -29,6 +29,7 @@ module ChatRing::AssistantManagementSerialization
       instructions: draft.instructions,
       response_guidelines: draft.response_guidelines,
       guardrails: draft.guardrails,
+      tool_grants: draft.tool_grants,
       handoff_policy: draft.handoff_policy,
       llm_provider: draft.llm_provider,
       llm_model: draft.llm_model,
@@ -44,6 +45,7 @@ module ChatRing::AssistantManagementSerialization
       id: version.id,
       version: version.version,
       knowledge_scope_id: version.knowledge_scope_id,
+      tool_grants: version.tool_grants,
       llm_provider: version.llm_provider,
       llm_model: version.llm_model,
       published_at: version.published_at
