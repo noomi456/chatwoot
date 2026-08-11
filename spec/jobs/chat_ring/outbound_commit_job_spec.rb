@@ -72,7 +72,7 @@ RSpec.describe ChatRing::OutboundCommitJob, type: :job do
       allow(ChatRing::Knowledge::Retriever).to receive(:active_index_id).and_return(nil)
 
       expect(ChatRing::Knowledge::Retriever).not_to receive(:retrieve)
-      perform_enqueued_jobs(only: described_class) do
+      perform_enqueued_jobs do
         ChatRing::AiTurnJob.perform_now(playbook_turn.id)
       end
 

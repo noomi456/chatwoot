@@ -214,7 +214,8 @@ class ChatRing::Playbooks::CommitPlan # rubocop:disable Metrics/ClassLength
     authorization = ChatRing::Tools::RequestAppointmentAuthorization.call(
       turn,
       enforce_playbook_allowlist: true,
-      presentation_context: 'playbook_step'
+      presentation_context: 'playbook_step',
+      playbook_step_id: step.fetch('id')
     )
     tool_execution = ChatRing::Tools::RequestAppointmentExecutionBuilder.call(
       turn: turn,
