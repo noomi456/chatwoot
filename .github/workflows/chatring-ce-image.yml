@@ -14,6 +14,7 @@ on:
       - codex/chatring-integration-contract-v2-2
       - codex/web-widget-core-production-proof
       - codex/sales-core-realtimekit-credentials
+      - codex/sales-core-web-widget-live-test
   workflow_dispatch:
 
 concurrency:

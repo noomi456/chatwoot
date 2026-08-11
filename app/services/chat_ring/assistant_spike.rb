@@ -1,7 +1,8 @@
 module ChatRing::AssistantSpike
-  # Public replies stay disabled until both the v2.2 native-lifecycle gates and
-  # the complete Sales Core v1 production-foundation release gate pass on the
-  # exact deployed paths.
-  PUBLIC_AI_RELEASE_READY = false
+  # Public replies are enabled on this staging-validation branch so the
+  # complete native Web Widget sales path can be exercised with the real model.
+  # This branch must not be promoted to production before the remaining Sales
+  # Core release gates pass.
+  PUBLIC_AI_RELEASE_READY = true
   EXTERNAL_RUNTIME_ENABLED = false
 end
