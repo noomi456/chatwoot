@@ -44,15 +44,20 @@ class Conversations::AgentBotConditionalCommitService
   end
 
   def commit_inside_serialization_boundary
+    outbound_reference = ChatRing::OutboundCommit.find_by!(idempotency_key: idempotency_key)
     result = nil
     ActiveRecord::Base.transaction do
       Inbox.lock.find(conversation.inbox_id)
       @locked_conversation = Conversation.lock.find(conversation.id)
       begin
-        outbound_commit = ChatRing::OutboundCommit.lock.find_by!(idempotency_key: idempotency_key)
-        validate_ledger!(outbound_commit)
+        turn, playbook_execution, outbound_commit = lock_commit_records(outbound_reference)
+        validate_ledger!(outbound_commit, turn)
         @idempotent = outbound_commit.status_committed?
-        result = outbound_commit.status_committed? ? outbound_commit : commit_or_reject(outbound_commit)
+        result = if outbound_commit.status_committed?
+                   outbound_commit
+                 else
+                   commit_or_reject(outbound_commit, turn, playbook_execution)
+                 end
       ensure
         @locked_conversation = nil
       end
@@ -60,18 +65,34 @@ class Conversations::AgentBotConditionalCommitService
     result
   end
 
-  def validate_ledger!(outbound_commit)
-    turn = outbound_commit.ai_turn
+  def lock_commit_records(outbound_reference)
+    turn = ChatRing::AiTurn.lock.find(outbound_reference.ai_turn_id)
+    playbook_execution = lock_playbook_execution(turn)
+    outbound_commit = ChatRing::OutboundCommit.lock.find(outbound_reference.id)
+    [turn, playbook_execution, outbound_commit]
+  end
+
+  def validate_ledger!(outbound_commit, turn)
+    raise Unauthorized unless outbound_commit.ai_turn_id == turn.id
     raise Unauthorized unless outbound_commit.outcome_type_reply? || outbound_commit.outcome_type_tool?
     raise Unauthorized unless turn.chatwoot_conversation_id == conversation.id
     raise Unauthorized unless turn.expected_agent_bot_id == agent_bot.id
   end
 
-  def commit_or_reject(outbound_commit)
-    failure_code = precondition_failure(outbound_commit)
+  def commit_or_reject(outbound_commit, turn, playbook_execution)
+    playbook_effect = build_playbook_effect(outbound_commit, turn, playbook_execution)
+    native_failure = native_precondition_failure(outbound_commit, turn)
+    return reject(outbound_commit, native_failure) if native_failure
+
+    playbook_failure = playbook_effect&.failure_code
+    return reject(outbound_commit, playbook_failure) if playbook_failure
+
+    effective_attributes = playbook_effect&.message_attributes || message_attributes
+    failure_code = effect_precondition_failure(outbound_commit, turn, effective_attributes)
     return reject(outbound_commit, failure_code) if failure_code
 
-    message = create_message(outbound_commit.ai_turn)
+    message = create_message(turn, effective_attributes)
+    playbook_effect&.apply!(message)
     outbound_commit.update!(
       status: :committed,
       chatwoot_message_id: message.id,
@@ -82,14 +103,29 @@ class Conversations::AgentBotConditionalCommitService
     outbound_commit
   end
 
-  def precondition_failure(outbound_commit)
-    turn = outbound_commit.ai_turn
+  def lock_playbook_execution(turn)
+    return unless turn.inbox_playbook_execution_id
+
+    ChatRing::InboxPlaybookExecution.lock.find(turn.inbox_playbook_execution_id)
+  end
+
+  def build_playbook_effect(outbound_commit, turn, execution)
+    return unless outbound_commit.outcome_type_reply? && execution
+    return unless ChatRing::Playbooks::CommitEffect.applicable?(turn)
+
+    ChatRing::Playbooks::CommitEffect.new(turn: turn, execution: execution)
+  end
+
+  def native_precondition_failure(outbound_commit, turn)
     return outbound_failure(outbound_commit: outbound_commit) if outbound_commit.status_rejected?
-    return 'invalid_message' unless valid_message_payload?
     return 'invalid_trigger_message' unless valid_trigger_message?(turn)
 
-    eligibility = ChatRing::Brain::Eligibility.check(turn.reload)
-    return eligibility.reason unless eligibility.eligible
+    eligibility = ChatRing::Brain::Eligibility.check(turn)
+    eligibility.reason unless eligibility.eligible
+  end
+
+  def effect_precondition_failure(outbound_commit, turn, effective_attributes)
+    return 'invalid_message' unless valid_message_payload?(effective_attributes)
 
     return unless outbound_commit.outcome_type_tool?
 
@@ -110,8 +146,8 @@ class Conversations::AgentBotConditionalCommitService
     message.conversation_id == conversation.id && message.incoming? && !message.private? && message.sender_type == 'Contact'
   end
 
-  def valid_message_payload?
-    message_attributes[:content].to_s.strip.present? && (message_attributes[:content_type].presence || 'text').to_s == 'text'
+  def valid_message_payload?(attributes)
+    attributes[:content].to_s.strip.present? && (attributes[:content_type].presence || 'text').to_s == 'text'
   end
 
   def reject(outbound_commit, failure_code)
@@ -119,14 +155,14 @@ class Conversations::AgentBotConditionalCommitService
     outbound_commit
   end
 
-  def create_message(turn)
+  def create_message(turn, attributes)
     conversation.messages.create!(
       account_id: conversation.account_id,
       inbox_id: conversation.inbox_id,
       sender: agent_bot,
       message_type: :outgoing,
-      content_type: message_attributes[:content_type].presence || :text,
-      content: message_attributes[:content],
+      content_type: attributes[:content_type].presence || :text,
+      content: attributes[:content],
       source_id: "chatring:#{turn.outbound_commit.outcome_type}:#{idempotency_key}",
       content_attributes: {
         'chatring_citations' => ChatRing::Brain::VisitorCitationPresenter.call(turn)

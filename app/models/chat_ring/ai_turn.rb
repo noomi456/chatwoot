@@ -78,7 +78,7 @@ class ChatRing::AiTurn < ApplicationRecord
   validate :binding_ownership_matches
   validate :assistant_snapshot_matches
   validate :expected_agent_bot_matches
-  validate :playbook_snapshot_matches
+  validate :playbook_snapshot_matches, on: :create
 
   attr_readonly :workspace_id,
                 :chatwoot_conversation_id,

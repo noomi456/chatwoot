@@ -47,6 +47,21 @@ RSpec.describe ChatRing::Brain::Runner do
     expect(turn.decision_payload).to include('decision_type' => 'abstain', 'reason_code' => 'insufficient_evidence')
   end
 
+  it 'prepares a newly activated published Playbook question without retrieval or inference' do
+    guided_turn = build_turn(playbook_question: 'What service do you need?')
+
+    expect { described_class.new(guided_turn, provider: provider).call }.not_to change(Message, :count)
+
+    expect(ChatRing::Knowledge::Retriever).not_to have_received(:retrieve)
+    expect(provider).not_to have_received(:call)
+    expect(guided_turn.reload).to have_attributes(status: 'ready_to_commit', decision_type: 'clarification')
+    expect(guided_turn.decision_payload).to include(
+      'response_text' => 'What service do you need?',
+      'reason_code' => 'playbook_question'
+    )
+    expect(guided_turn.inbox_playbook_execution.reload).to be_status_active
+  end
+
   it 'allows an authorized semantic appointment request without evidence and prepares no Message directly' do
     appointment_turn = build_turn(appointment_tool: true)
     ChatRing::Tools::PolicyPublisher.new(
@@ -263,10 +278,33 @@ RSpec.describe ChatRing::Brain::Runner do
     expect(provider).not_to have_received(:call)
   end
 
-  def build_turn(handoff_on_provider_failure: false, appointment_tool: false)
+  def build_turn(handoff_on_provider_failure: false, appointment_tool: false, playbook_question: nil)
+    account, workspace, inbox = build_runtime_scope
+    connection = configure_runtime(
+      workspace: workspace,
+      inbox: inbox,
+      handoff_on_provider_failure: handoff_on_provider_failure,
+      appointment_tool: appointment_tool
+    )
+    publish_question_playbook(workspace, inbox, playbook_question) if playbook_question
+    conversation = create(:conversation, account: account, inbox: inbox, status: :pending,
+                                         assignee_agent_bot: connection.agent_bot)
+    message = create_managed_message(
+      account: account,
+      inbox: inbox,
+      conversation: conversation,
+      content: playbook_question ? 'Pricing options' : 'Do you support widgets?'
+    )
+    complete_native_automation(message)
+    ChatRing::AiTurn.find_by!(workspace: workspace, conversation: conversation, trigger_message: message)
+  end
+
+  def build_runtime_scope
     account = create(:account)
-    workspace = account.chat_ring_workspace
-    inbox = create(:channel_widget, account: account).inbox
+    [account, account.chat_ring_workspace, create(:channel_widget, account: account).inbox]
+  end
+
+  def configure_runtime(workspace:, inbox:, handoff_on_provider_failure:, appointment_tool:)
     assistant = ChatRing::Assistant.create!(workspace: workspace, name: 'Support')
     scope = workspace.knowledge_scopes.find_by!(business_wide: true)
     configuration = {}
@@ -275,19 +313,37 @@ RSpec.describe ChatRing::Brain::Runner do
     ChatRing::AssistantVersions::Publisher.new(assistant: assistant, knowledge_scope: scope, configuration: configuration).call
     connection = ChatRing::AssistantProvisioning::AgentBotProvisioner.new(assistant: assistant).call
     ChatRing::AssistantProvisioning::InboxBindingActivator.new(assistant: assistant, inbox: inbox).call
-    conversation = create(:conversation, account: account, inbox: inbox, status: :pending,
-                                         assignee_agent_bot: connection.agent_bot)
-    message = create_managed_message(account: account, inbox: inbox, conversation: conversation)
-    complete_native_automation(message)
-    ChatRing::AiTurn.find_by!(workspace: workspace, conversation: conversation, trigger_message: message)
+    connection
   end
 
-  def create_managed_message(account:, inbox:, conversation:)
+  def create_managed_message(account:, inbox:, conversation:, content:)
     ChatRing::ConversationWriteBoundary.new(conversation: conversation).call do
       create(:message, account: account, inbox: inbox, conversation: conversation,
                        message_type: :incoming, sender: conversation.contact, private: false,
-                       content: 'Do you support widgets?')
+                       content: content)
     end
+  end
+
+  def publish_question_playbook(workspace, inbox, prompt)
+    actor = create(:user, account: inbox.account, role: :administrator)
+    playbook = workspace.inbox_playbooks.create!(
+      inbox: inbox,
+      created_by: actor,
+      name: 'Pricing discovery',
+      purpose: 'Qualify pricing interest.',
+      draft_definition: {
+        trigger_phrases: ['pricing options'],
+        entry_step_id: 'ask_need',
+        collected_fields: [{ key: 'need', type: 'string', required: true, native_contact_attribute_key: nil }],
+        tool_allowlist: [],
+        steps: [
+          { id: 'ask_need', kind: 'ask_text', prompt: prompt, field_key: 'need', next_step_id: 'complete' },
+          { id: 'complete', kind: 'terminal', outcome: 'complete' }
+        ],
+        safety_rules: { on_human_request: 'native_availability', on_side_question: 'answer_then_resume' }
+      }
+    )
+    ChatRing::Playbooks::Publisher.new(playbook: playbook, actor: actor, expected_lock_version: 0).call
   end
 
   def complete_native_automation(message)

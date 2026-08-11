@@ -53,9 +53,8 @@ class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
   attr_reader :turn, :provider, :attempt
 
   def execute_claimed_turn
-    invocation = ChatRing::Brain::InboundInvocationBuilder.new(turn).build
-    persist_invocation_metadata!(invocation)
-    return unless recheck_eligibility!
+    invocation = prepare_invocation
+    return unless invocation
 
     evidence_set = retrieve_evidence(invocation)
     return handle_retrieval_failure!(evidence_set.error_code || 'knowledge_provider_failed') if evidence_set.status == 'provider_error'
@@ -65,6 +64,17 @@ class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
     return unless recheck_eligibility!
 
     run_inference(invocation, evidence_set)
+  end
+
+  def prepare_invocation
+    invocation = ChatRing::Brain::InboundInvocationBuilder.new(turn).build
+    persist_invocation_metadata!(invocation)
+    return unless recheck_eligibility!
+
+    playbook_result = ChatRing::Playbooks::InitialQuestionPreparer.call(turn, context_digest: invocation.digest)
+    return unless playbook_result == ChatRing::Playbooks::InitialQuestionPreparer::NOT_APPLICABLE
+
+    invocation
   end
 
   def complete_without_evidence!(context_digest)
