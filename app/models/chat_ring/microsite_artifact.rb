@@ -19,6 +19,7 @@ class ChatRing::MicrositeArtifact < ApplicationRecord
   validate :payload_contract
   validate :source_evidence_belongs_to_turn
   validate :native_scope_matches
+  validate :message_link_is_write_once, on: :update
 
   attr_readonly :workspace_id, :ai_turn_id, :public_token, :contract_version,
                 :content, :source_evidence_ids, :expires_at
@@ -61,5 +62,12 @@ class ChatRing::MicrositeArtifact < ApplicationRecord
     return if ai_turn.evidence.where(evidence_id: ids).distinct.count(:evidence_id) == ids.length
 
     errors.add(:source_evidence_ids, 'must belong to the selected AITurn')
+  end
+
+  def message_link_is_write_once
+    return unless will_save_change_to_message_id?
+    return if message_id_in_database.nil? && message_id.present?
+
+    errors.add(:message, 'can be linked only once')
   end
 end

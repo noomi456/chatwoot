@@ -145,4 +145,31 @@ RSpec.describe ChatRing::Microsites::ArtifactBuilder do
     expect(described_class.call(turn)).to be_nil
     expect(ChatRing::MicrositeArtifact.where(ai_turn: turn)).to be_empty
   end
+
+  it 'allows the guarded native commit to link its Message exactly once' do
+    artifact = described_class.call(turn)
+    message = create(
+      :message,
+      account: account,
+      inbox: inbox,
+      conversation: conversation,
+      sender: connection.agent_bot,
+      message_type: :outgoing,
+      content: 'Grounded response'
+    )
+
+    expect { artifact.update!(message: message) }.to change(artifact, :message_id).from(nil).to(message.id)
+
+    other = create(
+      :message,
+      account: account,
+      inbox: inbox,
+      conversation: conversation,
+      sender: connection.agent_bot,
+      message_type: :outgoing,
+      content: 'Different response'
+    )
+    expect { artifact.update!(message: other) }.to raise_error(ActiveRecord::RecordInvalid)
+    expect(artifact.reload.message).to eq(message)
+  end
 end
