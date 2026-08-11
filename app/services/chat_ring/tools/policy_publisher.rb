@@ -21,6 +21,7 @@ class ChatRing::Tools::PolicyPublisher
       policy = find_or_create_policy!
       raise InvalidRevision, 'Inbox Tool policy changed; reload before publishing' unless policy.lock_version == expected_lock_version
 
+      ChatRing::Playbooks::ToolPolicyGuard.new(workspace: workspace, inbox: inbox, enabled_tools: enabled_tools).call
       version = create_version!(policy)
       policy.update!(current_version: version, status: :active)
       version

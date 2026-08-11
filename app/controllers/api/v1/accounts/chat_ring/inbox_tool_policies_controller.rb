@@ -30,7 +30,7 @@ class Api::V1::Accounts::ChatRing::InboxToolPoliciesController < Api::V1::Accoun
     render json: serialize_policy(@inbox, version.inbox_tool_policy.reload)
   rescue ChatRing::Tools::PolicyPublisher::InvalidRevision => e
     render json: { error: e.message, code: 'stale_tool_policy' }, status: :conflict
-  rescue ActiveRecord::RecordInvalid, KeyError, ArgumentError => e
+  rescue ActiveRecord::RecordInvalid, ChatRing::Playbooks::ToolPolicyGuard::InvalidActivePlaybooks, KeyError, ArgumentError => e
     render_unprocessable(e)
   end
 

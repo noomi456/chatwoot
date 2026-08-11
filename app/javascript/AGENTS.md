@@ -22,6 +22,7 @@ Own ChatRing presentation across the dashboard, widget, survey, and frontend ent
 - Reserve Q&A and Images as later separate knowledge views; do not fake or partially expose them before their own contracts exist.
 - `AI → Assistants` is an account-administrator projection over the ChatRing Assistant-management API and native Chatwoot Inbox records. It may create and edit one optimistic-locking draft, publish immutable configuration, preflight and manage versioned Website Inbox bindings, archive, rotate the managed secret without displaying it, and inspect privacy-minimized AI-turn operations. It must not call native external-AgentBot CRUD, mutate Inbox bot assignment directly, expose credentials/customer content/prompts/evidence excerpts, invent Conversation ownership state, or enable a new binding while the server reports the public-response gate closed.
 - Assistant Tool grants select only code-owned semantic Tool versions. Inbox Tool settings remain the authority for the approved destination and renderer; frontend controls never send model-selected URLs or execute customer effects.
+- Playbook administration projects account-scoped Inbox configuration from the Rails API as a typed editor and visual preview. It may edit and validate drafts and publish immutable Inbox-owned versions, but it may not store runtime cursor state, send visitor Messages, mutate native ownership, or reproduce the donor Supabase execution lifecycle. Its Tool choices come only from the selected Inbox policy/capability response.
 
 ## Work Guidance
 
