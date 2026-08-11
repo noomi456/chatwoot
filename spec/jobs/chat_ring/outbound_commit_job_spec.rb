@@ -59,6 +59,25 @@ RSpec.describe ChatRing::OutboundCommitJob, type: :job do
       expect(conversation.messages.outgoing.where(sender: connection.agent_bot).pluck(:content)).to eq(['Widgets are supported.'])
     end
 
+    it 'commits one server-rendered Playbook question and then finalizes the historical turn pin' do
+      context = ChatRing::Playbooks::InitialQuestionPreparerSpecSupport.build
+      playbook_turn = context.fetch(:turn)
+      playbook_turn.update!(status: :received)
+      allow(ChatRing::Knowledge::Retriever).to receive(:active_index_id).and_return(nil)
+
+      expect(ChatRing::Knowledge::Retriever).not_to receive(:retrieve)
+      perform_enqueued_jobs(only: described_class) do
+        ChatRing::AiTurnJob.perform_now(playbook_turn.id)
+      end
+
+      expect(playbook_turn.reload).to be_status_committed
+      expect(playbook_turn.inbox_playbook_execution.reload).to have_attributes(
+        status: 'waiting_for_customer',
+        last_outcome_message_id: playbook_turn.outbound_commit.chatwoot_message_id
+      )
+      expect(playbook_turn.outbound_commit.message.content).to eq('What service do you need?')
+    end
+
     it 'creates one reply ledger and Message when duplicate jobs race before ledger creation' do
       turn
       run_duplicate_jobs_at_ledger_creation

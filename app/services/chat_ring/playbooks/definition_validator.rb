@@ -30,6 +30,8 @@ class ChatRing::Playbooks::DefinitionValidator # rubocop:disable Metrics/ClassLe
   MAX_TOOLS = 5
   MAX_DEPTH = 25
   MAX_TRANSITION_DEPTH = 5
+  MAX_CHOICE_LABEL_LENGTH = 160
+  MAX_CHOICE_VALUE_LENGTH = 160
   SIMPLE_PHRASES = %w[hello hi hey thanks thank-you ok okay yes no].freeze
   CONTACT_DISPLAY_TYPES = {
     'string' => ['text'],
@@ -349,6 +351,12 @@ class ChatRing::Playbooks::DefinitionValidator # rubocop:disable Metrics/ClassLe
     choice = choice.slice('label', 'value', 'next_step_id')
     %w[label value next_step_id].each do |key|
       add_error('missing_choice_value', "#{path}.#{key}", 'is required') if choice[key].to_s.blank?
+    end
+    if choice['label'].to_s.length > MAX_CHOICE_LABEL_LENGTH
+      add_error('choice_label_too_long', "#{path}.label", "must be at most #{MAX_CHOICE_LABEL_LENGTH} characters")
+    end
+    if choice['value'].to_s.length > MAX_CHOICE_VALUE_LENGTH
+      add_error('choice_value_too_long', "#{path}.value", "must be at most #{MAX_CHOICE_VALUE_LENGTH} characters")
     end
     choice
   end

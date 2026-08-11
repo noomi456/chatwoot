@@ -11,7 +11,7 @@ class ChatRing::Brain::Eligibility
   end
 
   def check
-    reason = runtime_failure || deadline_failure || configuration_failure || playbook_failure || freshness_failure || ownership_failure
+    reason = runtime_failure || deadline_failure || configuration_failure || freshness_failure || ownership_failure || playbook_failure
     Result.new(eligible: reason.nil?, reason: reason)
   end
 

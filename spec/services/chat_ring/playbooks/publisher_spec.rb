@@ -43,6 +43,23 @@ RSpec.describe ChatRing::Playbooks::Publisher do
     expect(version.update(definition: {})).to be(false)
   end
 
+  it 'rejects choice labels and values that could exceed the bounded native Message contract' do
+    definition[:steps] = [
+      {
+        id: 'ask_need', kind: 'ask_choice', prompt: 'Choose one', field_key: 'service_need',
+        choices: [
+          { label: 'A' * 161, value: 'internet', next_step_id: 'complete' },
+          { label: 'Television', value: 'v' * 161, next_step_id: 'complete' }
+        ]
+      },
+      { id: 'complete', kind: 'terminal', outcome: 'complete' }
+    ]
+
+    expect { publish(playbook) }.to raise_error(ChatRing::Playbooks::Publisher::InvalidDefinition) do |error|
+      expect(error.result.errors.pluck(:code)).to include('choice_label_too_long', 'choice_value_too_long')
+    end
+  end
+
   it 'rejects a stale publisher without creating another version' do
     publish(playbook)
 
