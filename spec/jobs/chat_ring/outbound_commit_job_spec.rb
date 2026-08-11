@@ -363,6 +363,10 @@ RSpec.describe ChatRing::OutboundCommitJob, type: :job do
   end
 
   context 'with the public response gate closed' do
+    before do
+      stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', false)
+    end
+
     it 'does not commit a customer-visible message' do
       expect { described_class.perform_now(turn.id) }.not_to(change { conversation.messages.outgoing.count })
 
