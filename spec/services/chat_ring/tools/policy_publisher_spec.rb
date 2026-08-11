@@ -47,6 +47,37 @@ RSpec.describe ChatRing::Tools::PolicyPublisher do
     end.to raise_error(ActiveRecord::RecordNotFound)
   end
 
+  it 'rejects embedded calendars for non-Calendly providers and non-Website Inboxes' do
+    configuration[:request_appointment][:website_presentation] = 'calendar_embed'
+    configuration[:request_appointment][:provider] = 'custom_link'
+    configuration[:request_appointment][:url] = 'https://calendar.example.com/demo'
+
+    expect { publish(expected_lock_version: 0) }
+      .to raise_error(ActiveRecord::RecordInvalid, /calendar embed requires Calendly/)
+
+    email_inbox = create(:inbox, :with_email, account: account)
+    configuration[:request_appointment][:provider] = 'calendly'
+    configuration[:request_appointment][:url] = 'https://calendly.com/chatring/demo'
+    expect do
+      described_class.new(
+        workspace: workspace,
+        inbox: email_inbox,
+        actor: actor,
+        expected_lock_version: 0,
+        enabled_tools: [{ key: 'request_appointment', version: 1 }],
+        tool_configurations: configuration
+      ).call
+    end.to raise_error(ActiveRecord::RecordInvalid, /calendar embed requires a Website Inbox/)
+  end
+
+  it 'rejects a Calendly embed on a non-default port' do
+    configuration[:request_appointment][:website_presentation] = 'calendar_embed'
+    configuration[:request_appointment][:url] = 'https://calendly.com:8443/chatring/demo'
+
+    expect { publish(expected_lock_version: 0) }
+      .to raise_error(ActiveRecord::RecordInvalid, /calendar embed requires the default HTTPS port/)
+  end
+
   private
 
   def publish(expected_lock_version:)

@@ -21,6 +21,7 @@ const form = ref({
   provider: 'calendly',
   url: '',
   linkLabel: 'Book a meeting',
+  calendarEmbed: false,
 });
 
 const inboxOptions = computed(() =>
@@ -47,6 +48,11 @@ const currentCapability = computed(() =>
 const appointmentDefinition = computed(() =>
   definitions.value.find(definition => definition.key === 'request_appointment')
 );
+const canEmbedCalendar = computed(
+  () =>
+    selectedPolicy.value?.inbox?.channel_type === 'Channel::WebWidget' &&
+    form.value.provider === 'calendly'
+);
 
 const apiError = error =>
   error?.response?.data?.error || error?.message || t('CHATRING_TOOLS.ERROR');
@@ -62,10 +68,17 @@ const setFormFromPolicy = policy => {
     provider: configuration.provider || 'calendly',
     url: configuration.url || '',
     linkLabel: configuration.link_label || 'Book a meeting',
+    calendarEmbed: configuration.website_presentation === 'calendar_embed',
   };
 };
 
 watch(selectedPolicy, policy => setFormFromPolicy(policy));
+watch(
+  () => form.value.provider,
+  () => {
+    if (!canEmbedCalendar.value) form.value.calendarEmbed = false;
+  }
+);
 
 const load = async () => {
   isLoading.value = true;
@@ -99,6 +112,9 @@ const publish = async () => {
               url: form.value.url.trim(),
               fallback_mode: 'approved_link',
               link_label: form.value.linkLabel.trim(),
+              website_presentation: form.value.calendarEmbed
+                ? 'calendar_embed'
+                : 'approved_link',
             },
           },
           renderer_policy: {},
@@ -200,6 +216,26 @@ onMounted(load);
                 placeholder="https://calendly.com/your-team/demo"
               />
             </div>
+            <div
+              class="flex items-start justify-between gap-5 p-4 border rounded-lg md:col-span-2 border-n-weak"
+            >
+              <div>
+                <p class="text-sm font-medium text-n-slate-12">
+                  {{ t('CHATRING_TOOLS.CALENDAR_EMBED') }}
+                </p>
+                <p class="mt-1 text-xs text-n-slate-10">
+                  {{
+                    canEmbedCalendar
+                      ? t('CHATRING_TOOLS.CALENDAR_EMBED_DESCRIPTION')
+                      : t('CHATRING_TOOLS.CALENDAR_EMBED_UNAVAILABLE')
+                  }}
+                </p>
+              </div>
+              <Switch
+                v-model="form.calendarEmbed"
+                :disabled="!canEmbedCalendar"
+              />
+            </div>
           </div>
         </article>
 
@@ -208,10 +244,14 @@ onMounted(load);
             {{ t('CHATRING_TOOLS.CAPABILITY') }}
           </h3>
           <p class="mt-2 text-sm text-n-slate-11">
-            {{ t('CHATRING_TOOLS.APPROVED_LINK') }}
+            {{
+              currentCapability?.renderer === 'calendar_embed'
+                ? t('CHATRING_TOOLS.CALENDAR_EMBED_ACTIVE')
+                : t('CHATRING_TOOLS.APPROVED_LINK')
+            }}
           </p>
           <p class="mt-2 text-xs text-n-slate-10">
-            {{ t('CHATRING_TOOLS.EMBED_DEFERRED') }}
+            {{ t('CHATRING_TOOLS.APPROVED_LINK_FALLBACK') }}
           </p>
           <p v-if="currentCapability" class="mt-3 text-xs text-n-slate-10">
             {{ currentCapability.renderer }}

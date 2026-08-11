@@ -18,7 +18,8 @@ RSpec.describe 'ChatRing Inbox Tool policies API', type: :request do
                   provider: 'calendly',
                   url: 'https://calendly.com/chatring/demo',
                   fallback_mode: 'approved_link',
-                  link_label: 'Book a meeting'
+                  link_label: 'Book a meeting',
+                  website_presentation: 'calendar_embed'
                 }
               }
             }
@@ -31,10 +32,33 @@ RSpec.describe 'ChatRing Inbox Tool policies API', type: :request do
       'key' => 'request_appointment',
       'version' => 1,
       'available' => true,
-      'renderer' => 'approved_link',
+      'renderer' => 'calendar_embed',
       'fallback' => 'approved_link',
       'reason' => nil
     )
+  end
+
+  it 'rejects an embed request outside the certified Calendly Website renderer' do
+    patch "#{base_path}/#{inbox.id}",
+          params: {
+            tool_policy: {
+              lock_version: 0,
+              enabled_tools: [{ key: 'request_appointment', version: 1 }],
+              tool_configurations: {
+                request_appointment: {
+                  provider: 'custom_link',
+                  url: 'https://calendar.example.com/demo',
+                  fallback_mode: 'approved_link',
+                  link_label: 'Book a meeting',
+                  website_presentation: 'calendar_embed'
+                }
+              }
+            }
+          },
+          headers: admin.create_new_auth_token
+
+    expect(response).to have_http_status(:unprocessable_entity), response.body
+    expect(ChatRing::InboxToolPolicyVersion.count).to eq(0)
   end
 
   it 'never accepts a private approved calendar URL' do

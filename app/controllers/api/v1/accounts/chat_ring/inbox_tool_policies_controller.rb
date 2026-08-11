@@ -62,7 +62,7 @@ class Api::V1::Accounts::ChatRing::InboxToolPoliciesController < Api::V1::Accoun
     appointment = source.dig(:tool_configurations, :request_appointment)
     return {} unless appointment
 
-    allowed_keys = %w[provider url fallback_mode link_label]
+    allowed_keys = %w[provider url fallback_mode link_label website_presentation]
     unknown_keys = appointment.keys - allowed_keys
     raise ArgumentError, "unknown request_appointment settings: #{unknown_keys.join(', ')}" if unknown_keys.present?
 

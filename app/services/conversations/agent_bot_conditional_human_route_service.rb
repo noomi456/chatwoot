@@ -84,7 +84,7 @@ class Conversations::AgentBotConditionalHumanRouteService
   def commit_unavailable_fallback(conversation, execution, availability_reason)
     tool_execution = build_appointment_execution(availability_reason)
     content = tool_execution&.rendered_content || CALLBACK_COPY.fetch(availability_reason)
-    message = create_message(conversation, content)
+    message = create_message(conversation, content, tool_execution: tool_execution)
     tool_execution&.mark_committed!(timestamp: Time.current)
     action = tool_execution ? 'human_unavailable_appointment_offered' : 'human_unavailable_callback_requested'
     finalize_execution(execution, conversation, availability_reason, :stopped, action)
@@ -100,10 +100,7 @@ class Conversations::AgentBotConditionalHumanRouteService
   end
 
   def build_appointment_execution(availability_reason)
-    authorization = ChatRing::Tools::RequestAppointmentAuthorization.call(
-      turn,
-      presentation_context: availability_reason
-    )
+    authorization = ChatRing::Tools::RequestAppointmentAuthorization.call(turn, presentation_context: availability_reason)
     ChatRing::Tools::RequestAppointmentExecutionBuilder.call(
       turn: turn,
       outbound_commit: outbound_commit,
@@ -115,7 +112,10 @@ class Conversations::AgentBotConditionalHumanRouteService
     nil
   end
 
-  def create_message(conversation, content)
+  def create_message(conversation, content, tool_execution: nil)
+    content_attributes = { 'chatring_citations' => [] }
+    content_attributes['chatring_tool'] = ChatRing::Tools::VisitorPresentation.call(tool_execution) if tool_execution
+
     conversation.messages.create!(
       account_id: conversation.account_id,
       inbox_id: conversation.inbox_id,
@@ -124,7 +124,7 @@ class Conversations::AgentBotConditionalHumanRouteService
       content_type: :text,
       content: content,
       source_id: "chatring:human_route:#{outbound_commit.idempotency_key}",
-      content_attributes: { 'chatring_citations' => [] }
+      content_attributes: content_attributes
     )
   end
 

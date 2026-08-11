@@ -50,6 +50,11 @@
   "START_NEW_CONVERSATION": "Start a new conversation",
   "CONVERSATION_STARTERS_TITLE": "Choose a starting point",
   "VIEW_UNREAD_MESSAGES": "You have unread messages",
+  "APPOINTMENT_CALENDAR": {
+    "BOOK": "Book an appointment",
+    "CLOSE": "Close calendar",
+    "FRAME_TITLE": "Schedule an appointment"
+  },
   "UNREAD_VIEW": {
     "VIEW_MESSAGES_BUTTON": "See new messages",
     "CLOSE_MESSAGES_BUTTON": "Close",

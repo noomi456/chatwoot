@@ -1,9 +1,12 @@
+require 'uri'
+
 class ChatRing::InboxToolPolicyVersion < ApplicationRecord
   self.table_name = 'chat_ring_inbox_tool_policy_versions'
 
   PROVIDERS = %w[calendly calcom custom_link].freeze
   FALLBACK_MODES = ['approved_link'].freeze
-  APPOINTMENT_CONFIGURATION_KEYS = %w[provider url fallback_mode link_label].freeze
+  WEBSITE_PRESENTATIONS = %w[approved_link calendar_embed].freeze
+  APPOINTMENT_CONFIGURATION_KEYS = %w[provider url fallback_mode link_label website_presentation].freeze
 
   belongs_to :inbox_tool_policy,
              class_name: 'ChatRing::InboxToolPolicy',
@@ -87,6 +90,7 @@ class ChatRing::InboxToolPolicyVersion < ApplicationRecord
 
     provider = configuration['provider'].to_s
     validate_appointment_fields(configuration, provider)
+    validate_appointment_presentation(configuration, provider)
     validate_appointment_url(configuration, provider)
   end
 
@@ -99,9 +103,25 @@ class ChatRing::InboxToolPolicyVersion < ApplicationRecord
     errors.add(:tool_configurations, 'request_appointment link label is too long') if configuration['link_label'].to_s.length > 80
   end
 
+  def validate_appointment_presentation(configuration, provider)
+    website_presentation = configuration.fetch('website_presentation', 'approved_link')
+    unless WEBSITE_PRESENTATIONS.include?(website_presentation)
+      errors.add(:tool_configurations, 'request_appointment Website presentation is invalid')
+    end
+    return unless website_presentation == 'calendar_embed'
+
+    errors.add(:tool_configurations, 'calendar embed requires Calendly') unless provider == 'calendly'
+    return if inbox_tool_policy&.inbox&.web_widget?
+
+    errors.add(:tool_configurations, 'calendar embed requires a Website Inbox')
+  end
+
   def validate_appointment_url(configuration, provider)
     normalized = ChatRing::Tools::ApprovedPublicUrl.normalize!(configuration['url'], provider: provider)
     configuration['url'] = normalized
+    if configuration['website_presentation'] == 'calendar_embed' && URI.parse(normalized).port != 443
+      errors.add(:tool_configurations, 'calendar embed requires the default HTTPS port')
+    end
   rescue ChatRing::Tools::ApprovedPublicUrl::Invalid => e
     errors.add(:tool_configurations, e.message)
   end
