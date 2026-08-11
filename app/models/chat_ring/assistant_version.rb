@@ -1,4 +1,6 @@
 class ChatRing::AssistantVersion < ApplicationRecord
+  include ChatRing::ToolGrantNormalizable
+
   self.table_name = 'chat_ring_assistant_versions'
 
   ARRAY_ATTRIBUTES = %w[goals response_guidelines guardrails tool_grants].freeze
@@ -15,6 +17,7 @@ class ChatRing::AssistantVersion < ApplicationRecord
   validates :published_at, presence: true
   validates :llm_provider, :llm_model, presence: true
   validate :configuration_shapes
+  validate :tool_grants_are_registered
   validate :launch_policies_are_supported
   validate :knowledge_scope_belongs_to_workspace
   validate :published_snapshot_is_immutable, on: :update
@@ -29,6 +32,12 @@ class ChatRing::AssistantVersion < ApplicationRecord
   def launch_policies_are_supported
     errors.add(:audience_policy, 'is not supported in this release') if audience_policy.present?
     errors.add(:availability_policy, 'is not supported in this release') if availability_policy.present?
+  end
+
+  def tool_grants_are_registered
+    ChatRing::Tools::GrantSet.new(tool_grants)
+  rescue ChatRing::Tools::GrantSet::Invalid => e
+    errors.add(:tool_grants, e.message)
   end
 
   def knowledge_scope_belongs_to_workspace

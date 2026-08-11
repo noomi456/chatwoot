@@ -40,6 +40,7 @@ const form = ref({
   instructions: '',
   responseGuidelines: '',
   guardrails: '',
+  appointmentTool: false,
   insufficientEvidence: 'handoff',
   providerFailure: 'handoff',
 });
@@ -154,6 +155,10 @@ const setForm = assistant => {
     instructions: draft.instructions || '',
     responseGuidelines: (draft.response_guidelines || []).join('\n'),
     guardrails: (draft.guardrails || []).join('\n'),
+    appointmentTool: (draft.tool_grants || []).some(
+      grant =>
+        grant.key === 'request_appointment' && Number(grant.version) === 1
+    ),
     insufficientEvidence:
       draft.handoff_policy?.on_insufficient_evidence || 'handoff',
     providerFailure: draft.handoff_policy?.on_provider_failure || 'handoff',
@@ -239,6 +244,9 @@ const saveDraft = async () => {
         instructions: form.value.instructions,
         response_guidelines: lines(form.value.responseGuidelines),
         guardrails: lines(form.value.guardrails),
+        tool_grants: form.value.appointmentTool
+          ? [{ key: 'request_appointment', version: 1 }]
+          : [],
         handoff_policy: {
           on_insufficient_evidence: form.value.insufficientEvidence,
           on_provider_failure: form.value.providerFailure,
@@ -676,6 +684,25 @@ onMounted(loadAccount);
                 auto-height
                 resize
               />
+              <label
+                class="flex items-start gap-3 rounded-lg outline outline-1 outline-n-weak bg-n-alpha-1 px-4 py-3"
+              >
+                <input
+                  v-model="form.appointmentTool"
+                  type="checkbox"
+                  class="mt-1"
+                  :disabled="isArchived || controlsDisabled"
+                  data-testid="appointment-tool-grant"
+                />
+                <span>
+                  <span class="block text-sm font-medium text-n-slate-12">
+                    {{ t('CHATRING_ASSISTANTS.APPOINTMENT_TOOL') }}
+                  </span>
+                  <span class="mt-1 block text-xs text-n-slate-11">
+                    {{ t('CHATRING_ASSISTANTS.APPOINTMENT_TOOL_DESCRIPTION') }}
+                  </span>
+                </span>
+              </label>
               <div class="grid grid-cols-2 gap-5">
                 <label class="grid gap-2 text-sm font-medium text-n-slate-12">
                   {{ t('CHATRING_ASSISTANTS.INSUFFICIENT_EVIDENCE') }}

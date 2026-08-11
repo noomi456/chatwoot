@@ -87,6 +87,7 @@ const assistant = ({
     instructions: 'Use the shared Business Knowledge Base.',
     response_guidelines: ['Be concise'],
     guardrails: ['Never invent pricing'],
+    tool_grants: [],
     handoff_policy: {
       on_insufficient_evidence: 'handoff',
       on_provider_failure: 'handoff',
@@ -150,6 +151,7 @@ describe('ChatRing Assistant administration page', () => {
     await textareas[1].setValue('Answer only from approved evidence.');
     await textareas[2].setValue('Be concise\nAsk one question');
     await textareas[3].setValue('Never invent pricing\nNever expose PII');
+    await wrapper.get('[data-testid="appointment-tool-grant"]').setValue(true);
     const saveButton = wrapper
       .findAll('button')
       .find(item => item.text().includes('CHATRING_ASSISTANTS.SAVE_DRAFT'));
@@ -164,6 +166,7 @@ describe('ChatRing Assistant administration page', () => {
         instructions: 'Answer only from approved evidence.',
         response_guidelines: ['Be concise', 'Ask one question'],
         guardrails: ['Never invent pricing', 'Never expose PII'],
+        tool_grants: [{ key: 'request_appointment', version: 1 }],
       })
     );
 

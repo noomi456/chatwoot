@@ -20,11 +20,21 @@ class ChatRing::AssistantProvisioning::InboxBindingDrainer
     binding.ai_turns.nonterminal.lock.order(:id).each do |turn|
       committed_outcome = turn.outbound_commit
       if committed_outcome&.status_committed?
-        turn.update!(status: committed_outcome.outcome_type_handoff? ? :handed_off : :committed, failure_code: nil)
+        reconcile_committed_turn!(turn, committed_outcome)
       else
-        turn.update!(status: :cancelled, failure_code: failure_code, completed_at: Time.current)
+        cancel_turn!(turn)
       end
     end
+  end
+
+  def reconcile_committed_turn!(turn, outcome)
+    turn.tool_execution&.mark_committed!(timestamp: outcome.committed_at || Time.current) if outcome.outcome_type_tool?
+    turn.update!(status: outcome.outcome_type_handoff? ? :handed_off : :committed, failure_code: nil)
+  end
+
+  def cancel_turn!(turn)
+    turn.tool_execution&.mark_rejected!(failure_code)
+    turn.update!(status: :cancelled, failure_code: failure_code, completed_at: Time.current)
   end
 
   def handoff_pending_conversations!

@@ -47,6 +47,46 @@ RSpec.describe ChatRing::Brain::Runner do
     expect(turn.decision_payload).to include('decision_type' => 'abstain', 'reason_code' => 'insufficient_evidence')
   end
 
+  it 'allows an authorized semantic appointment request without evidence and prepares no Message directly' do
+    appointment_turn = build_turn(appointment_tool: true)
+    ChatRing::Tools::PolicyPublisher.new(
+      workspace: appointment_turn.workspace,
+      inbox: appointment_turn.conversation.inbox,
+      actor: create(:user, account: appointment_turn.conversation.account, role: :administrator),
+      expected_lock_version: 0,
+      enabled_tools: [{ 'key' => 'request_appointment', 'version' => 1 }],
+      tool_configurations: {
+        'request_appointment' => {
+          'provider' => 'calendly', 'url' => 'https://calendly.com/cqalerts3/30min',
+          'fallback_mode' => 'approved_link', 'link_label' => 'Book a demo'
+        }
+      }
+    ).call
+    allow(ChatRing::Knowledge::Retriever).to receive(:retrieve).and_return(empty_evidence_set)
+    allow(provider).to receive(:call).and_return(
+      ChatRing::Brain::RubyLlmProvider::Result.new(
+        payload: {
+          'decision_type' => 'request_appointment', 'response_text' => '',
+          'reason_code' => 'visitor_requested_demo', 'evidence_ids' => [],
+          'tool_request' => {
+            'key' => 'request_appointment', 'version' => 1,
+            'arguments' => { 'reason_code' => 'visitor_requested_demo' }
+          }
+        },
+        input_tokens: 20,
+        output_tokens: 8,
+        response_digest: Digest::SHA256.hexdigest('appointment')
+      )
+    )
+
+    expect { described_class.new(appointment_turn, provider: provider).call }.not_to change(Message, :count)
+
+    expect(provider).to have_received(:call).once
+    expect(appointment_turn.reload).to be_status_ready_to_commit
+    expect(appointment_turn.outbound_commit).to be_outcome_type_tool
+    expect(appointment_turn.tool_execution).to have_attributes(status: 'pending', tool_key: 'request_appointment')
+  end
+
   it 'does not run when Chatwoot ownership is no longer eligible' do
     turn.conversation.update!(status: :open, assignee_agent_bot: nil)
 
@@ -223,13 +263,15 @@ RSpec.describe ChatRing::Brain::Runner do
     expect(provider).not_to have_received(:call)
   end
 
-  def build_turn(handoff_on_provider_failure: false)
+  def build_turn(handoff_on_provider_failure: false, appointment_tool: false)
     account = create(:account)
     workspace = account.chat_ring_workspace
     inbox = create(:channel_widget, account: account).inbox
     assistant = ChatRing::Assistant.create!(workspace: workspace, name: 'Support')
     scope = workspace.knowledge_scopes.find_by!(business_wide: true)
-    configuration = handoff_on_provider_failure ? { handoff_policy: { 'on_provider_failure' => 'handoff' } } : {}
+    configuration = {}
+    configuration[:handoff_policy] = { 'on_provider_failure' => 'handoff' } if handoff_on_provider_failure
+    configuration[:tool_grants] = [{ 'key' => 'request_appointment', 'version' => 1 }] if appointment_tool
     ChatRing::AssistantVersions::Publisher.new(assistant: assistant, knowledge_scope: scope, configuration: configuration).call
     connection = ChatRing::AssistantProvisioning::AgentBotProvisioner.new(assistant: assistant).call
     ChatRing::AssistantProvisioning::InboxBindingActivator.new(assistant: assistant, inbox: inbox).call

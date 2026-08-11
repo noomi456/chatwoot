@@ -44,6 +44,10 @@ class ChatRing::AiTurn < ApplicationRecord
           class_name: 'ChatRing::OutboundCommit',
           inverse_of: :ai_turn,
           dependent: :destroy
+  has_one :tool_execution,
+          class_name: 'ChatRing::ToolExecution',
+          inverse_of: :ai_turn,
+          dependent: :destroy
 
   scope :nonterminal, -> { where(status: statuses.values_at(*NONTERMINAL_STATUSES)) }
   scope :recovery_due, lambda { |now = Time.current|

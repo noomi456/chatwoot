@@ -72,8 +72,16 @@ class ChatRing::Brain::InboundInvocationBuilder
         'history' => history
       },
       'current_turn_native_messages' => native_messages,
+      'available_tools' => available_tools,
       'trigger_message' => trigger
     }
+  end
+
+  def available_tools
+    ChatRing::Tools::AvailabilityResolver.new(
+      inbox: turn.conversation.inbox,
+      assistant_version: turn.assistant_version
+    ).call
   end
 
   def audit_metadata(provenance)

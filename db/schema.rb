@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_08_10_006000) do
+ActiveRecord::Schema[7.1].define(version: 2026_08_10_007000) do
   # These extensions should be enabled to support this database
   enable_extension "pg_stat_statements"
   enable_extension "pg_trgm"
@@ -1118,6 +1118,30 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_10_006000) do
     t.index ["idempotency_key"], name: "index_chat_ring_outbound_commits_on_idempotency_key", unique: true
   end
 
+  create_table "chat_ring_tool_executions", force: :cascade do |t|
+    t.bigint "ai_turn_id", null: false
+    t.bigint "inbox_tool_policy_version_id", null: false
+    t.bigint "outbound_commit_id", null: false
+    t.string "tool_key", null: false
+    t.integer "tool_version", null: false
+    t.jsonb "validated_arguments", default: {}, null: false
+    t.jsonb "result_payload", default: {}, null: false
+    t.string "renderer", null: false
+    t.text "rendered_content", null: false
+    t.integer "status", default: 0, null: false
+    t.string "authorization_result", null: false
+    t.string "idempotency_key", null: false
+    t.string "failure_code"
+    t.datetime "attempted_at"
+    t.datetime "committed_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["ai_turn_id"], name: "index_chat_ring_tool_executions_on_ai_turn_id", unique: true
+    t.index ["idempotency_key"], name: "index_chat_ring_tool_executions_on_idempotency_key", unique: true
+    t.index ["inbox_tool_policy_version_id"], name: "idx_chatring_tool_executions_on_policy_version"
+    t.index ["outbound_commit_id"], name: "index_chat_ring_tool_executions_on_outbound_commit_id", unique: true
+  end
+
   create_table "chat_ring_webhook_deliveries", force: :cascade do |t|
     t.bigint "workspace_id", null: false
     t.bigint "assistant_agent_bot_connection_id", null: false
@@ -2016,6 +2040,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_10_006000) do
   add_foreign_key "chat_ring_native_handling_completions", "messages", column: "trigger_message_id", on_delete: :cascade
   add_foreign_key "chat_ring_outbound_commits", "chat_ring_ai_turns", column: "ai_turn_id", on_delete: :cascade
   add_foreign_key "chat_ring_outbound_commits", "messages", column: "chatwoot_message_id", on_delete: :restrict
+  add_foreign_key "chat_ring_tool_executions", "chat_ring_ai_turns", column: "ai_turn_id", on_delete: :cascade
+  add_foreign_key "chat_ring_tool_executions", "chat_ring_inbox_tool_policy_versions", column: "inbox_tool_policy_version_id", on_delete: :restrict
+  add_foreign_key "chat_ring_tool_executions", "chat_ring_outbound_commits", column: "outbound_commit_id", on_delete: :cascade
   add_foreign_key "chat_ring_webhook_deliveries", "chat_ring_assistant_agent_bot_connections", column: "assistant_agent_bot_connection_id", on_delete: :cascade
   add_foreign_key "chat_ring_webhook_deliveries", "chat_ring_workspaces", column: "workspace_id", on_delete: :cascade
   add_foreign_key "chat_ring_workspaces", "accounts", column: "chatwoot_account_id", on_delete: :cascade

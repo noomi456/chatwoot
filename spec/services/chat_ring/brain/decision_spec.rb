@@ -43,4 +43,32 @@ RSpec.describe ChatRing::Brain::Decision do
       )
     end.to raise_error(described_class::Invalid, 'Unknown Brain decision type')
   end
+
+  it 'accepts only the registered semantic appointment Tool without a model-controlled URL' do
+    decision = described_class.from_payload(
+      {
+        decision_type: 'request_appointment', response_text: '', reason_code: 'visitor_requested_demo', evidence_ids: [],
+        tool_request: {
+          key: 'request_appointment', version: 1,
+          arguments: { requested_time_window: 'next week', reason_code: 'visitor_requested_demo' }
+        }
+      },
+      allowed_evidence_ids: [],
+      evidence_status: 'insufficient_evidence'
+    )
+
+    expect(decision.tool_request.definition.identifier).to eq('request_appointment@1')
+    expect(decision.to_h.dig('tool_request', 'arguments')).not_to have_key('url')
+
+    expect do
+      described_class.from_payload(
+        {
+          decision_type: 'request_appointment', response_text: '', reason_code: 'visitor_requested_demo', evidence_ids: [],
+          tool_request: { key: 'request_appointment', version: 1, arguments: { url: 'https://attacker.example' } }
+        },
+        allowed_evidence_ids: [],
+        evidence_status: 'insufficient_evidence'
+      )
+    end.to raise_error(described_class::Invalid, 'Tool request arguments do not match the registered schema')
+  end
 end

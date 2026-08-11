@@ -4,6 +4,7 @@ class ChatRing::OutboundCommitPreparer
   EFFECTFUL_DECISIONS = {
     'reply' => :reply,
     'clarification' => :reply,
+    'request_appointment' => :tool,
     'handoff' => :handoff
   }.freeze
 
