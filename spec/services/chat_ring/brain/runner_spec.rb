@@ -37,6 +37,21 @@ RSpec.describe ChatRing::Brain::Runner do
     expect(turn.attempts.first).to be_status_succeeded
   end
 
+  it 'persists heading-less provider evidence as an empty path' do
+    allow(ChatRing::Knowledge::Retriever).to receive(:retrieve).and_return(accepted_evidence_set(heading_path: nil))
+    allow(provider).to receive(:call).and_return(
+      provider_result(
+        'decision_type' => 'reply', 'response_text' => 'Widgets are supported.',
+        'reason_code' => 'answered', 'evidence_ids' => ['evidence-1']
+      )
+    )
+
+    described_class.new(turn, provider: provider).call
+
+    expect(turn.reload).to be_status_ready_to_commit
+    expect(turn.evidence.first.heading_path).to eq([])
+  end
+
   it 'abstains deterministically without calling the model when retrieval has insufficient evidence' do
     allow(ChatRing::Knowledge::Retriever).to receive(:retrieve).and_return(empty_evidence_set)
 
@@ -462,12 +477,12 @@ RSpec.describe ChatRing::Brain::Runner do
     )
   end
 
-  def accepted_evidence_set
+  def accepted_evidence_set(heading_path: ['Features'])
     item = ChatRing::Knowledge::Evidence.new(
       id: 'evidence-1', knowledge_index_id: nil, provider: 'docs_gpt', provider_release: 'release',
       provider_source_id: 'source', provider_chunk_id: 'chunk', source_kind: 'website',
       source_reference: 'https://example.com/widgets', source_title: 'Widgets', public_url: 'https://example.com/widgets',
-      heading_path: ['Features'], page_locator: nil, page_headings: [], cta_candidates: [], locator: 'https://example.com/widgets',
+      heading_path: heading_path, page_locator: nil, page_headings: [], cta_candidates: [], locator: 'https://example.com/widgets',
       authority_class: 'product_documentation', risk_flags: [], excerpt: 'Widgets are supported.',
       source_content_hash: Digest::SHA256.hexdigest('content'), rank: 1, score: 0.8,
       score_kind: 'cosine_similarity', retrieval_strategy: 'classic_cosine'
