@@ -221,6 +221,24 @@ RSpec.describe Integrations::Hook do
       expect(hook).to be_valid
     end
 
+    it 'moves the RealtimeKit API token into the native encrypted access token field' do
+      allow(Integrations::Cloudflare::RealtimeKitCredentialsValidator).to receive(:validate)
+        .and_return(cloudflare_validator_result(true))
+
+      hook = create(:integrations_hook, :dyte, account: account, settings: settings)
+
+      expect(hook.access_token).to eq('api_token')
+      expect(hook.settings).not_to have_key('api_token')
+      expect(hook.settings).not_to have_key(:api_token)
+
+      if Chatwoot.encryption_configured?
+        stored_value = described_class.connection.select_value(
+          described_class.sanitize_sql_array(['SELECT access_token FROM integrations_hooks WHERE id = ?', hook.id])
+        )
+        expect(stored_value).not_to include('api_token')
+      end
+    end
+
     it 'skips validation when an enabled RealtimeKit hook is saved without changing credentials' do
       allow(Integrations::Cloudflare::RealtimeKitCredentialsValidator).to receive(:validate)
         .and_return(cloudflare_validator_result(true))

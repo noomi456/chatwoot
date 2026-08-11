@@ -221,7 +221,7 @@ dyte:
           'agent_preset_name': { 'type': 'string' },
           'visitor_preset_name': { 'type': 'string' },
         },
-      'required': ['account_id', 'app_id', 'api_token'],
+      'required': ['account_id', 'app_id'],
       'additionalProperties': false,
     }
   settings_form_schema:
