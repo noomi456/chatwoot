@@ -16,7 +16,7 @@ class ChatRing::Tools::Request
     raise Invalid, 'Tool request contains unknown fields' unless (attributes.keys - ATTRIBUTES).empty?
 
     @definition = ChatRing::Tools::Registry.fetch(attributes.fetch('key'), attributes.fetch('version'))
-    @arguments = attributes.fetch('arguments', {}).to_h.deep_stringify_keys.freeze
+    @arguments = attributes.fetch('arguments', {}).to_h.deep_stringify_keys.compact.freeze
     validate_arguments!
     freeze
   rescue KeyError, ArgumentError, TypeError => e
