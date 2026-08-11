@@ -68,6 +68,22 @@ RSpec.describe 'Integration Hooks API', type: :request do
         expect(response).to have_http_status(:unprocessable_entity)
         expect(response.parsed_body['message']).to include(I18n.t('errors.cloudflare.realtimekit.invalid_api_token'))
       end
+
+      it 'stores a valid Cloudflare API token outside JSON settings' do
+        allow(Integrations::Cloudflare::RealtimeKitCredentialsValidator).to receive(:validate)
+          .and_return(Integrations::Cloudflare::RealtimeKitCredentialsValidator::Result.new(true, nil))
+
+        post api_v1_account_integrations_hooks_url(account_id: account.id),
+             params: { app_id: 'dyte', settings: { account_id: 'cf-account', app_id: 'realtime-app', api_token: 'cf-secret' } },
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        hook = account.hooks.find_by!(app_id: 'dyte')
+        expect(hook.access_token).to eq('cf-secret')
+        expect(hook.settings).to eq('account_id' => 'cf-account', 'app_id' => 'realtime-app')
+        expect(response.parsed_body.dig('settings', 'api_token')).to be_nil
+      end
     end
   end
 

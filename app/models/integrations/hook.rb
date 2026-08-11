@@ -18,6 +18,7 @@ class Integrations::Hook < ApplicationRecord
   include Reauthorizable
 
   attr_readonly :app_id, :account_id, :inbox_id, :hook_type
+  before_validation :extract_cloudflare_realtimekit_api_token
   before_validation :ensure_hook_type
   after_create :trigger_setup_if_crm
 
@@ -122,7 +123,8 @@ class Integrations::Hook < ApplicationRecord
   end
 
   def cloudflare_realtimekit_credentials_changed?
-    settings_cloudflare_realtimekit_credentials(settings) != settings_cloudflare_realtimekit_credentials(settings_in_database)
+    settings_cloudflare_realtimekit_identifiers(settings) != settings_cloudflare_realtimekit_identifiers(settings_in_database) ||
+      will_save_change_to_access_token?
   end
 
   def legacy_dyte_settings_unchanged?
@@ -143,7 +145,7 @@ class Integrations::Hook < ApplicationRecord
   end
 
   def validate_cloudflare_realtimekit_credentials
-    result = Integrations::Cloudflare::RealtimeKitCredentialsValidator.validate(*settings_cloudflare_realtimekit_credentials(settings))
+    result = Integrations::Cloudflare::RealtimeKitCredentialsValidator.validate(*cloudflare_realtimekit_credentials)
     return if result.success?
 
     errors.add(:base, I18n.t("errors.cloudflare.realtimekit.#{result.error}"))
@@ -153,12 +155,29 @@ class Integrations::Hook < ApplicationRecord
     settings_value(value, 'api_key')
   end
 
-  def settings_cloudflare_realtimekit_credentials(value)
+  def cloudflare_realtimekit_credentials
+    [*settings_cloudflare_realtimekit_identifiers(settings), access_token]
+  end
+
+  def settings_cloudflare_realtimekit_identifiers(value)
     [
       settings_value(value, 'account_id'),
-      settings_value(value, 'app_id'),
-      settings_value(value, 'api_token')
+      settings_value(value, 'app_id')
     ]
+  end
+
+  def extract_cloudflare_realtimekit_api_token
+    return unless dyte? && settings.is_a?(Hash)
+
+    token_key = 'api_token' if settings.key?('api_token')
+    token_key ||= :api_token if settings.key?(:api_token)
+    return if token_key.blank?
+
+    normalized_settings = settings.deep_dup
+    self.access_token = normalized_settings.delete(token_key)
+    normalized_settings.delete(token_key.to_s)
+    normalized_settings.delete(token_key.to_sym)
+    self.settings = normalized_settings
   end
 
   def settings_value(value, key)

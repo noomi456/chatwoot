@@ -161,7 +161,7 @@ class Integrations::Dyte::ProcessorService
   end
 
   def realtimekit_credentials
-    %i[account_id app_id api_token].map { |key| realtimekit_settings[key] }
+    [realtimekit_settings[:account_id], realtimekit_settings[:app_id], dyte_hook.access_token]
   end
 
   def realtimekit_preset_name(user)
