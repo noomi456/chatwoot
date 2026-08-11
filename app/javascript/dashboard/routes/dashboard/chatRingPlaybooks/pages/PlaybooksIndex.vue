@@ -37,7 +37,14 @@ const stepKindOptions = [
   { value: 'terminal', label: 'Complete or hand off' },
   { value: 'transition', label: 'Transition to Playbook version' },
 ];
-const fieldTypeOptions = ['string', 'email', 'phone', 'number', 'boolean', 'choice'].map(value => ({
+const fieldTypeOptions = [
+  'string',
+  'email',
+  'phone',
+  'number',
+  'boolean',
+  'choice',
+].map(value => ({
   value,
   label: value,
 }));
@@ -59,8 +66,7 @@ const selectedPolicy = computed(() =>
 );
 const inboxPlaybooks = computed(() =>
   playbooks.value.filter(
-    playbook =>
-      String(playbook.inbox.id) === String(selectedInboxId.value)
+    playbook => String(playbook.inbox.id) === String(selectedInboxId.value)
   )
 );
 const selectedPlaybook = computed(() =>
@@ -82,7 +88,9 @@ const isReadOnly = computed(
 );
 
 const apiError = error =>
-  error?.response?.data?.error || error?.message || t('CHATRING_PLAYBOOKS.ERROR');
+  error?.response?.data?.error ||
+  error?.message ||
+  t('CHATRING_PLAYBOOKS.ERROR');
 
 const deepCopy = value => JSON.parse(JSON.stringify(value));
 const lines = value =>
@@ -159,7 +167,9 @@ const serializedStep = step => {
       prompt: step.prompt?.trim(),
       field_key: step.field_key?.trim(),
       choices: lines(step.choicesText || '').map(item => {
-        const [label, value, nextStepId] = item.split('|').map(part => part.trim());
+        const [label, value, nextStepId] = item
+          .split('|')
+          .map(part => part.trim());
         return { label, value, next_step_id: nextStepId };
       }),
     };
@@ -336,7 +346,9 @@ onMounted(load);
 
 <template>
   <div class="flex flex-col w-full h-full overflow-auto bg-n-background">
-    <header class="flex items-start justify-between gap-4 px-8 py-6 border-b border-n-weak">
+    <header
+      class="flex items-start justify-between gap-4 px-8 py-6 border-b border-n-weak"
+    >
       <div>
         <h1 class="text-2xl font-semibold text-n-slate-12">
           {{ t('CHATRING_PLAYBOOKS.TITLE') }}
@@ -345,7 +357,11 @@ onMounted(load);
           {{ t('CHATRING_PLAYBOOKS.DESCRIPTION') }}
         </p>
       </div>
-      <Button data-testid="new-playbook" :disabled="!selectedInboxId || isSaving" @click="createPlaybook">
+      <Button
+        data-testid="new-playbook"
+        :disabled="!selectedInboxId || isSaving"
+        @click="createPlaybook"
+      >
         {{ t('CHATRING_PLAYBOOKS.NEW') }}
       </Button>
     </header>
@@ -354,7 +370,10 @@ onMounted(load);
       <Spinner />
     </div>
 
-    <main v-else class="grid gap-5 p-6 xl:grid-cols-[18rem_minmax(0,1fr)_20rem]">
+    <main
+      v-else
+      class="grid gap-5 p-6 xl:grid-cols-[18rem_minmax(0,1fr)_20rem]"
+    >
       <aside class="space-y-4">
         <section class="p-4 border rounded-xl border-n-weak bg-n-solid-1">
           <p class="mb-2 text-sm font-medium text-n-slate-12">
@@ -362,7 +381,9 @@ onMounted(load);
           </p>
           <Select v-model="selectedInboxId" :options="inboxOptions" />
         </section>
-        <section class="overflow-hidden border rounded-xl border-n-weak bg-n-solid-1">
+        <section
+          class="overflow-hidden border rounded-xl border-n-weak bg-n-solid-1"
+        >
           <button
             v-for="playbook in inboxPlaybooks"
             :key="playbook.id"
@@ -388,7 +409,9 @@ onMounted(load);
       </aside>
 
       <section v-if="selectedPlaybook" class="space-y-5">
-        <article class="grid gap-4 p-5 border rounded-xl border-n-weak bg-n-solid-1 md:grid-cols-2">
+        <article
+          class="grid gap-4 p-5 border rounded-xl border-n-weak bg-n-solid-1 md:grid-cols-2"
+        >
           <Input
             v-model="form.name"
             :disabled="isReadOnly"
@@ -427,7 +450,10 @@ onMounted(load);
           <h2 class="text-sm font-semibold text-n-slate-12">
             {{ t('CHATRING_PLAYBOOKS.TOOLS') }}
           </h2>
-          <div v-if="appointmentAvailable" class="flex items-center gap-2 mt-3 text-sm text-n-slate-12">
+          <div
+            v-if="appointmentAvailable"
+            class="flex items-center gap-2 mt-3 text-sm text-n-slate-12"
+          >
             <Switch v-model="form.appointmentTool" :disabled="isReadOnly" />
             <span>{{ t('CHATRING_PLAYBOOKS.APPOINTMENT_TOOL') }}</span>
           </div>
@@ -445,15 +471,37 @@ onMounted(load);
               {{ t('CHATRING_PLAYBOOKS.ADD_FIELD') }}
             </Button>
           </div>
-          <div v-for="(field, index) in form.collectedFields" :key="index" class="grid gap-3 pt-4 mt-4 border-t border-n-weak md:grid-cols-5">
-            <Input v-model="field.key" :disabled="isReadOnly" :placeholder="t('CHATRING_PLAYBOOKS.FIELD_PLACEHOLDER')" />
-            <Select v-model="field.type" :disabled="isReadOnly" :options="fieldTypeOptions" />
-            <Input v-model="field.native_contact_attribute_key" :disabled="isReadOnly" :placeholder="t('CHATRING_PLAYBOOKS.NATIVE_ATTRIBUTE_PLACEHOLDER')" />
+          <div
+            v-for="(field, index) in form.collectedFields"
+            :key="index"
+            class="grid gap-3 pt-4 mt-4 border-t border-n-weak md:grid-cols-5"
+          >
+            <Input
+              v-model="field.key"
+              :disabled="isReadOnly"
+              :placeholder="t('CHATRING_PLAYBOOKS.FIELD_PLACEHOLDER')"
+            />
+            <Select
+              v-model="field.type"
+              :disabled="isReadOnly"
+              :options="fieldTypeOptions"
+            />
+            <Input
+              v-model="field.native_contact_attribute_key"
+              :disabled="isReadOnly"
+              :placeholder="
+                t('CHATRING_PLAYBOOKS.NATIVE_ATTRIBUTE_PLACEHOLDER')
+              "
+            />
             <div class="flex items-center gap-2 text-sm text-n-slate-12">
               <Switch v-model="field.required" :disabled="isReadOnly" />
               <span>{{ t('CHATRING_PLAYBOOKS.REQUIRED') }}</span>
             </div>
-            <Button variant="ghost" :disabled="isReadOnly" @click="form.collectedFields.splice(index, 1)">
+            <Button
+              variant="ghost"
+              :disabled="isReadOnly"
+              @click="form.collectedFields.splice(index, 1)"
+            >
               {{ t('CHATRING_PLAYBOOKS.REMOVE_STEP') }}
             </Button>
           </div>
@@ -469,18 +517,45 @@ onMounted(load);
             </Button>
           </div>
 
-          <div v-for="(step, index) in form.steps" :key="index" class="p-4 mt-4 space-y-3 border rounded-lg border-n-weak">
+          <div
+            v-for="(step, index) in form.steps"
+            :key="index"
+            class="p-4 mt-4 space-y-3 border rounded-lg border-n-weak"
+          >
             <div class="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
-              <Input v-model="step.id" :disabled="isReadOnly" :placeholder="t('CHATRING_PLAYBOOKS.STEP_ID')" />
-              <Select v-model="step.kind" :disabled="isReadOnly" :options="stepKindOptions" />
-              <Button variant="ghost" :disabled="isReadOnly" @click="form.steps.splice(index, 1)">
+              <Input
+                v-model="step.id"
+                :disabled="isReadOnly"
+                :placeholder="t('CHATRING_PLAYBOOKS.STEP_ID')"
+              />
+              <Select
+                v-model="step.kind"
+                :disabled="isReadOnly"
+                :options="stepKindOptions"
+              />
+              <Button
+                variant="ghost"
+                :disabled="isReadOnly"
+                @click="form.steps.splice(index, 1)"
+              >
                 {{ t('CHATRING_PLAYBOOKS.REMOVE_STEP') }}
               </Button>
             </div>
 
-            <template v-if="step.kind === 'ask_text' || step.kind === 'ask_choice'">
-              <TextArea v-model="step.prompt" :disabled="isReadOnly" :placeholder="t('CHATRING_PLAYBOOKS.STEP_TEXT')" :max-length="1000" />
-              <Input v-model="step.field_key" :disabled="isReadOnly" :placeholder="t('CHATRING_PLAYBOOKS.FIELD_KEY')" />
+            <template
+              v-if="step.kind === 'ask_text' || step.kind === 'ask_choice'"
+            >
+              <TextArea
+                v-model="step.prompt"
+                :disabled="isReadOnly"
+                :placeholder="t('CHATRING_PLAYBOOKS.STEP_TEXT')"
+                :max-length="1000"
+              />
+              <Input
+                v-model="step.field_key"
+                :disabled="isReadOnly"
+                :placeholder="t('CHATRING_PLAYBOOKS.FIELD_KEY')"
+              />
             </template>
             <TextArea
               v-if="step.kind === 'ask_choice'"
@@ -516,7 +591,9 @@ onMounted(load);
                 v-model="step.target_playbook_version_id"
                 type="number"
                 :disabled="isReadOnly"
-                :placeholder="t('CHATRING_PLAYBOOKS.TARGET_VERSION_PLACEHOLDER')"
+                :placeholder="
+                  t('CHATRING_PLAYBOOKS.TARGET_VERSION_PLACEHOLDER')
+                "
               />
               <TextArea
                 v-model="step.carryFieldsText"
@@ -528,25 +605,56 @@ onMounted(load);
           </div>
         </article>
 
-        <article v-if="validation" class="p-4 border rounded-xl" :class="validation.valid ? 'border-n-teal-7 bg-n-teal-2' : 'border-n-ruby-7 bg-n-ruby-2'">
+        <article
+          v-if="validation"
+          class="p-4 border rounded-xl"
+          :class="
+            validation.valid
+              ? 'border-n-teal-7 bg-n-teal-2'
+              : 'border-n-ruby-7 bg-n-ruby-2'
+          "
+        >
           <p class="text-sm font-semibold text-n-slate-12">
-            {{ validation.valid ? t('CHATRING_PLAYBOOKS.VALID') : t('CHATRING_PLAYBOOKS.INVALID') }}
+            {{
+              validation.valid
+                ? t('CHATRING_PLAYBOOKS.VALID')
+                : t('CHATRING_PLAYBOOKS.INVALID')
+            }}
           </p>
-          <ul v-if="validation.errors?.length" class="mt-2 space-y-1 text-sm text-n-slate-11">
-            <li v-for="error in validation.errors" :key="`${error.code}-${error.path}`">
+          <ul
+            v-if="validation.errors?.length"
+            class="mt-2 space-y-1 text-sm text-n-slate-11"
+          >
+            <li
+              v-for="error in validation.errors"
+              :key="`${error.code}-${error.path}`"
+            >
               {{ error.path }}: {{ error.message }}
             </li>
           </ul>
         </article>
 
         <div class="flex justify-end gap-2">
-          <Button data-testid="validate-playbook" variant="outline" @click="validateDefinition">
+          <Button
+            data-testid="validate-playbook"
+            variant="outline"
+            @click="validateDefinition"
+          >
             {{ t('CHATRING_PLAYBOOKS.VALIDATE') }}
           </Button>
-          <Button data-testid="save-playbook" variant="outline" :disabled="isReadOnly || isSaving" @click="saveDraft()">
+          <Button
+            data-testid="save-playbook"
+            variant="outline"
+            :disabled="isReadOnly || isSaving"
+            @click="saveDraft()"
+          >
             {{ t('CHATRING_PLAYBOOKS.SAVE') }}
           </Button>
-          <Button data-testid="publish-playbook" :disabled="isReadOnly || isSaving" @click="publish">
+          <Button
+            data-testid="publish-playbook"
+            :disabled="isReadOnly || isSaving"
+            @click="publish"
+          >
             {{ t('CHATRING_PLAYBOOKS.PUBLISH') }}
           </Button>
         </div>
@@ -557,16 +665,28 @@ onMounted(load);
           <h2 class="text-sm font-semibold text-n-slate-12">
             {{ t('CHATRING_PLAYBOOKS.PREVIEW') }}
           </h2>
-          <div v-for="(step, index) in form.steps" :key="index" class="p-3 mt-3 border rounded-lg border-n-weak">
+          <div
+            v-for="(step, index) in form.steps"
+            :key="index"
+            class="p-3 mt-3 border rounded-lg border-n-weak"
+          >
             <p class="text-xs font-medium uppercase text-n-slate-10">
               {{ step.id || `step_${index + 1}` }} · {{ step.kind }}
             </p>
             <p class="mt-1 text-sm text-n-slate-12">
-              {{ step.prompt || step.message || step.outcome || step.tool?.key || '—' }}
+              {{
+                step.prompt ||
+                step.message ||
+                step.outcome ||
+                step.tool?.key ||
+                '—'
+              }}
             </p>
           </div>
         </section>
-        <p class="p-4 text-xs border rounded-xl border-n-weak text-n-slate-10 bg-n-solid-1">
+        <p
+          class="p-4 text-xs border rounded-xl border-n-weak text-n-slate-10 bg-n-solid-1"
+        >
           {{ t('CHATRING_PLAYBOOKS.BOUNDARY') }}
         </p>
       </aside>
