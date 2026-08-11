@@ -207,7 +207,7 @@ class ChatRing::Playbooks::CommitPlan # rubocop:disable Metrics/ClassLength
     raise Invalid, e.code
   end
 
-  def navigate_tool_step(step)
+  def navigate_tool_step(step) # rubocop:disable Metrics/MethodLength
     tool = step.fetch('tool')
     raise Invalid, 'playbook_tool_unsupported' unless tool.values_at('key', 'version') == ['request_appointment', 1]
 
