@@ -118,6 +118,7 @@ Rails.application.routes.draw do
             resources :inbox_tool_policies, only: [:index, :show, :update], param: :inbox_id do
               get :definitions, on: :collection
             end
+            resources :inbox_engagements, only: [:index, :update], param: :inbox_id
             resources :inbox_playbooks, only: [:index, :show, :create] do
               member do
                 patch :update_draft

@@ -521,6 +521,11 @@ const menuItems = computed(() => {
                 label: t('SIDEBAR.CHATRING_PLAYBOOKS'),
                 to: accountScopedRoute('chatring_playbooks_index'),
               },
+              {
+                name: 'ChatRing Engagements',
+                label: t('SIDEBAR.CHATRING_ENGAGEMENTS'),
+                to: accountScopedRoute('chatring_engagements_index'),
+              },
             ],
           },
         ]

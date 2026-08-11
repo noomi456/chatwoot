@@ -58,6 +58,39 @@ RSpec.describe '/api/v1/widget/config', type: :request do
 
         expect(response).to have_http_status(:unauthorized)
       end
+
+      it 'returns only the active Inbox-owned conversation starters' do
+        ChatRing::InboxEngagement.create!(
+          workspace: ChatRing::Workspace.for_account!(account),
+          inbox: web_widget.inbox,
+          starters: [{ 'label' => 'See pricing', 'prompt' => 'What pricing plans do you offer?' }]
+        )
+
+        post '/api/v1/widget/config',
+             params: params,
+             headers: { 'X-Auth-Token' => token },
+             as: :json
+
+        expect(response.parsed_body.dig('website_channel_config', 'conversation_starters')).to eq(
+          [{ 'label' => 'See pricing', 'prompt' => 'What pricing plans do you offer?' }]
+        )
+      end
+
+      it 'returns no conversation starters when the Inbox configuration is disabled' do
+        ChatRing::InboxEngagement.create!(
+          workspace: ChatRing::Workspace.for_account!(account),
+          inbox: web_widget.inbox,
+          enabled: false,
+          starters: [{ 'label' => 'See pricing', 'prompt' => 'What pricing plans do you offer?' }]
+        )
+
+        post '/api/v1/widget/config',
+             params: params,
+             headers: { 'X-Auth-Token' => token },
+             as: :json
+
+        expect(response.parsed_body.dig('website_channel_config', 'conversation_starters')).to eq([])
+      end
     end
 
     context 'with correct website token and invalid X-Auth-Token' do
