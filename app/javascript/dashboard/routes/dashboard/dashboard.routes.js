@@ -12,6 +12,7 @@ import campaignsRoutes from './campaigns/campaigns.routes';
 import { routes as captainRoutes } from './captain/captain.routes';
 import { routes as chatRingKnowledgeRoutes } from './chatRingKnowledge/chatRingKnowledge.routes';
 import { routes as chatRingAssistantsRoutes } from './chatRingAssistants/chatRingAssistants.routes';
+import { routes as chatRingToolsRoutes } from './chatRingTools/chatRingTools.routes';
 import AppContainer from './Dashboard.vue';
 import Suspended from './suspended/Index.vue';
 import NoAccounts from './noAccounts/Index.vue';
@@ -26,6 +27,7 @@ export default {
       children: [
         ...captainRoutes,
         ...chatRingAssistantsRoutes,
+        ...chatRingToolsRoutes,
         ...chatRingKnowledgeRoutes,
         ...inboxRoutes,
         ...conversation.routes,

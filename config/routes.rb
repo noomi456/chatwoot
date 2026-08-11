@@ -115,6 +115,9 @@ Rails.application.routes.draw do
             end
             resources :assistant_bindings, only: [:destroy]
             resources :ai_turns, only: [:index, :show]
+            resources :inbox_tool_policies, only: [:index, :show, :update], param: :inbox_id do
+              get :definitions, on: :collection
+            end
             namespace :knowledge do
               resources :websites, only: [:create]
               resources :webpages, only: [:create]

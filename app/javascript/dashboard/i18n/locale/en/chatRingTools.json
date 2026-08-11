@@ -1,0 +1,21 @@
+{
+  "CHATRING_TOOLS": {
+    "TITLE": "Tools",
+    "DESCRIPTION": "Choose which approved capabilities are available in each Inbox.",
+    "INBOX": "Inbox",
+    "APPOINTMENT_TITLE": "Request appointment",
+    "APPOINTMENT_DESCRIPTION": "Offer an administrator-approved booking link. The AI cannot choose or change this destination.",
+    "ENABLED": "Enabled",
+    "PROVIDER": "Calendar provider",
+    "URL": "Approved booking URL",
+    "LINK_LABEL": "Link label",
+    "SAVE": "Publish policy",
+    "SAVED": "Tool policy published",
+    "ERROR": "Unable to update the Tool policy",
+    "NOT_CONFIGURED": "Not configured",
+    "VERSION": "Published version {version}",
+    "CAPABILITY": "Inbox delivery preview",
+    "APPROVED_LINK": "Ordinary approved link through native Chatwoot messaging",
+    "EMBED_DEFERRED": "Embedded calendars remain disabled until a provider-specific Website security and browser certification passes."
+  }
+}

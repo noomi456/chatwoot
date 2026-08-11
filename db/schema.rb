@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_08_10_005000) do
+ActiveRecord::Schema[7.1].define(version: 2026_08_10_006000) do
   # These extensions should be enabled to support this database
   enable_extension "pg_stat_statements"
   enable_extension "pg_trgm"
@@ -857,6 +857,31 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_10_005000) do
     t.index ["workspace_id", "chatwoot_inbox_id", "binding_version"], name: "idx_chatring_bindings_on_inbox_version", unique: true
     t.index ["workspace_id", "chatwoot_inbox_id"], name: "idx_chatring_bindings_one_active_per_inbox", unique: true, where: "(status = 1)"
     t.index ["workspace_id"], name: "index_chat_ring_inbox_assistant_bindings_on_workspace_id"
+  end
+
+  create_table "chat_ring_inbox_tool_policies", force: :cascade do |t|
+    t.bigint "workspace_id", null: false
+    t.integer "chatwoot_inbox_id", null: false
+    t.bigint "current_version_id"
+    t.integer "status", default: 0, null: false
+    t.integer "lock_version", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["chatwoot_inbox_id"], name: "idx_chatring_tool_policies_on_inbox", unique: true
+    t.index ["workspace_id"], name: "index_chat_ring_inbox_tool_policies_on_workspace_id"
+  end
+
+  create_table "chat_ring_inbox_tool_policy_versions", force: :cascade do |t|
+    t.bigint "inbox_tool_policy_id", null: false
+    t.integer "version", null: false
+    t.jsonb "enabled_tools", default: [], null: false
+    t.jsonb "tool_configurations", default: {}, null: false
+    t.jsonb "renderer_policy", default: {}, null: false
+    t.bigint "created_by_id"
+    t.datetime "published_at", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["inbox_tool_policy_id", "version"], name: "idx_chatring_tool_policy_versions_unique", unique: true
   end
 
   create_table "chat_ring_knowledge_bases", force: :cascade do |t|
@@ -1963,6 +1988,11 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_10_005000) do
   add_foreign_key "chat_ring_inbox_assistant_bindings", "chat_ring_assistants", column: "assistant_id", on_delete: :cascade
   add_foreign_key "chat_ring_inbox_assistant_bindings", "chat_ring_workspaces", column: "workspace_id", on_delete: :cascade
   add_foreign_key "chat_ring_inbox_assistant_bindings", "inboxes", column: "chatwoot_inbox_id", on_delete: :cascade
+  add_foreign_key "chat_ring_inbox_tool_policies", "chat_ring_inbox_tool_policy_versions", column: "current_version_id", on_delete: :nullify
+  add_foreign_key "chat_ring_inbox_tool_policies", "chat_ring_workspaces", column: "workspace_id", on_delete: :cascade
+  add_foreign_key "chat_ring_inbox_tool_policies", "inboxes", column: "chatwoot_inbox_id", on_delete: :cascade
+  add_foreign_key "chat_ring_inbox_tool_policy_versions", "chat_ring_inbox_tool_policies", column: "inbox_tool_policy_id", on_delete: :cascade
+  add_foreign_key "chat_ring_inbox_tool_policy_versions", "users", column: "created_by_id", on_delete: :nullify
   add_foreign_key "chat_ring_knowledge_bases", "chat_ring_knowledge_indexes", column: "active_knowledge_index_id", on_delete: :nullify
   add_foreign_key "chat_ring_knowledge_bases", "chat_ring_workspaces", column: "workspace_id", on_delete: :cascade
   add_foreign_key "chat_ring_knowledge_documents", "chat_ring_knowledge_file_sources", column: "file_source_id", on_delete: :nullify

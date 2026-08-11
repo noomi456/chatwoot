@@ -511,6 +511,11 @@ const menuItems = computed(() => {
                 label: t('SIDEBAR.CHATRING_KNOWLEDGE'),
                 to: accountScopedRoute('chatring_knowledge_index'),
               },
+              {
+                name: 'ChatRing Tools',
+                label: t('SIDEBAR.CHATRING_TOOLS'),
+                to: accountScopedRoute('chatring_tools_index'),
+              },
             ],
           },
         ]
