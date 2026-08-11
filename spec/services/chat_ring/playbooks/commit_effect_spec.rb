@@ -152,6 +152,23 @@ RSpec.describe ChatRing::Playbooks::CommitEffect do
     expect(execution.reload).to have_attributes(status: 'waiting_for_customer', current_step_id: 'ask_need')
   end
 
+  it 'does not repeat the pending question when the model changes only its interrogative' do
+    service.perform
+    side_turn = build_follow_up_turn(
+      'decision_type' => 'playbook',
+      'response_text' => "Installation is included.\n\nWhich service do you need?",
+      'reason_code' => 'answered_side_question',
+      'evidence_ids' => ['evidence-1'],
+      'playbook_control' => { 'action' => 'answer_side_question' }
+    )
+
+    result = service_for(side_turn).perform
+
+    expect(result.message.content).to eq("Installation is included.\n\nWhat service do you need?")
+    expect(result.message.content.scan(/(?:What|Which) service do you need\?/).count).to eq(1)
+    expect(execution.reload).to have_attributes(status: 'waiting_for_customer', current_step_id: 'ask_need')
+  end
+
   it 'declines an unsupported side question with approved copy and resumes the exact pending question' do
     service.perform
     resume_turn = build_follow_up_turn(

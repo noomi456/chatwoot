@@ -125,7 +125,26 @@ class ChatRing::Playbooks::CommitPlan
 
   def side_answer
     answer = turn.decision_payload.fetch('response_text').to_s.strip
-    answer.delete_suffix(rendered_current_question).strip
+    remove_echoed_pending_question(answer)
+  end
+
+  def remove_echoed_pending_question(answer)
+    paragraphs = answer.split(/\n{2,}/)
+    return answer unless echoed_pending_question?(paragraphs.last)
+
+    paragraphs[0...-1].join("\n\n").strip
+  end
+
+  def echoed_pending_question?(paragraph)
+    paragraph.to_s.rstrip.end_with?('?') &&
+      normalized_question(paragraph) == normalized_question(rendered_current_question)
+  end
+
+  def normalized_question(value)
+    value.to_s.unicode_normalize(:nfkc).downcase
+         .gsub(/[^\p{Alnum}]+/u, ' ')
+         .strip
+         .sub(/\A(?:what|which|who|whom|whose|when|where|why|how)\s+/, '')
   end
 
   def rendered_current_question
