@@ -2,6 +2,7 @@
 import UserMessage from 'widget/components/UserMessage.vue';
 import AgentMessageBubble from 'widget/components/AgentMessageBubble.vue';
 import AgentCitations from 'widget/components/AgentCitations.vue';
+import AppointmentCalendar from 'widget/components/AppointmentCalendar.vue';
 import MessageReplyButton from 'widget/components/MessageReplyButton.vue';
 import { messageStamp } from 'shared/helpers/timeHelper';
 import ImageBubble from 'widget/components/ImageBubble.vue';
@@ -21,6 +22,7 @@ export default {
   components: {
     AgentMessageBubble,
     AgentCitations,
+    AppointmentCalendar,
     ImageBubble,
     VideoBubble,
     Avatar,
@@ -208,6 +210,9 @@ export default {
             />
             <AgentCitations
               :citations="messageContentAttributes.chatring_citations || []"
+            />
+            <AppointmentCalendar
+              :presentation="messageContentAttributes.chatring_tool"
             />
             <div
               v-if="hasAttachments"

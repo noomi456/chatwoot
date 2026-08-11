@@ -16,6 +16,10 @@
     "VERSION": "Published version {version}",
     "CAPABILITY": "Inbox delivery preview",
     "APPROVED_LINK": "Ordinary approved link through native Chatwoot messaging",
-    "EMBED_DEFERRED": "Embedded calendars remain disabled until a provider-specific Website security and browser certification passes."
+    "CALENDAR_EMBED": "Embed Calendly in the Website Widget",
+    "CALENDAR_EMBED_DESCRIPTION": "Visitors can open this approved Calendly page inline. The ordinary link remains available as the fallback.",
+    "CALENDAR_EMBED_UNAVAILABLE": "Inline calendar rendering is certified only for Calendly on a Website Inbox.",
+    "CALENDAR_EMBED_ACTIVE": "Approved Calendly embed in the Website Widget",
+    "APPROVED_LINK_FALLBACK": "The same ordinary Chatwoot Message always contains the approved booking link for refreshes and unsupported channels."
   }
 }

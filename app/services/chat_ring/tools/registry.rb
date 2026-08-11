@@ -17,14 +17,16 @@ class ChatRing::Tools::Registry
       'additionalProperties' => false,
       'required' => %w[presentation_mode approved_url],
       'properties' => {
-        'presentation_mode' => { 'enum' => ['approved_link'] },
-        'approved_url' => { 'type' => 'string', 'format' => 'uri' }
+        'presentation_mode' => { 'enum' => %w[approved_link calendar_embed] },
+        'provider' => { 'enum' => %w[calendly calcom custom_link] },
+        'approved_url' => { 'type' => 'string', 'format' => 'uri' },
+        'link_label' => { 'type' => 'string', 'minLength' => 1, 'maxLength' => 80 }
       }
     },
     side_effect_class: 'customer_visible',
     authorization_policy: 'inbox_tool_policy',
     idempotency_policy: 'one_customer_visible_result_per_origin',
-    renderer_families: ['approved_link']
+    renderer_families: %w[approved_link calendar_embed]
   )
 
   DEFINITIONS = [REQUEST_APPOINTMENT].index_by(&:identifier).freeze

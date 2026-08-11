@@ -77,14 +77,14 @@ describe('ChatRing Tools administration page', () => {
     mocks.publish.mockResolvedValue({ data: configuredPolicy(2) });
   });
 
-  it('loads the Inbox policy and shows approved-link capability without offering an embed', async () => {
+  it('loads the Inbox policy and offers the certified Calendly Website embed', async () => {
     const wrapper = mount(ToolsIndex);
     await flushPromises();
 
     expect(mocks.list).toHaveBeenCalledOnce();
     expect(mocks.definitions).toHaveBeenCalledOnce();
     expect(wrapper.text()).toContain('Offer an approved appointment path.');
-    expect(wrapper.text()).toContain('CHATRING_TOOLS.EMBED_DEFERRED');
+    expect(wrapper.text()).toContain('CHATRING_TOOLS.CALENDAR_EMBED');
     expect(wrapper.text()).toContain('approved_link');
   });
 
@@ -107,10 +107,36 @@ describe('ChatRing Tools administration page', () => {
           url: 'https://calendly.com/chatring/demo',
           fallback_mode: 'approved_link',
           link_label: 'Book a meeting',
+          website_presentation: 'approved_link',
         },
       },
       renderer_policy: {},
     });
     expect(mocks.alert).toHaveBeenCalledWith('CHATRING_TOOLS.SAVED');
+  });
+
+  it('publishes the Website embed only through the immutable Calendly policy', async () => {
+    const wrapper = mount(ToolsIndex);
+    await flushPromises();
+
+    const switches = wrapper.findAll('[role="switch"]');
+    await switches[1].trigger('click');
+    const saveButton = wrapper
+      .findAll('button')
+      .find(button => button.text().includes('CHATRING_TOOLS.SAVE'));
+    await saveButton.trigger('click');
+    await flushPromises();
+
+    expect(mocks.publish).toHaveBeenCalledWith(
+      7,
+      expect.objectContaining({
+        tool_configurations: {
+          request_appointment: expect.objectContaining({
+            provider: 'calendly',
+            website_presentation: 'calendar_embed',
+          }),
+        },
+      })
+    );
   });
 });

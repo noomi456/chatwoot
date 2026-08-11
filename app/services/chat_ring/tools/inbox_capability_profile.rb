@@ -42,11 +42,12 @@ class ChatRing::Tools::InboxCapabilityProfile
 
     configuration = policy_version.configuration_for(definition.key)
     fallback = configuration.fetch('fallback_mode')
+    renderer = configuration.fetch('website_presentation', fallback)
     Capability.new(
       key: definition.key,
       version: definition.version,
       available: true,
-      renderer: fallback,
+      renderer: renderer,
       fallback: fallback,
       reason: nil
     )

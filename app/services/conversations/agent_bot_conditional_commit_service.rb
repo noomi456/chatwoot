@@ -91,7 +91,7 @@ class Conversations::AgentBotConditionalCommitService
     failure_code = effect_precondition_failure(outbound_commit, turn, effective_attributes)
     return reject(outbound_commit, failure_code, turn, playbook_execution) if failure_code
 
-    message = create_message(turn, effective_attributes)
+    message = create_message(turn, outbound_commit, effective_attributes)
     playbook_effect&.apply!(message)
     outbound_commit.update!(
       status: :committed,
@@ -161,7 +161,12 @@ class Conversations::AgentBotConditionalCommitService
     outbound_commit
   end
 
-  def create_message(turn, attributes)
+  def create_message(turn, outbound_commit, attributes)
+    content_attributes = {
+      'chatring_citations' => ChatRing::Brain::VisitorCitationPresenter.call(turn)
+    }
+    content_attributes['chatring_tool'] = tool_presentation(outbound_commit) if outbound_commit.outcome_type_tool?
+
     conversation.messages.create!(
       account_id: conversation.account_id,
       inbox_id: conversation.inbox_id,
@@ -170,9 +175,13 @@ class Conversations::AgentBotConditionalCommitService
       content_type: attributes[:content_type].presence || :text,
       content: attributes[:content],
       source_id: "chatring:#{turn.outbound_commit.outcome_type}:#{idempotency_key}",
-      content_attributes: {
-        'chatring_citations' => ChatRing::Brain::VisitorCitationPresenter.call(turn)
-      }
+      content_attributes: content_attributes
     )
+  end
+
+  def tool_presentation(outbound_commit)
+    ChatRing::Tools::VisitorPresentation.call(outbound_commit.tool_execution)
+  rescue ArgumentError
+    raise Unauthorized
   end
 end

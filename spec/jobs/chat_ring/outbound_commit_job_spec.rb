@@ -232,8 +232,7 @@ RSpec.describe ChatRing::OutboundCommitJob, type: :job do
       expect(turn.outbound_commit.message.content).to eq(
         'Our team is currently unavailable. Please leave your preferred callback time here, and a human can follow up in this conversation.'
       )
-      expect(conversation.reload).to be_pending
-      expect(conversation.assignee_agent_bot).to eq(connection.agent_bot)
+      expect(conversation.reload).to have_attributes(status: 'pending', assignee_agent_bot: connection.agent_bot)
     end
 
     it 'uses the Inbox-approved Calendly Tool outside native business hours without a model-supplied URL' do
@@ -260,8 +259,13 @@ RSpec.describe ChatRing::OutboundCommitJob, type: :job do
         "Our team is currently outside business hours. You can choose an appointment time here:\n\n" \
         "Book a 30 minute meeting\nhttps://calendly.com/cqalerts3/30min"
       )
-      expect(conversation.reload).to be_pending
-      expect(conversation.assignee_agent_bot).to eq(connection.agent_bot)
+      expect(turn.outbound_commit.message.content_attributes.fetch('chatring_tool')).to eq(
+        'presentation_mode' => 'calendar_embed',
+        'provider' => 'calendly',
+        'approved_url' => 'https://calendly.com/cqalerts3/30min',
+        'link_label' => 'Book a 30 minute meeting'
+      )
+      expect(conversation.reload).to have_attributes(status: 'pending', assignee_agent_bot: connection.agent_bot)
     end
 
     it 'does not treat an online agent outside the current Conversation team as eligible' do
@@ -406,7 +410,8 @@ RSpec.describe ChatRing::OutboundCommitJob, type: :job do
           provider: 'calendly',
           url: 'https://calendly.com/cqalerts3/30min',
           fallback_mode: 'approved_link',
-          link_label: 'Book a 30 minute meeting'
+          link_label: 'Book a 30 minute meeting',
+          website_presentation: 'calendar_embed'
         }
       }
     ).call

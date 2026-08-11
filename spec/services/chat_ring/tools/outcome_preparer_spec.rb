@@ -112,6 +112,39 @@ RSpec.describe ChatRing::Tools::OutcomePreparer do
     expect(turn.tool_execution.reload).to have_attributes(status: 'committed', failure_code: nil)
   end
 
+  it 'adds only the pinned server-owned Calendly presentation to the ordinary native Message' do
+    policy = ChatRing::InboxToolPolicy.find_by!(chatwoot_inbox_id: inbox.id)
+    ChatRing::Tools::PolicyPublisher.new(
+      workspace: workspace,
+      inbox: inbox,
+      actor: policy_actor,
+      expected_lock_version: policy.lock_version,
+      enabled_tools: [{ 'key' => 'request_appointment', 'version' => 1 }],
+      tool_configurations: {
+        'request_appointment' => {
+          'provider' => 'calendly',
+          'url' => 'https://calendly.com/cqalerts3/30min',
+          'fallback_mode' => 'approved_link',
+          'link_label' => 'Book a 30 minute demo',
+          'website_presentation' => 'calendar_embed'
+        }
+      }
+    ).call
+
+    described_class.call(turn, decision)
+    2.times { ChatRing::OutboundCommitJob.perform_now(turn.id) }
+
+    message = turn.reload.outbound_commit.message
+    expect(message.content).to eq("Book a 30 minute demo\nhttps://calendly.com/cqalerts3/30min")
+    expect(message.content_attributes.fetch('chatring_tool')).to eq(
+      'presentation_mode' => 'calendar_embed',
+      'provider' => 'calendly',
+      'approved_url' => 'https://calendly.com/cqalerts3/30min',
+      'link_label' => 'Book a 30 minute demo'
+    )
+    expect(conversation.messages.outgoing.where(sender: connection.agent_bot).count).to eq(1)
+  end
+
   it 'rejects the pending Tool outcome when native human takeover wins before commit' do
     described_class.call(turn, decision)
     conversation.bot_handoff!

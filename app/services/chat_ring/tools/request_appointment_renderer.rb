@@ -17,14 +17,17 @@ class ChatRing::Tools::RequestAppointmentRenderer
     configuration = policy_version.configuration_for('request_appointment')
     approved_url = configuration.fetch('url')
     label = configuration.fetch('link_label').to_s.strip
+    presentation_mode = configuration.fetch('website_presentation', configuration.fetch('fallback_mode'))
     escaped_label = label.gsub(/([\\`*_{}\[\]()#+\-.!|>])/) { |character| "\\#{character}" }
     link_content = "#{escaped_label}\n#{approved_url}"
     content = [PRESENTATION_COPY[presentation_context], link_content].compact.join("\n\n")
     Result.new(
       content: content,
       payload: {
-        'presentation_mode' => 'approved_link',
-        'approved_url' => approved_url
+        'presentation_mode' => presentation_mode,
+        'provider' => configuration.fetch('provider'),
+        'approved_url' => approved_url,
+        'link_label' => label
       }.freeze
     )
   end

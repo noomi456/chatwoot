@@ -16,6 +16,17 @@ RSpec.describe ChatRing::Tools::InboxCapabilityProfile do
     )
   end
 
+  it 'selects the Calendly embed only when the immutable Website policy enables it' do
+    inbox = create(:inbox, account: account, channel: create(:channel_widget, account: account))
+    version = publish(inbox, website_presentation: 'calendar_embed')
+
+    expect(described_class.new(inbox: inbox, policy_version: version).fetch('request_appointment', 1)).to have_attributes(
+      available: true,
+      renderer: 'calendar_embed',
+      fallback: 'approved_link'
+    )
+  end
+
   it 'fails closed for a channel that has not been certified' do
     inbox = create(:inbox, :with_email, account: account)
     version = publish(inbox)
@@ -31,7 +42,7 @@ RSpec.describe ChatRing::Tools::InboxCapabilityProfile do
 
   private
 
-  def publish(inbox)
+  def publish(inbox, website_presentation: 'approved_link')
     ChatRing::Tools::PolicyPublisher.new(
       workspace: workspace,
       inbox: inbox,
@@ -43,7 +54,8 @@ RSpec.describe ChatRing::Tools::InboxCapabilityProfile do
           provider: 'calendly',
           url: 'https://calendly.com/chatring/demo',
           fallback_mode: 'approved_link',
-          link_label: 'Book a meeting'
+          link_label: 'Book a meeting',
+          website_presentation: website_presentation
         }
       }
     ).call
