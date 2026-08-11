@@ -91,6 +91,31 @@ RSpec.describe ChatRing::Brain::Decision do
     end.to raise_error(described_class::Invalid, 'Grounded replies require accepted evidence')
   end
 
+  it 'accepts a history-only Conversation reply and rejects it without native history' do
+    decision = described_class.from_payload(
+      {
+        decision_type: 'context_reply', response_text: 'You previously asked about pricing.',
+        reason_code: 'conversation_history', evidence_ids: []
+      },
+      allowed_evidence_ids: [],
+      evidence_status: 'insufficient_evidence',
+      conversation_history_available: true
+    )
+
+    expect(decision.to_h).to include('decision_type' => 'context_reply', 'evidence_ids' => [])
+
+    expect do
+      described_class.from_payload(
+        {
+          decision_type: 'context_reply', response_text: 'You previously asked about pricing.',
+          reason_code: 'conversation_history', evidence_ids: []
+        },
+        allowed_evidence_ids: [],
+        evidence_status: 'insufficient_evidence'
+      )
+    end.to raise_error(described_class::Invalid, 'Conversation replies require prior public history')
+  end
+
   it 'rejects evidence IDs that were not supplied to the model' do
     expect do
       described_class.from_payload(

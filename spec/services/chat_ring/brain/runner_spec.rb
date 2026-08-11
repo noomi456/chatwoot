@@ -52,7 +52,29 @@ RSpec.describe ChatRing::Brain::Runner do
     expect(turn.evidence.first.heading_path).to eq([])
   end
 
-  it 'abstains deterministically without calling the model when retrieval has insufficient evidence' do
+  it 'uses bounded native history for a typed Conversation reply when retrieval has insufficient evidence' do
+    history_turn = build_turn(with_history: true)
+    allow(ChatRing::Knowledge::Retriever).to receive(:retrieve).and_return(empty_evidence_set)
+    allow(provider).to receive(:call).and_return(
+      provider_result(
+        'decision_type' => 'context_reply',
+        'response_text' => 'You previously asked about the Website Widget.',
+        'reason_code' => 'conversation_history',
+        'evidence_ids' => []
+      )
+    )
+
+    described_class.new(history_turn, provider: provider).call
+
+    expect(provider).to have_received(:call).once
+    expect(history_turn.reload).to be_status_ready_to_commit
+    expect(history_turn.decision_payload).to include(
+      'decision_type' => 'context_reply', 'reason_code' => 'conversation_history'
+    )
+    expect(history_turn.outbound_commit).to be_outcome_type_reply
+  end
+
+  it 'uses the configured fallback without inference when neither evidence nor prior history exists' do
     allow(ChatRing::Knowledge::Retriever).to receive(:retrieve).and_return(empty_evidence_set)
 
     described_class.new(turn, provider: provider).call
@@ -380,7 +402,7 @@ RSpec.describe ChatRing::Brain::Runner do
     expect(provider).not_to have_received(:call)
   end
 
-  def build_turn(handoff_on_provider_failure: false, appointment_tool: false, playbook_question: nil)
+  def build_turn(handoff_on_provider_failure: false, appointment_tool: false, playbook_question: nil, with_history: false)
     account, workspace, inbox = build_runtime_scope
     connection = configure_runtime(
       workspace: workspace,
@@ -391,6 +413,11 @@ RSpec.describe ChatRing::Brain::Runner do
     publish_question_playbook(workspace, inbox, playbook_question) if playbook_question
     conversation = create(:conversation, account: account, inbox: inbox, status: :pending,
                                          assignee_agent_bot: connection.agent_bot)
+    if with_history
+      create(:message, account: account, inbox: inbox, conversation: conversation,
+                       message_type: :incoming, sender: conversation.contact, private: false,
+                       content: 'Earlier question about the Website Widget')
+    end
     message = create_managed_message(
       account: account,
       inbox: inbox,
