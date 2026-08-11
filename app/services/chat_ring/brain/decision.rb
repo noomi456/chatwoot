@@ -7,23 +7,24 @@ class ChatRing::Brain::Decision
   MAX_SUGGESTED_QUESTIONS = 2
   MAX_SUGGESTED_QUESTION_LENGTH = 160
   MAX_RESPONSE_OPTIONS = 6
+  HISTORY_REPLY_ERROR = 'Conversation replies require an explicit history request with prior public history'.freeze
 
   attr_reader :decision_type, :response_text, :reason_code, :evidence_ids, :suggested_questions, :response_options,
               :microsite_section_types, :tool_request, :playbook_control
 
   def self.from_payload(payload, allowed_evidence_ids:, evidence_status:, playbook_context: nil,
-                        conversation_history_available: false)
+                        conversation_history_reply_allowed: false)
     new(
       payload,
       allowed_evidence_ids: allowed_evidence_ids,
       evidence_status: evidence_status,
       playbook_context: playbook_context,
-      conversation_history_available: conversation_history_available
+      conversation_history_reply_allowed: conversation_history_reply_allowed
     )
   end
 
-  def initialize(payload, allowed_evidence_ids:, evidence_status:, playbook_context: nil,
-                 conversation_history_available: false) # rubocop:disable Metrics/AbcSize
+  def initialize(payload, allowed_evidence_ids:, evidence_status:, playbook_context: nil, # rubocop:disable Metrics/AbcSize
+                 conversation_history_reply_allowed: false)
     attributes = payload.to_h.stringify_keys
     @decision_type = attributes['decision_type'].to_s
     @response_text = attributes['response_text'].to_s.strip
@@ -35,7 +36,7 @@ class ChatRing::Brain::Decision
     @tool_request = build_tool_request(attributes['tool_request'])
     @playbook_control = build_playbook_control(attributes['playbook_control'])
     @playbook_context = playbook_context
-    @conversation_history_available = conversation_history_available
+    @conversation_history_reply_allowed = conversation_history_reply_allowed
     validate!(Array(allowed_evidence_ids).map(&:to_s), evidence_status)
   end
 
@@ -147,7 +148,8 @@ class ChatRing::Brain::Decision
   end
 
   def validate_context_reply!
-    raise Invalid, 'Conversation replies require prior public history' unless @conversation_history_available
+    raise Invalid, HISTORY_REPLY_ERROR unless @conversation_history_reply_allowed
+
     raise Invalid, 'Conversation replies cannot cite Business Knowledge evidence' if evidence_ids.present?
     raise Invalid, 'Conversation replies require the conversation_history reason code' unless reason_code == 'conversation_history'
   end

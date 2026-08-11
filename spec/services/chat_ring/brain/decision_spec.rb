@@ -100,7 +100,7 @@ RSpec.describe ChatRing::Brain::Decision do
         },
         allowed_evidence_ids: [],
         evidence_status: 'insufficient_evidence',
-        conversation_history_available: true
+        conversation_history_reply_allowed: false
       )
     end.to raise_error(described_class::Invalid, 'Grounded replies require accepted evidence')
   end
@@ -113,7 +113,7 @@ RSpec.describe ChatRing::Brain::Decision do
       },
       allowed_evidence_ids: [],
       evidence_status: 'insufficient_evidence',
-      conversation_history_available: true
+      conversation_history_reply_allowed: true
     )
 
     expect(decision.to_h).to include('decision_type' => 'context_reply', 'evidence_ids' => [])
@@ -127,7 +127,25 @@ RSpec.describe ChatRing::Brain::Decision do
         allowed_evidence_ids: [],
         evidence_status: 'insufficient_evidence'
       )
-    end.to raise_error(described_class::Invalid, 'Conversation replies require prior public history')
+    end.to raise_error(
+      described_class::Invalid,
+      'Conversation replies require an explicit history request with prior public history'
+    )
+
+    expect do
+      described_class.from_payload(
+        {
+          decision_type: 'context_reply', response_text: 'Salesforce is supported.',
+          reason_code: 'conversation_history', evidence_ids: []
+        },
+        allowed_evidence_ids: [],
+        evidence_status: 'insufficient_evidence',
+        conversation_history_reply_allowed: false
+      )
+    end.to raise_error(
+      described_class::Invalid,
+      'Conversation replies require an explicit history request with prior public history'
+    )
   end
 
   it 'rejects evidence IDs that were not supplied to the model' do

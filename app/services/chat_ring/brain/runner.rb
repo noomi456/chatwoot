@@ -60,7 +60,7 @@ class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
     return handle_retrieval_failure!(evidence_set.error_code || 'knowledge_provider_failed') if evidence_set.status == 'provider_error'
 
     persist_evidence!(evidence_set)
-    if evidence_set.status != 'accepted' && !semantic_action_available?(invocation) && !conversation_history_available?(invocation)
+    if evidence_set.status != 'accepted' && !semantic_action_available?(invocation) && !conversation_history_request?(invocation)
       return complete_without_evidence!(invocation.digest)
     end
     return unless recheck_eligibility!
@@ -92,8 +92,9 @@ class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
     tools_available?(invocation) || invocation.model_context['active_playbook'].present?
   end
 
-  def conversation_history_available?(invocation)
-    invocation.model_context.dig('conversation', 'history').present?
+  def conversation_history_request?(invocation)
+    invocation.model_context.dig('conversation', 'history').present? &&
+      invocation.model_context.dig('conversation', 'history_request') == true
   end
 
   def run_inference(invocation, evidence_set)

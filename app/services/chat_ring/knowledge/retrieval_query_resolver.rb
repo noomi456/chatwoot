@@ -12,6 +12,13 @@ class ChatRing::Knowledge::RetrievalQueryResolver
   RESPONSE_FOLLOW_UP_PATTERN = /\A(?:what else|anything else|why|how so)[?.!]*\z/i
   ALTERNATIVE_REFERENCE_PATTERN = /\b(?:one|ones|former|latter|the other one|the same one)\b/i
   ALTERNATIVE_ANTECEDENT_PATTERN = /\b(?:and|or|between|compare|comparison|versus|vs\.?)\b/i
+  HISTORY_REQUEST_PATTERN = /
+    \b(?:
+      (?:what|which|who|when|where|how)\s+(?:did|were|was|have)\s+(?:i|we|you|the\s+(?:agent|human))\b.{0,48}
+      (?:ask|say|mention|discuss|talk|tell|recommend)|
+      (?:earlier|previous(?:ly)?|before|conversation\s+history|chat\s+history|last\s+(?:message|question|topic))
+    )\b
+  /ix
   GENERIC_ANTECEDENT_WORDS = %w[
     a about an are available best can case could did do does for how i is know me more my need option options our please recommend
     recommended same should suggest suggested tell that the think this to was were what which who why would you your
@@ -24,6 +31,7 @@ class ChatRing::Knowledge::RetrievalQueryResolver
     :retrieval_queries,
     :history_message_ids,
     :contextualized,
+    :conversation_history_request,
     :strategy
   ) do
     def retrieval_query
@@ -34,6 +42,7 @@ class ChatRing::Knowledge::RetrievalQueryResolver
       {
         'strategy' => strategy,
         'contextualized' => contextualized,
+        'conversation_history_request' => conversation_history_request,
         'history_message_ids' => history_message_ids,
         'query_count' => retrieval_queries.length,
         'query_digests' => retrieval_queries.map { |query| Digest::SHA256.hexdigest(query) }
@@ -41,16 +50,15 @@ class ChatRing::Knowledge::RetrievalQueryResolver
     end
   end
 
-  def initialize(raw_query:, history:, identity_anchor: nil)
+  def initialize(raw_query:, history:)
     @raw_query = normalize(raw_query).first(MAX_CURRENT_QUERY_CHARACTERS)
     @history = Array(history)
-    @identity_anchor = normalize(identity_anchor).first(200)
   end
 
   def call
     context = reference_dependent? ? relevant_context : []
     contextual_query = build_contextual_query(context) if context.present?
-    queries = [provider_query(raw_query), provider_query(contextual_query)].compact.uniq.freeze
+    queries = [raw_query, contextual_query].compact.uniq.map { |query| query.first(MAX_QUERY_CHARACTERS) }.freeze
 
     Result.new(
       raw_query: raw_query,
@@ -58,13 +66,14 @@ class ChatRing::Knowledge::RetrievalQueryResolver
       retrieval_queries: queries,
       history_message_ids: context.pluck('message_id').freeze,
       contextualized: contextual_query.present?,
+      conversation_history_request: raw_query.match?(HISTORY_REQUEST_PATTERN),
       strategy: contextual_query.present? ? 'dual_query_minimum_antecedent' : 'current_turn_only'
     )
   end
 
   private
 
-  attr_reader :raw_query, :history, :identity_anchor
+  attr_reader :raw_query, :history
 
   def reference_dependent?
     raw_query.match?(REFERENCE_PATTERN) || raw_query.match?(REFERENTIAL_PHRASE_PATTERN) || raw_query.match?(FOLLOW_UP_PATTERN)
@@ -116,13 +125,6 @@ class ChatRing::Knowledge::RetrievalQueryResolver
                            .join("\n").first(MAX_CONTEXT_CHARACTERS)
 
     "#{context_lines}\n#{raw_query}"
-  end
-
-  def provider_query(query)
-    return if query.blank?
-
-    prefix = identity_anchor if identity_anchor.present? && query.downcase.exclude?(identity_anchor.downcase)
-    [prefix, query].compact.join("\n").first(MAX_QUERY_CHARACTERS)
   end
 
   def normalize(value)
