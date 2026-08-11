@@ -70,6 +70,9 @@ RSpec.describe ChatRing::HumanRouting::NativeAvailability do
     create(:inbox_member, inbox: inbox, user: agent)
     account.enable_features('assignment_v2')
     account.save!
+    assignment_policy = create(:assignment_policy, account: account, enabled: true)
+    create(:inbox_assignment_policy, inbox: inbox, assignment_policy: assignment_policy)
+    inbox.reload
     allow(OnlineStatusTracker).to receive(:get_available_users).and_return(agent.id.to_s => 'online')
     rate_limiter = instance_double(AutoAssignment::RateLimiter, within_limit?: false)
     allow(AutoAssignment::RateLimiter).to receive(:new).and_return(rate_limiter)
