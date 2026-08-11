@@ -39,6 +39,26 @@ describe Integrations::Dyte::ProcessorService do
         expect(response[:content]).to eq("#{agent.available_name} has started a meeting")
         expect(conversation.reload.messages.last.content_type).to eq('integrations')
       end
+
+      it 'uses the native Widget write boundary for human takeover from a managed AgentBot' do
+        widget_inbox = create(:channel_widget, account: account).inbox
+        managed_conversation = create(:conversation, account: account, inbox: widget_inbox, status: :pending)
+        workspace = account.chat_ring_workspace
+        assistant = workspace.assistants.create!(name: 'Website Sales')
+        ChatRing::AssistantVersions::Publisher.new(
+          assistant: assistant,
+          knowledge_scope: workspace.knowledge_scopes.find_by!(business_wide: true)
+        ).call
+        connection = ChatRing::AssistantProvisioning::AgentBotProvisioner.new(assistant: assistant).call
+        ChatRing::AssistantProvisioning::InboxBindingActivator.new(assistant: assistant, inbox: widget_inbox).call
+        managed_conversation.update!(assignee_agent_bot: connection.agent_bot)
+        managed_processor = described_class.new(account: account, conversation: managed_conversation)
+
+        managed_processor.create_a_meeting(agent)
+
+        expect(managed_conversation.reload).to have_attributes(status: 'open', assignee: agent, assignee_agent_bot: nil)
+        expect(managed_conversation.messages.last).to be_public_human_reply
+      end
     end
 
     context 'when the API response is errored' do
@@ -103,6 +123,32 @@ describe Integrations::Dyte::ProcessorService do
             .with { |request| JSON.parse(request.body)['custom_participant_id'] == "User:#{agent.id}" }
         )
       end
+
+      it 'uses the configured visitor preset for a Website Contact' do
+        contact = create(:contact, account: account)
+
+        processor.add_participant_to_meeting('m_id', contact, integration_message)
+
+        expect(WebMock).to(
+          have_requested(:post, 'https://api.cloudflare.com/client/v4/accounts/account_id/realtime/kit/app_id/meetings/m_id/participants')
+            .with { |request| JSON.parse(request.body)['preset_name'] == 'group-call-participant' }
+        )
+      end
+
+      it 'reloads the integration Message under lock before adding participant bookkeeping' do
+        stale_message = Message.find(integration_message.id)
+        integration_message.update!(
+          content_attributes: {
+            type: 'dyte',
+            data: { meeting_id: 'm_id', participants: { 'User:99' => 'existing_participant' } }
+          }
+        )
+
+        processor.add_participant_to_meeting('m_id', agent, stale_message)
+
+        participants = integration_message.reload.content_attributes.dig('data', 'participants')
+        expect(participants).to include('User:99' => 'existing_participant', "User:#{agent.id}" => 'random_uuid')
+      end
     end
 
     context 'when the participant ID is already stored on the integration message' do
@@ -131,6 +177,90 @@ describe Integrations::Dyte::ProcessorService do
       end
     end
 
+    context 'when a Website Contact has a legacy stored host participant' do
+      let(:contact) { create(:contact, account: account) }
+      let(:integration_message) do
+        create(
+          :message,
+          content_type: 'integrations',
+          content_attributes: {
+            type: 'dyte',
+            data: { meeting_id: 'm_id', participants: { "Contact:#{contact.id}" => 'legacy_host_participant' } }
+          },
+          conversation: conversation
+        )
+      end
+
+      before do
+        stub_request(:get, 'https://api.cloudflare.com/client/v4/accounts/account_id/realtime/kit/app_id/meetings/m_id/participants')
+          .to_return(
+            status: 200,
+            body: {
+              success: true,
+              data: [{
+                id: 'legacy_host_participant',
+                custom_participant_id: "Contact:#{contact.id}",
+                preset_name: 'group-call-host'
+              }]
+            }.to_json,
+            headers: headers
+          )
+      end
+
+      it 'fails closed without refreshing the host participant token' do
+        response = processor.add_participant_to_meeting('m_id', contact, integration_message)
+
+        expect(response).to eq({ error: :participant_preset_mismatch })
+        expect(WebMock).not_to have_requested(
+          :post,
+          'https://api.cloudflare.com/client/v4/accounts/account_id/realtime/kit/app_id/meetings/m_id/participants/legacy_host_participant/token'
+        )
+      end
+    end
+
+    context 'when a Website Contact uses the supported safe visitor preset alias' do
+      let(:contact) { create(:contact, account: account) }
+      let(:integration_message) do
+        create(
+          :message,
+          content_type: 'integrations',
+          content_attributes: {
+            type: 'dyte',
+            data: { meeting_id: 'm_id', participants: { "Contact:#{contact.id}" => 'visitor_participant' } }
+          },
+          conversation: conversation
+        )
+      end
+
+      before do
+        stub_request(:get, 'https://api.cloudflare.com/client/v4/accounts/account_id/realtime/kit/app_id/meetings/m_id/participants')
+          .to_return(
+            status: 200,
+            body: {
+              success: true,
+              data: [{
+                id: 'visitor_participant',
+                custom_participant_id: "Contact:#{contact.id}",
+                preset_name: 'group_call_participant'
+              }]
+            }.to_json,
+            headers: headers
+          )
+        stub_request(:post, 'https://api.cloudflare.com/client/v4/accounts/account_id/realtime/kit/app_id/meetings/m_id/participants/visitor_participant/token')
+          .to_return(
+            status: 200,
+            body: { success: true, data: { token: 'refreshed-json-web-token' } }.to_json,
+            headers: headers
+          )
+      end
+
+      it 'refreshes the participant token without granting a host preset' do
+        response = processor.add_participant_to_meeting('m_id', contact, integration_message)
+
+        expect(response).to eq({ 'token' => 'refreshed-json-web-token' })
+      end
+    end
+
     context 'when the participant exists in RealtimeKit but is not stored on the integration message' do
       before do
         stub_request(:post, 'https://api.cloudflare.com/client/v4/accounts/account_id/realtime/kit/app_id/meetings/m_id/participants')
@@ -142,7 +272,10 @@ describe Integrations::Dyte::ProcessorService do
         stub_request(:get, 'https://api.cloudflare.com/client/v4/accounts/account_id/realtime/kit/app_id/meetings/m_id/participants')
           .to_return(
             status: 200,
-            body: { success: true, data: [{ id: 'participant_id', custom_participant_id: "User:#{agent.id}" }] }.to_json,
+            body: {
+              success: true,
+              data: [{ id: 'participant_id', custom_participant_id: "User:#{agent.id}", preset_name: 'group-call-host' }]
+            }.to_json,
             headers: headers
           )
         stub_request(:post, 'https://api.cloudflare.com/client/v4/accounts/account_id/realtime/kit/app_id/meetings/m_id/participants/participant_id/token')
@@ -158,6 +291,43 @@ describe Integrations::Dyte::ProcessorService do
 
         expect(response).to eq({ 'token' => 'refreshed-json-web-token' })
         expect(integration_message.reload.content_attributes.dig('data', 'participants', "User:#{agent.id}")).to eq('participant_id')
+      end
+    end
+
+    context 'when a legacy Website Contact host participant exists only in RealtimeKit' do
+      let(:contact) { create(:contact, account: account) }
+
+      before do
+        stub_request(:post, 'https://api.cloudflare.com/client/v4/accounts/account_id/realtime/kit/app_id/meetings/m_id/participants')
+          .to_return(
+            status: 422,
+            body: { success: false, error: 'Participant already exists' }.to_json,
+            headers: headers
+          )
+        stub_request(:get, 'https://api.cloudflare.com/client/v4/accounts/account_id/realtime/kit/app_id/meetings/m_id/participants')
+          .to_return(
+            status: 200,
+            body: {
+              success: true,
+              data: [{
+                id: 'legacy_host_participant',
+                custom_participant_id: "Contact:#{contact.id}",
+                preset_name: 'group-call-host'
+              }]
+            }.to_json,
+            headers: headers
+          )
+      end
+
+      it 'fails closed without refreshing or storing the host participant' do
+        response = processor.add_participant_to_meeting('m_id', contact, integration_message)
+
+        expect(response).to eq({ error: :participant_preset_mismatch })
+        expect(integration_message.reload.content_attributes.dig('data', 'participants', "Contact:#{contact.id}")).to be_nil
+        expect(WebMock).not_to have_requested(
+          :post,
+          'https://api.cloudflare.com/client/v4/accounts/account_id/realtime/kit/app_id/meetings/m_id/participants/legacy_host_participant/token'
+        )
       end
     end
 

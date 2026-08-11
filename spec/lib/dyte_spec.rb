@@ -76,6 +76,21 @@ describe Dyte do
           have_requested(:post, participants_url).with { |request| JSON.parse(request.body)['preset_name'] == 'group-call-host' }
         )
       end
+
+      it 'uses a bounded provider timeout' do
+        response = instance_double(
+          HTTParty::Response,
+          success?: true,
+          parsed_response: { 'data' => { 'id' => 'meeting_id' } },
+          code: 200
+        )
+        expect(HTTParty).to receive(:post).with(
+          'https://api.cloudflare.com/client/v4/accounts/account_id/realtime/kit/app_id/meetings',
+          hash_including(timeout: 10)
+        ).and_return(response)
+
+        expect(dyte_client.create_a_meeting('title_of_the_meeting')).to eq({ 'id' => 'meeting_id' })
+      end
     end
 
     context 'when API response is invalid' do

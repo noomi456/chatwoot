@@ -218,6 +218,8 @@ dyte:
           'account_id': { 'type': 'string' },
           'app_id': { 'type': 'string' },
           'api_token': { 'type': 'string' },
+          'agent_preset_name': { 'type': 'string' },
+          'visitor_preset_name': { 'type': 'string' },
         },
       'required': ['account_id', 'app_id', 'api_token'],
       'additionalProperties': false,
@@ -242,8 +244,22 @@ dyte:
         'name': 'api_token',
         'validation': 'required',
       },
+      {
+        'label': 'Agent Preset Name',
+        'type': 'text',
+        'name': 'agent_preset_name',
+        'default': 'group-call-host',
+        'validation': 'required',
+      },
+      {
+        'label': 'Visitor Preset Name',
+        'type': 'text',
+        'name': 'visitor_preset_name',
+        'default': 'group-call-participant',
+        'validation': 'required',
+      },
     ]
-  visible_properties: ['account_id', 'app_id']
+  visible_properties: ['account_id', 'app_id', 'agent_preset_name', 'visitor_preset_name']
 
 shopify:
   id: shopify

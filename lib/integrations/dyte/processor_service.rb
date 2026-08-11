@@ -1,4 +1,6 @@
 class Integrations::Dyte::ProcessorService
+  PARTICIPANT_SECURITY_ERRORS = %i[participant_preset_mismatch participant_preset_unverified].freeze
+
   pattr_initialize [:account!, :conversation!]
 
   def create_a_meeting(agent)
@@ -19,13 +21,19 @@ class Integrations::Dyte::ProcessorService
 
     client_id = realtimekit_client_id(user)
     participant_id = realtimekit_participant_id(message, client_id)
-    response = participant_token_response(meeting_id, participant_id)
-    return response if response[:error].blank?
+    response = participant_token_response(meeting_id, participant_id, user, client_id)
+    return response if response[:error].blank? || participant_security_error?(response)
 
-    response = dyte_client.add_participant_to_meeting(meeting_id, client_id, user.name, avatar_url(user))
+    response = dyte_client.add_participant_to_meeting(
+      meeting_id,
+      client_id,
+      user.name,
+      avatar_url(user),
+      preset_name: realtimekit_preset_name(user)
+    )
     return store_participant_id_and_return(message, client_id, response) if response[:error].blank?
 
-    existing_participant_token_response(meeting_id, client_id, message) || response
+    existing_participant_token_response(meeting_id, client_id, user, message) || response
   end
 
   private
@@ -40,8 +48,8 @@ class Integrations::Dyte::ProcessorService
   end
 
   def create_a_dyte_integration_message(meeting, title, agent)
-    @conversation.messages.create!(
-      {
+    ChatRing::ConversationWriteBoundary.new(conversation: conversation).call do
+      conversation.messages.create!(
         account_id: conversation.account_id,
         inbox_id: conversation.inbox_id,
         message_type: :outgoing,
@@ -54,8 +62,8 @@ class Integrations::Dyte::ProcessorService
           }
         },
         sender: agent
-      }
-    )
+      )
+    end
   end
 
   def avatar_url(user)
@@ -72,26 +80,58 @@ class Integrations::Dyte::ProcessorService
     @dyte_client ||= Dyte.new(*realtimekit_credentials)
   end
 
-  def participant_token_response(meeting_id, participant_id)
+  def participant_token_response(meeting_id, participant_id, user, client_id)
     return { error: :participant_id_missing } if participant_id.blank?
+
+    if user.is_a?(Contact)
+      validation_error = stored_contact_participant_error(meeting_id, participant_id, client_id, realtimekit_preset_name(user))
+      return validation_error if validation_error.present?
+    end
 
     dyte_client.refresh_participant_token(meeting_id, participant_id)
   end
 
-  def existing_participant_token_response(meeting_id, client_id, message)
-    participant_id = existing_realtimekit_participant_id(meeting_id, client_id)
-    return if participant_id.blank?
+  def existing_participant_token_response(meeting_id, client_id, user, message)
+    participant = existing_realtimekit_participant(meeting_id, client_id)
+    return if participant.blank?
+    return participant_preset_mismatch_response unless participant_preset_matches?(participant, realtimekit_preset_name(user))
 
+    participant_id = participant['id']
     response = dyte_client.refresh_participant_token(meeting_id, participant_id)
     update_realtimekit_participant_id(message, client_id, participant_id) if response[:error].blank?
     response
   end
 
-  def existing_realtimekit_participant_id(meeting_id, client_id)
+  def existing_realtimekit_participant(meeting_id, client_id)
     participants = dyte_client.fetch_participants(meeting_id)
     return if participants.blank? || participants.is_a?(Hash)
 
-    participants.find { |participant| participant['custom_participant_id'].to_s == client_id.to_s }&.dig('id')
+    participants.find { |participant| participant['custom_participant_id'].to_s == client_id.to_s }
+  end
+
+  def stored_contact_participant_error(meeting_id, participant_id, client_id, expected_preset_name)
+    participants = dyte_client.fetch_participants(meeting_id)
+    return { error: :participant_preset_unverified } unless participants.is_a?(Array)
+
+    participant = participants.find do |candidate|
+      candidate['id'].to_s == participant_id.to_s && candidate['custom_participant_id'].to_s == client_id.to_s
+    end
+    return { error: :participant_id_missing } if participant.blank?
+    return participant_preset_mismatch_response unless participant_preset_matches?(participant, expected_preset_name)
+  end
+
+  def participant_preset_matches?(participant, expected_preset_name)
+    accepted_preset_names = [expected_preset_name, Dyte::PRESET_FALLBACKS[expected_preset_name]].compact
+    accepted_preset_names.include?(participant['preset_name'].to_s)
+  end
+
+  def participant_preset_mismatch_response
+    { error: :participant_preset_mismatch }
+  end
+
+  def participant_security_error?(response)
+    error = response[:error]
+    error.respond_to?(:to_sym) && PARTICIPANT_SECURITY_ERRORS.include?(error.to_sym)
   end
 
   def realtimekit_participant_id(message, client_id)
@@ -101,13 +141,15 @@ class Integrations::Dyte::ProcessorService
   def update_realtimekit_participant_id(message, client_id, participant_id)
     return if message.blank?
 
-    attributes = message.content_attributes.with_indifferent_access
-    data = (attributes[:data] || {}).with_indifferent_access
-    participants = (data[:participants] || {}).with_indifferent_access
-    participants[client_id.to_s] = participant_id
-    data[:participants] = participants
-    attributes[:data] = data
-    message.update_columns(content_attributes: attributes.deep_stringify_keys, updated_at: Time.current) # rubocop:disable Rails/SkipsModelValidations
+    message.with_lock do
+      attributes = message.content_attributes.with_indifferent_access
+      data = (attributes[:data] || {}).with_indifferent_access
+      participants = (data[:participants] || {}).with_indifferent_access
+      participants[client_id.to_s] = participant_id
+      data[:participants] = participants
+      attributes[:data] = data
+      message.update_columns(content_attributes: attributes.deep_stringify_keys, updated_at: Time.current) # rubocop:disable Rails/SkipsModelValidations
+    end
   rescue StandardError => e
     Rails.logger.warn("[dyte] Failed to store RealtimeKit participant ID for message #{message.id}: #{e.class}: #{e.message}")
   end
@@ -119,8 +161,20 @@ class Integrations::Dyte::ProcessorService
   end
 
   def realtimekit_credentials
-    credentials = dyte_hook.settings.with_indifferent_access
-    [credentials[:account_id], credentials[:app_id], credentials[:api_token]]
+    %i[account_id app_id api_token].map { |key| realtimekit_settings[key] }
+  end
+
+  def realtimekit_preset_name(user)
+    key = user.is_a?(Contact) ? :visitor_preset_name : :agent_preset_name
+    realtimekit_settings[key].presence || default_preset_name(user)
+  end
+
+  def default_preset_name(user)
+    user.is_a?(Contact) ? Dyte::VISITOR_PRESET_NAME : Dyte::AGENT_PRESET_NAME
+  end
+
+  def realtimekit_settings
+    @realtimekit_settings ||= dyte_hook.settings.with_indifferent_access
   end
 
   def realtimekit_credentials_missing?

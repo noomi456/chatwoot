@@ -11,6 +11,7 @@ RSpec.describe '/api/v1/widget/integrations/dyte', type: :request do
   let(:message) { create(:message, conversation: conversation, account: account, inbox: conversation.inbox) }
   let!(:integration_message) do
     create(:message, content_type: 'integrations',
+                     message_type: :outgoing,
                      content_attributes: { type: 'dyte', data: { meeting_id: 'm_id' } },
                      conversation: conversation, account: account, inbox: conversation.inbox)
   end
@@ -69,6 +70,56 @@ RSpec.describe '/api/v1/widget/integrations/dyte', type: :request do
               'id' => 'random_uuid', 'token' => 'json-web-token'
             }
           )
+        end
+
+        it 'does not expose a meeting from another contact Conversation in the same Inbox' do
+          other_contact = create(:contact, account: account)
+          other_contact_inbox = create(:contact_inbox, contact: other_contact, inbox: web_widget.inbox)
+          other_conversation = create(
+            :conversation,
+            contact: other_contact,
+            contact_inbox: other_contact_inbox,
+            account: account,
+            inbox: web_widget.inbox
+          )
+          other_message = create(
+            :message,
+            content_type: 'integrations',
+            message_type: :outgoing,
+            content_attributes: { type: 'dyte', data: { meeting_id: 'other_meeting' } },
+            conversation: other_conversation,
+            account: account,
+            inbox: web_widget.inbox
+          )
+
+          post add_participant_to_meeting_api_v1_widget_integrations_dyte_url,
+               headers: { 'X-Auth-Token' => token },
+               params: { website_token: web_widget.website_token, message_id: other_message.id },
+               as: :json
+
+          expect(response).to have_http_status(:not_found)
+        end
+
+        it 'does not expose a private integration message from the visitor Conversation' do
+          integration_message.update!(private: true)
+
+          post add_participant_to_meeting_api_v1_widget_integrations_dyte_url,
+               headers: { 'X-Auth-Token' => token },
+               params: { website_token: web_widget.website_token, message_id: integration_message.id },
+               as: :json
+
+          expect(response).to have_http_status(:unprocessable_entity)
+        end
+
+        it 'does not expose a non-Dyte integration message from the visitor Conversation' do
+          integration_message.update!(content_attributes: { type: 'other_integration', data: { meeting_id: 'm_id' } })
+
+          post add_participant_to_meeting_api_v1_widget_integrations_dyte_url,
+               headers: { 'X-Auth-Token' => token },
+               params: { website_token: web_widget.website_token, message_id: integration_message.id },
+               as: :json
+
+          expect(response).to have_http_status(:unprocessable_entity)
         end
       end
     end

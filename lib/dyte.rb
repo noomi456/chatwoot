@@ -1,8 +1,13 @@
 class Dyte
   BASE_URL = 'https://api.cloudflare.com/client/v4'.freeze
   API_KEY_HEADER = 'Authorization'.freeze
-  PRESET_NAME = 'group-call-host'.freeze
-  LEGACY_PRESET_NAME = 'group_call_host'.freeze
+  REQUEST_TIMEOUT_SECONDS = 10
+  AGENT_PRESET_NAME = 'group-call-host'.freeze
+  VISITOR_PRESET_NAME = 'group-call-participant'.freeze
+  PRESET_FALLBACKS = {
+    AGENT_PRESET_NAME => 'group_call_host',
+    VISITOR_PRESET_NAME => 'group_call_participant'
+  }.freeze
 
   def initialize(account_id = nil, app_id = nil, api_token = nil)
     @account_id = account_id
@@ -21,20 +26,21 @@ class Dyte
     process_response(response)
   end
 
-  def add_participant_to_meeting(meeting_id, client_id, name, avatar_url)
+  def add_participant_to_meeting(meeting_id, client_id, name, avatar_url, preset_name: AGENT_PRESET_NAME)
     raise ArgumentError, 'Missing information' if meeting_id.blank? || client_id.blank? || name.blank? || avatar_url.blank?
 
     payload = {
       'custom_participant_id': client_id.to_s,
       'name': name,
       'picture': avatar_url,
-      'preset_name': PRESET_NAME
+      'preset_name': preset_name
     }
     path = "meetings/#{meeting_id}/participants"
     response = process_response(post(path, payload))
-    return response unless preset_not_found?(response)
+    fallback_preset = PRESET_FALLBACKS[preset_name]
+    return response unless fallback_preset && preset_not_found?(response)
 
-    payload[:preset_name] = LEGACY_PRESET_NAME
+    payload[:preset_name] = fallback_preset
     process_response(post(path, payload))
   end
 
@@ -81,7 +87,8 @@ class Dyte
     HTTParty.post(
       "#{BASE_URL}/accounts/#{@account_id}/realtime/kit/#{@app_id}/#{path}", {
         headers: { API_KEY_HEADER => "Bearer #{@api_token}", 'Content-Type' => 'application/json' },
-        body: payload&.to_json
+        body: payload&.to_json,
+        timeout: REQUEST_TIMEOUT_SECONDS
       }.compact
     )
   end
@@ -89,7 +96,8 @@ class Dyte
   def get(path)
     HTTParty.get(
       "#{BASE_URL}/accounts/#{@account_id}/realtime/kit/#{@app_id}/#{path}",
-      headers: { API_KEY_HEADER => "Bearer #{@api_token}", 'Content-Type' => 'application/json' }
+      headers: { API_KEY_HEADER => "Bearer #{@api_token}", 'Content-Type' => 'application/json' },
+      timeout: REQUEST_TIMEOUT_SECONDS
     )
   end
 end
