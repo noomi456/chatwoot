@@ -75,6 +75,12 @@ RSpec.describe ChatRing::Brain::InboundInvocationBuilder do
     expect(invocation.query.length).to eq(ChatRing::Knowledge::DocsGptProvider::MAX_QUERY_LENGTH)
   end
 
+  it 'adds the configured Assistant identity to a standalone retrieval query' do
+    invocation = described_class.new(turn).build
+
+    expect(invocation.query).to eq('ChatRing AI Current question')
+  end
+
   it 'projects a pinned Inbox Playbook step without exposing native target identifiers or collected values' do
     context = build_context
     publish_playbook(context)
@@ -136,7 +142,11 @@ RSpec.describe ChatRing::Brain::InboundInvocationBuilder do
     inbox = create(:channel_widget, account: account).inbox
     assistant = ChatRing::Assistant.create!(workspace: workspace, name: 'Sales')
     scope = workspace.knowledge_scopes.find_by!(business_wide: true)
-    ChatRing::AssistantVersions::Publisher.new(assistant: assistant, knowledge_scope: scope).call
+    ChatRing::AssistantVersions::Publisher.new(
+      assistant: assistant,
+      knowledge_scope: scope,
+      configuration: { identity: { 'name' => 'ChatRing AI' } }
+    ).call
     connection = ChatRing::AssistantProvisioning::AgentBotProvisioner.new(assistant: assistant).call
     ChatRing::AssistantProvisioning::InboxBindingActivator.new(assistant: assistant, inbox: inbox).call
     conversation = create(:conversation, account: account, inbox: inbox, status: :pending,

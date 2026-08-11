@@ -21,7 +21,7 @@ class ChatRing::Brain::InboundInvocationBuilder
       trusted_context: trusted_context,
       model_context: model_context(history, trigger, native_messages),
       audit_metadata: audit_metadata(provenance),
-      query: trigger.fetch('content').first(MAX_RETRIEVAL_QUERY_CHARACTERS),
+      query: retrieval_query(trigger),
       deadline_at: turn.deadline_at
     )
   end
@@ -85,6 +85,14 @@ class ChatRing::Brain::InboundInvocationBuilder
       'handoff_policy' => version.handoff_policy,
       'conversation_policy' => version.conversation_policy
     }
+  end
+
+  def retrieval_query(trigger)
+    question = trigger.fetch('content')
+    identity = turn.assistant_version.identity.to_h['name'].to_s.scrub.strip.first(200)
+    return question.first(MAX_RETRIEVAL_QUERY_CHARACTERS) if identity.blank? || question.downcase.include?(identity.downcase)
+
+    "#{identity} #{question}".first(MAX_RETRIEVAL_QUERY_CHARACTERS)
   end
 
   def available_tools

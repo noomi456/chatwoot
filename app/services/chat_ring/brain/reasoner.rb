@@ -18,7 +18,8 @@ class ChatRing::Brain::Reasoner
       provider_result.payload,
       allowed_evidence_ids: evidence_set.items.map(&:id),
       evidence_status: evidence_set.status,
-      playbook_context: invocation.model_context['active_playbook']
+      playbook_context: invocation.model_context['active_playbook'],
+      conversation_history_available: invocation.model_context.dig('conversation', 'history').present?
     )
     Result.new(decision: decision, provider_result: provider_result, messages: messages.freeze)
   end
