@@ -1,4 +1,4 @@
-class ChatRing::Engagements::ConfigurationPublisher
+class ChatRing::ConversationStarters::ConfigurationPublisher
   class InvalidRevision < StandardError; end
 
   def initialize(workspace:, inbox:, actor:, attributes:)
@@ -14,14 +14,16 @@ class ChatRing::Engagements::ConfigurationPublisher
     Account.transaction do
       Account.lock.find(workspace.chatwoot_account_id)
       locked_inbox = Inbox.lock.find(inbox.id)
-      engagement = ChatRing::InboxEngagement.lock.find_or_initialize_by(
+      configuration = ChatRing::InboxConversationStarter.lock.find_or_initialize_by(
         workspace: workspace,
         chatwoot_inbox_id: locked_inbox.id
       )
-      raise InvalidRevision, 'Engagement configuration changed; reload and try again' unless engagement.lock_version == expected_lock_version
+      unless configuration.lock_version == expected_lock_version
+        raise InvalidRevision, 'Conversation Starter configuration changed; reload and try again'
+      end
 
-      engagement.update!(enabled: enabled, starters: normalized_starters, updated_by: actor)
-      engagement
+      configuration.update!(enabled: enabled, starters: normalized_starters, updated_by: actor)
+      configuration
     end
   end
 

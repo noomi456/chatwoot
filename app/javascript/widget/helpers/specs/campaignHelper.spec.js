@@ -43,7 +43,18 @@ describe('#Campaigns Helper', () => {
 
   describe('formatCampaigns', () => {
     it('should return formatted campaigns if campaigns are passed', () => {
-      expect(formatCampaigns({ campaigns })).toStrictEqual([
+      const scrollCampaign = {
+        id: 3,
+        trigger_only_during_business_hours: true,
+        trigger_rules: {
+          trigger_type: 'scroll_percentage',
+          scroll_percentage: 60,
+          url: 'https://www.chatwoot.com/sales',
+        },
+      };
+      expect(
+        formatCampaigns({ campaigns: [...campaigns, scrollCampaign] })
+      ).toStrictEqual([
         {
           id: 1,
           timeOnPage: 3,
@@ -55,6 +66,13 @@ describe('#Campaigns Helper', () => {
           triggerOnlyDuringBusinessHours: false,
           timeOnPage: 6,
           url: 'https://www.chatwoot.com/about',
+        },
+        {
+          id: 3,
+          scrollPercentage: 60,
+          triggerOnlyDuringBusinessHours: true,
+          triggerType: 'scroll_percentage',
+          url: 'https://www.chatwoot.com/sales',
         },
       ]);
     });

@@ -6,6 +6,18 @@ PR #17 is merged and remains the native-lifecycle remediation package. It correc
 
 This document now separates two complete product stages instead of forcing the entire visual-sales stack into the first production release.
 
+## Superseding Web Widget product correction — 2026-08-11
+
+The following product definitions supersede contradictory terminology and staging in later sections of this document:
+
+- **Engagement** is Chatwoot's native Website Ongoing Campaign bubble/welcome message. ChatRing reuses native Campaign Account/Inbox/message/URL/business-hours/execution behavior and adds only the missing host-page scroll-percentage trigger alongside wait time.
+- **Conversation Starters** are not Engagement records. An administrator may configure up to four questions; the Widget shows two before conversation history exists. A click is an ordinary customer Message through native Widget ingress. Once conversation begins, a grounded Brain reply may generate up to two evidence-supported next-question prompts.
+- **Tools** are configured and selected in the Playbook/Brain surfaces. Inbox policy/version and `ToolExecution` remain required backend authorization/idempotency records, but there is no standalone Tools product page or competing action engine.
+- The first complete Web Widget vertical includes an optional evidence-linked Microsite response artifact now, not only a later AI Navigator screen. The Brain chooses up to three of the 18 allowlisted section families; the server builds only sections supported by exact evidence or approved Inbox Tool configuration, publishes an opaque expiring share URL, and omits the artifact when safe content is insufficient. Media, calculator, map, testimonial, pricing-comparison and booking content fail closed unless their required source data exists.
+- One AI turn still produces at most one ordinary native Chatwoot Message. Suggested questions and the Microsite descriptor are safe Message presentation metadata; the Microsite is an immutable expiring artifact linked to the exact turn/evidence, never a Conversation, identity, responder or delivery authority.
+
+Real deployed source and runtime behavior remain authoritative over stale statements below. Those statements must be interpreted through this correction until the document is mechanically consolidated.
+
 ## Stage A - ChatRing Sales Core v1
 
 The immediate production objective is:

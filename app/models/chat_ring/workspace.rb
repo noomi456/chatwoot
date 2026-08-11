@@ -42,8 +42,12 @@ class ChatRing::Workspace < ApplicationRecord
            class_name: 'ChatRing::InboxPlaybookExecution',
            inverse_of: :workspace,
            dependent: :destroy
-  has_many :inbox_engagements,
-           class_name: 'ChatRing::InboxEngagement',
+  has_many :inbox_conversation_starters,
+           class_name: 'ChatRing::InboxConversationStarter',
+           inverse_of: :workspace,
+           dependent: :destroy
+  has_many :microsite_artifacts,
+           class_name: 'ChatRing::MicrositeArtifact',
            inverse_of: :workspace,
            dependent: :destroy
   has_many :knowledge_scopes,

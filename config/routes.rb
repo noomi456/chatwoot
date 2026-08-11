@@ -39,6 +39,7 @@ Rails.application.routes.draw do
   end
 
   get '/health', to: 'health#show'
+  get '/s/:token', to: 'chat_ring/microsites#show', as: :chat_ring_microsite
   get '/api', to: 'api#index'
   namespace :api, defaults: { format: 'json' } do
     namespace :v1 do
@@ -118,7 +119,7 @@ Rails.application.routes.draw do
             resources :inbox_tool_policies, only: [:index, :show, :update], param: :inbox_id do
               get :definitions, on: :collection
             end
-            resources :inbox_engagements, only: [:index, :update], param: :inbox_id
+            resources :inbox_conversation_starters, only: [:index, :update], param: :inbox_id
             resources :inbox_playbooks, only: [:index, :show, :create] do
               member do
                 patch :update_draft

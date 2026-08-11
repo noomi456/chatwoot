@@ -12,7 +12,7 @@ class ChatRing::Playbooks::DefinitionValidator # rubocop:disable Metrics/ClassLe
   end
 
   TOP_LEVEL_KEYS = %w[trigger_phrases entry_step_id steps collected_fields tool_allowlist safety_rules].freeze
-  STEP_KINDS = %w[ask_text ask_choice inform terminal].freeze
+  STEP_KINDS = %w[ask_text ask_choice inform tool terminal].freeze
   QUESTION_STEP_KINDS = %w[ask_text ask_choice].freeze
   FIELD_TYPES = %w[string email phone number boolean choice].freeze
   TERMINAL_OUTCOMES = %w[complete stop].freeze
@@ -350,6 +350,8 @@ class ChatRing::Playbooks::DefinitionValidator # rubocop:disable Metrics/ClassLe
     tool = normalize_tool(step['tool'], "#{path}.tool")
     step['tool'] = tool || {}
     return unless tool
+
+    require_next_step(step, path)
 
     allowed = step['tool_allowlist'].map { |item| [item['key'], item['version']] }
     return if allowed.include?([tool['key'], tool['version']])

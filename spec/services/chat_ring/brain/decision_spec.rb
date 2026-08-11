@@ -14,6 +14,73 @@ RSpec.describe ChatRing::Brain::Decision do
     expect(decision.to_h).to include('decision_type' => 'reply', 'evidence_ids' => ['evidence-1'])
   end
 
+  it 'accepts two grounded suggestions and three normalized microsite sections' do
+    decision = described_class.from_payload(
+      {
+        decision_type: 'reply', response_text: 'Verified answer', reason_code: 'answered',
+        evidence_ids: ['evidence-1'], suggested_questions: ['How much is it?', 'Can I book?'],
+        microsite_section_types: %w[hero features faq]
+      },
+      allowed_evidence_ids: ['evidence-1'],
+      evidence_status: 'accepted'
+    )
+
+    expect(decision.to_h).to include(
+      'suggested_questions' => ['How much is it?', 'Can I book?'],
+      'microsite_section_types' => %w[hero features_grid faq_accordion]
+    )
+  end
+
+  it 'accepts bounded options for one clarification question and keeps them separate from next-question suggestions' do
+    decision = described_class.from_payload(
+      {
+        decision_type: 'clarification', response_text: 'Which usage fits your household?', reason_code: 'qualify_usage',
+        evidence_ids: [], response_options: ['Light Usage', 'Standard Usage', 'Heavy Usage']
+      },
+      allowed_evidence_ids: [],
+      evidence_status: 'insufficient_evidence'
+    )
+
+    expect(decision.response_options).to eq(['Light Usage', 'Standard Usage', 'Heavy Usage'])
+
+    expect do
+      described_class.from_payload(
+        {
+          decision_type: 'reply', response_text: 'Choose one.', reason_code: 'choose', evidence_ids: ['evidence-1'],
+          response_options: ['A', 'B'], suggested_questions: ['What next?']
+        },
+        allowed_evidence_ids: ['evidence-1'],
+        evidence_status: 'accepted'
+      )
+    end.to raise_error(described_class::Invalid, 'Response options cannot be mixed with suggested questions')
+  end
+
+  it 'rejects suggestions and microsites when the answer is not grounded' do
+    expect do
+      described_class.from_payload(
+        {
+          decision_type: 'clarification', response_text: 'Could you clarify?', reason_code: 'clarify',
+          evidence_ids: [], suggested_questions: ['What does it cost?'], microsite_section_types: ['hero']
+        },
+        allowed_evidence_ids: [],
+        evidence_status: 'insufficient_evidence'
+      )
+    end.to raise_error(described_class::Invalid)
+  end
+
+  it 'rejects unsupported microsite section names rather than rendering model-defined components' do
+    expect do
+      described_class.from_payload(
+        {
+          decision_type: 'reply', response_text: 'Verified answer', reason_code: 'answered',
+          evidence_ids: ['evidence-1'], microsite_section_types: ['arbitrary_iframe']
+        },
+        allowed_evidence_ids: ['evidence-1'],
+        evidence_status: 'accepted'
+      )
+    end.to raise_error(described_class::Invalid, 'Unknown microsite section types: arbitrary_iframe')
+  end
+
   it 'rejects a factual reply without accepted evidence' do
     expect do
       described_class.from_payload(

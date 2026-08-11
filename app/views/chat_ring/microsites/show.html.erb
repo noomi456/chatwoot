@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex,nofollow">
+    <title><%= @content['title'] %></title>
+    <style nonce="<%= content_security_policy_nonce %>">
+      :root { color-scheme: light; --ink:#172033; --muted:#5d687a; --brand:#2663eb; --line:#e5eaf2; --card:#fff; --wash:#f5f8ff; }
+      * { box-sizing:border-box; } body { margin:0; font-family:Inter,ui-sans-serif,system-ui,sans-serif; color:var(--ink); background:linear-gradient(180deg,#eef4ff,#fff 24rem); }
+      main { width:min(70rem,calc(100% - 2rem)); margin:0 auto; padding:2rem 0 4rem; } section { margin:1rem 0; padding:clamp(1.25rem,3vw,2.5rem); border:1px solid var(--line); border-radius:1.25rem; background:var(--card); box-shadow:0 14px 45px rgba(36,63,110,.07); }
+      h1 { font-size:clamp(2rem,6vw,4.5rem); line-height:1.02; margin:.35rem 0 1rem; } h2 { font-size:clamp(1.35rem,3vw,2rem); margin:0 0 1rem; } h3 { margin:.25rem 0 .5rem; } p { color:var(--muted); line-height:1.65; }
+      .eyebrow { color:var(--brand); font-size:.75rem; font-weight:800; letter-spacing:.12em; text-transform:uppercase; } .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(13rem,1fr)); gap:1rem; } .card { padding:1rem; border:1px solid var(--line); border-radius:.9rem; background:var(--wash); }
+      .cta { display:inline-flex; padding:.75rem 1rem; border-radius:.7rem; color:#fff; background:var(--brand); text-decoration:none; font-weight:700; } .stat { font-size:1.9rem; font-weight:800; color:var(--brand); } details { padding:.8rem 0; border-top:1px solid var(--line); } summary { cursor:pointer; font-weight:700; } img,video,iframe { display:block; max-width:100%; border:0; border-radius:.9rem; } table { width:100%; border-collapse:collapse; } th,td { padding:.8rem; text-align:left; vertical-align:top; border-bottom:1px solid var(--line); } footer { text-align:center; color:var(--muted); font-size:.8rem; padding:1rem; }
+      @media (max-width:640px) { main { width:min(100% - 1rem,70rem); padding-top:.5rem; } section { border-radius:1rem; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <% Array(@content['sections']).each do |section| %>
+        <% type = section['type'] %>
+        <section data-section-type="<%= type %>">
+          <% if type == 'hero' %>
+            <span class="eyebrow">Personalized for this conversation</span>
+            <h1><%= section['title'] %></h1>
+            <p><%= section['body'] %></p>
+          <% elsif %w[features_grid content_carousel product_gallery image_carousel image_gallery].include?(type) %>
+            <h2><%= section['title'] %></h2>
+            <div class="grid">
+              <% Array(section['items']).each do |item| %>
+                <article class="card">
+                  <% if safe_public_url?(item['image_url']) %><img src="<%= item['image_url'] %>" alt="" loading="lazy"><% end %>
+                  <h3><%= item['title'] %></h3><p><%= item['body'] || item['description'] %></p>
+                  <% if safe_public_url?(item['url']) %><a href="<%= item['url'] %>" target="_blank" rel="noopener noreferrer">Learn more</a><% end %>
+                </article>
+              <% end %>
+            </div>
+          <% elsif type == 'comparison_table' %>
+            <h2><%= section['title'] %></h2><table><tbody>
+              <% Array(section['items']).each do |item| %><tr><th><%= item['title'] %></th><td><%= item['body'] %></td></tr><% end %>
+            </tbody></table>
+          <% elsif %w[stats_banner social_proof_grid].include?(type) %>
+            <h2><%= section['title'] %></h2><div class="grid">
+              <% Array(section['items']).each do |item| %><div class="card"><div class="stat"><%= item['value'] %></div><div><%= item['label'] %></div></div><% end %>
+            </div>
+          <% elsif type == 'faq_accordion' %>
+            <h2><%= section['title'] %></h2>
+            <% Array(section['items']).each do |item| %><details><summary><%= item['question'] %></summary><p><%= item['answer'] %></p></details><% end %>
+          <% elsif type == 'cta_banner' %>
+            <h2><%= section['title'] %></h2><% if safe_public_url?(section['url']) %><a class="cta" href="<%= section['url'] %>" target="_blank" rel="noopener noreferrer"><%= section['title'] %></a><% end %>
+          <% elsif type == 'booking_section' %>
+            <span class="eyebrow">Appointment</span><h2><%= section['title'] %></h2>
+            <% if safe_public_url?(section['url']) %><a class="cta" href="<%= section['url'] %>" target="_blank" rel="noopener noreferrer"><%= section['title'] %></a><% end %>
+          <% elsif type == 'testimonial_carousel' %>
+            <h2><%= section['title'] %></h2><div class="grid"><% Array(section['items']).each do |item| %><blockquote class="card"><p><%= item['quote'] %></p><strong><%= item['source'] %></strong></blockquote><% end %></div>
+          <% elsif type == 'video_hero' || type == 'video_embed' %>
+            <h2><%= section['title'] %></h2><% if safe_public_url?(section['url']) %><video src="<%= section['url'] %>" controls preload="metadata"></video><% end %>
+          <% elsif type == 'location_map' %>
+            <h2><%= section['title'] %></h2><p><%= section['address'] %></p><% if safe_public_url?(section['directions_url']) %><a class="cta" href="<%= section['directions_url'] %>" target="_blank" rel="noopener noreferrer">Directions</a><% end %>
+          <% elsif type == 'interactive_calculator' %>
+            <h2><%= section['title'] %></h2><p>This calculator is available only when its verified formula is supplied by Business Knowledge.</p>
+          <% else %>
+            <h2><%= section['title'] %></h2><p><%= section['body'] %></p>
+            <% Array(section['items']).each do |item| %><article class="card"><h3><%= item['title'] %></h3><p><%= item['body'] %></p></article><% end %>
+          <% end %>
+        </section>
+      <% end %>
+      <footer>Generated from verified Business Knowledge. This link expires <%= @artifact.expires_at.to_fs(:long) %>.</footer>
+    </main>
+  </body>
+</html>

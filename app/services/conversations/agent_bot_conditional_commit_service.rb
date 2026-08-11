@@ -18,7 +18,7 @@ class Conversations::AgentBotConditionalCommitService
     @expected_agent_bot_id = options.fetch(:expected_agent_bot_id).to_i
     @responding_to_message_id = options.fetch(:responding_to_message_id).to_i
     @idempotency_key = options.fetch(:idempotency_key).to_s
-    @message_attributes = options.fetch(:message).to_h.symbolize_keys.slice(:content, :content_type)
+    @message_attributes = options.fetch(:message).to_h.symbolize_keys.slice(:content, :content_type, :content_attributes)
   end
 
   def perform
@@ -100,6 +100,7 @@ class Conversations::AgentBotConditionalCommitService
       committed_at: Time.current,
       failure_code: nil
     )
+    tool_execution_for(turn)&.mark_committed!(timestamp: outbound_commit.committed_at)
     outbound_commit
   end
 
@@ -127,9 +128,10 @@ class Conversations::AgentBotConditionalCommitService
   def effect_precondition_failure(outbound_commit, turn, effective_attributes)
     return 'invalid_message' unless valid_message_payload?(effective_attributes)
 
-    return unless outbound_commit.outcome_type_tool?
+    execution = tool_execution_for(turn)
+    return unless outbound_commit.outcome_type_tool? || execution
 
-    tool_eligibility = ChatRing::Tools::CommitEligibility.check(execution: outbound_commit.tool_execution, turn: turn)
+    tool_eligibility = ChatRing::Tools::CommitEligibility.check(execution: execution, turn: turn)
     return tool_eligibility.reason unless tool_eligibility.eligible
   end
 
@@ -152,6 +154,7 @@ class Conversations::AgentBotConditionalCommitService
 
   def reject(outbound_commit, failure_code, turn, playbook_execution)
     outbound_commit.update!(status: :rejected, attempted_at: Time.current, failure_code: failure_code)
+    tool_execution_for(turn)&.mark_rejected!(failure_code)
     ChatRing::Playbooks::ExecutionFinalizer.apply_locked!(
       turn: turn,
       execution: playbook_execution,
@@ -162,12 +165,22 @@ class Conversations::AgentBotConditionalCommitService
   end
 
   def create_message(turn, outbound_commit, attributes)
+    microsite = ChatRing::Microsites::ArtifactBuilder.call(turn)
     content_attributes = {
       'chatring_citations' => ChatRing::Brain::VisitorCitationPresenter.call(turn)
     }
-    content_attributes['chatring_tool'] = tool_presentation(outbound_commit) if outbound_commit.outcome_type_tool?
+    suggestions = Array(turn.decision_payload['suggested_questions']).first(ChatRing::Brain::Decision::MAX_SUGGESTED_QUESTIONS)
+    content_attributes['chatring_suggestions'] = suggestions if suggestions.present?
+    response_options = Array(turn.decision_payload['response_options']).first(ChatRing::Brain::Decision::MAX_RESPONSE_OPTIONS)
+    if response_options.present?
+      content_attributes['chatring_response_options'] = response_options.map { |option| { 'label' => option, 'value' => option } }
+    end
+    execution = tool_execution_for(turn)
+    content_attributes['chatring_tool'] = tool_presentation(execution) if execution
+    content_attributes['chatring_microsite'] = ChatRing::Microsites::VisitorPresentation.call(microsite) if microsite
+    content_attributes.merge!(safe_playbook_content_attributes(attributes))
 
-    conversation.messages.create!(
+    message = conversation.messages.create!(
       account_id: conversation.account_id,
       inbox_id: conversation.inbox_id,
       sender: agent_bot,
@@ -177,11 +190,21 @@ class Conversations::AgentBotConditionalCommitService
       source_id: "chatring:#{turn.outbound_commit.outcome_type}:#{idempotency_key}",
       content_attributes: content_attributes
     )
+    microsite&.update!(message: message)
+    message
   end
 
-  def tool_presentation(outbound_commit)
-    ChatRing::Tools::VisitorPresentation.call(outbound_commit.tool_execution)
+  def tool_presentation(tool_execution)
+    ChatRing::Tools::VisitorPresentation.call(tool_execution)
   rescue ArgumentError
     raise Unauthorized
+  end
+
+  def tool_execution_for(turn)
+    ChatRing::ToolExecution.find_by(ai_turn_id: turn.id)
+  end
+
+  def safe_playbook_content_attributes(attributes)
+    attributes.fetch(:content_attributes, {}).to_h.stringify_keys.slice('chatring_playbook_options')
   end
 end

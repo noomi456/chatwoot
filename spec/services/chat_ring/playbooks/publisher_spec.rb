@@ -132,24 +132,42 @@ RSpec.describe ChatRing::Playbooks::Publisher do
     end
   end
 
-  it 'rejects Tool and transition steps until their native-first execution paths are certified', :aggregate_failures do
+  it 'publishes the certified appointment Tool step but continues to reject uncertified transitions', :aggregate_failures do
+    ChatRing::Tools::PolicyPublisher.new(
+      workspace: workspace,
+      inbox: inbox,
+      actor: actor,
+      expected_lock_version: 0,
+      enabled_tools: [{ key: 'request_appointment', version: 1 }],
+      tool_configurations: {
+        request_appointment: {
+          provider: 'calendly',
+          url: 'https://calendly.com/chatring/demo',
+          fallback_mode: 'approved_link',
+          link_label: 'Book a meeting'
+        }
+      }
+    ).call
     playbook.draft_definition = definition.deep_merge(
       tool_allowlist: [{ key: 'request_appointment', version: 1 }],
       steps: [
         {
+          id: 'ask_need', kind: 'ask_text', prompt: 'What service?', field_key: 'service_need',
+          next_step_id: 'appointment', tool_allowlist: []
+        },
+        {
           id: 'appointment', kind: 'tool', tool: { key: 'request_appointment', version: 1 },
-          tool_allowlist: [{ key: 'request_appointment', version: 1 }]
-        }
+          tool_allowlist: [{ key: 'request_appointment', version: 1 }], next_step_id: 'complete'
+        },
+        { id: 'complete', kind: 'terminal', outcome: 'complete', message: 'Thank you.' }
       ],
-      entry_step_id: 'appointment',
-      collected_fields: []
+      entry_step_id: 'ask_need'
     )
     playbook.save!
 
-    expect { publish(playbook, lock_version: playbook.lock_version) }
-      .to raise_error(described_class::InvalidDefinition) do |error|
-      expect(error.result.errors).to include(include(code: 'invalid_step_kind'))
-    end
+    expect(publish(playbook, lock_version: playbook.lock_version).definition['steps'].pluck('kind'))
+      .to eq(%w[ask_text tool terminal])
+
     playbook.draft_definition = definition.deep_merge(
       steps: [{ id: 'switch', kind: 'transition', target_playbook_version_id: 123, carry_fields: [] }],
       entry_step_id: 'switch',

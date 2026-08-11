@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import { vi } from 'vitest';
-import EngagementsIndex from './EngagementsIndex.vue';
+import ConversationStartersIndex from './ConversationStartersIndex.vue';
 
 const mocks = vi.hoisted(() => ({
   alert: vi.fn(),
@@ -12,11 +12,11 @@ vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: key => key }),
 }));
 vi.mock('dashboard/composables', () => ({ useAlert: mocks.alert }));
-vi.mock('dashboard/api/chatRingEngagements', () => ({
+vi.mock('dashboard/api/chatRingConversationStarters', () => ({
   default: { list: mocks.list, update: mocks.update },
 }));
 
-const engagement = lockVersion => ({
+const configuration = lockVersion => ({
   inbox: {
     id: 7,
     name: 'Website Sales',
@@ -31,15 +31,15 @@ const engagement = lockVersion => ({
   ],
 });
 
-describe('ChatRing Engagements administration page', () => {
+describe('ChatRing Conversation Starters administration page', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.list.mockResolvedValue({ data: [engagement(2)] });
-    mocks.update.mockResolvedValue({ data: engagement(3) });
+    mocks.list.mockResolvedValue({ data: [configuration(2)] });
+    mocks.update.mockResolvedValue({ data: configuration(3) });
   });
 
   it('loads ordered Website Inbox starters', async () => {
-    const wrapper = mount(EngagementsIndex);
+    const wrapper = mount(ConversationStartersIndex);
     await flushPromises();
 
     expect(mocks.list).toHaveBeenCalledOnce();
@@ -50,25 +50,28 @@ describe('ChatRing Engagements administration page', () => {
       'I would like to book a demo.',
     ]);
     expect(wrapper.text()).toContain(
-      'CHATRING_ENGAGEMENTS.NATIVE_MESSAGE_NOTE'
+      'CHATRING_CONVERSATION_STARTERS.NATIVE_MESSAGE_NOTE'
     );
   });
 
   it('reorders and saves only the bounded starter contract', async () => {
-    const wrapper = mount(EngagementsIndex);
+    const wrapper = mount(ConversationStartersIndex);
     await flushPromises();
 
     const moveDown = wrapper
       .findAll('button')
       .find(
         button =>
-          button.attributes('aria-label') === 'CHATRING_ENGAGEMENTS.MOVE_DOWN'
+          button.attributes('aria-label') ===
+          'CHATRING_CONVERSATION_STARTERS.MOVE_DOWN'
       );
     await moveDown.trigger('click');
 
     const save = wrapper
       .findAll('button')
-      .find(button => button.text().includes('CHATRING_ENGAGEMENTS.SAVE'));
+      .find(button =>
+        button.text().includes('CHATRING_CONVERSATION_STARTERS.SAVE')
+      );
     await save.trigger('click');
     await flushPromises();
 
@@ -80,6 +83,8 @@ describe('ChatRing Engagements administration page', () => {
         { label: 'See pricing', prompt: 'What pricing plans do you offer?' },
       ],
     });
-    expect(mocks.alert).toHaveBeenCalledWith('CHATRING_ENGAGEMENTS.SAVED');
+    expect(mocks.alert).toHaveBeenCalledWith(
+      'CHATRING_CONVERSATION_STARTERS.SAVED'
+    );
   });
 });

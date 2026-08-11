@@ -16,6 +16,16 @@ class ChatRing::Brain::PromptBuilder
     A Playbook side answer must be grounded in supplied evidence and must be concise. Put only the answer in response_text;
     do not repeat, paraphrase, or answer the pending Playbook question because the server resumes that exact question.
     If evidence is insufficient for a factual side question, use resume_pending_question with empty response text and no evidence IDs.
+    For a grounded reply outside a Playbook, suggested_questions may contain zero to two short, useful next questions supported by the same evidence.
+    Return no suggested questions for close-ended answers, weak evidence, active Playbooks, Tools, handoff, or abstention.
+    When response_text asks one bounded multiple-choice qualification question, response_options may contain two to six short choices.
+    Do not mix response_options with suggested_questions. During a Playbook, use only the exact published choices supplied by the server.
+    For a rich grounded answer outside a Playbook, microsite_section_types may contain up to three useful types from the supplied list.
+    Supported types: hero, features_grid, comparison_table, stats_banner, faq_accordion, cta_banner, interactive_calculator,
+    content_carousel, testimonial_carousel, social_proof_grid, booking_section, video_hero, image_carousel, content,
+    product_gallery, video_embed, image_gallery, and location_map.
+    Return an empty list when the evidence cannot safely populate a visual page. Never request a numeric, media, testimonial, map, calculator,
+    comparison, or booking section unless the supplied evidence and trusted configuration contain the required facts.
   POLICY
 
   def self.messages(context:, evidence_set:)

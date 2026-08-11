@@ -116,6 +116,7 @@ export default {
       'initCampaigns',
       'executeCampaign',
       'resetCampaign',
+      'updatePageScroll',
     ]),
     ...mapActions('agent', ['fetchAvailableAgents']),
     setWidgetColorVariable(widgetColor) {
@@ -284,6 +285,8 @@ export default {
           });
           window.referrerURL = referrerURL;
           this.setReferrerHost(referrerHost);
+        } else if (message.event === 'page-scroll') {
+          this.updatePageScroll(message.percentage);
         } else if (message.event === 'toggle-close-button') {
           this.isMobile = message.isMobile;
         } else if (message.event === 'push-event') {

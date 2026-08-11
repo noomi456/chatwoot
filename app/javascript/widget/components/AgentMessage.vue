@@ -3,6 +3,9 @@ import UserMessage from 'widget/components/UserMessage.vue';
 import AgentMessageBubble from 'widget/components/AgentMessageBubble.vue';
 import AgentCitations from 'widget/components/AgentCitations.vue';
 import AppointmentCalendar from 'widget/components/AppointmentCalendar.vue';
+import SuggestedQuestions from 'widget/components/SuggestedQuestions.vue';
+import MicrositeCard from 'widget/components/MicrositeCard.vue';
+import PlaybookOptions from 'widget/components/PlaybookOptions.vue';
 import MessageReplyButton from 'widget/components/MessageReplyButton.vue';
 import { messageStamp } from 'shared/helpers/timeHelper';
 import ImageBubble from 'widget/components/ImageBubble.vue';
@@ -23,6 +26,9 @@ export default {
     AgentMessageBubble,
     AgentCitations,
     AppointmentCalendar,
+    SuggestedQuestions,
+    MicrositeCard,
+    PlaybookOptions,
     ImageBubble,
     VideoBubble,
     Avatar,
@@ -164,6 +170,16 @@ export default {
     toggleReply() {
       emitter.emit(BUS_EVENTS.TOGGLE_REPLY_TO_MESSAGE, this.message);
     },
+    sendSuggestedQuestion(question) {
+      this.$store.dispatch('conversation/sendMessage', {
+        content: question,
+        replyTo: null,
+      });
+    },
+    sendPlaybookOption(option) {
+      const content = option?.label?.trim() || option?.value?.trim();
+      if (content) this.sendSuggestedQuestion(content);
+    },
   },
 };
 </script>
@@ -213,6 +229,25 @@ export default {
             />
             <AppointmentCalendar
               :presentation="messageContentAttributes.chatring_tool"
+            />
+            <SuggestedQuestions
+              :questions="messageContentAttributes.chatring_suggestions || []"
+              @select="sendSuggestedQuestion"
+            />
+            <MicrositeCard
+              :presentation="messageContentAttributes.chatring_microsite"
+            />
+            <PlaybookOptions
+              :options="
+                messageContentAttributes.chatring_playbook_options || []
+              "
+              @select="sendPlaybookOption"
+            />
+            <PlaybookOptions
+              :options="
+                messageContentAttributes.chatring_response_options || []
+              "
+              @select="sendPlaybookOption"
             />
             <div
               v-if="hasAttachments"

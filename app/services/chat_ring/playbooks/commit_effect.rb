@@ -22,7 +22,8 @@ class ChatRing::Playbooks::CommitEffect
 
     {
       content: plan.content,
-      content_type: 'text'
+      content_type: plan.content_type || 'text',
+      content_attributes: plan.content_attributes || {}
     }
   end
 

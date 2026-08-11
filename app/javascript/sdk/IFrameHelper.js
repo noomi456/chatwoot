@@ -87,6 +87,7 @@ export const IFrameHelper = {
     body.appendChild(widgetHolder);
     IFrameHelper.initPostMessageCommunication();
     IFrameHelper.initWindowSizeListener();
+    IFrameHelper.initPageScrollListener();
     IFrameHelper.preventDefaultScroll();
   },
   getAppFrame: () => document.getElementById('chatwoot_live_chat_widget'),
@@ -114,6 +115,42 @@ export const IFrameHelper = {
   },
   initWindowSizeListener: () => {
     window.addEventListener('resize', () => IFrameHelper.toggleCloseButton());
+  },
+  pageScrollPercentage: () => {
+    const root = document.documentElement;
+    const pageBody = document.body;
+    const scrollTop =
+      window.scrollY || root.scrollTop || pageBody.scrollTop || 0;
+    const scrollHeight = Math.max(
+      root.scrollHeight,
+      root.offsetHeight,
+      pageBody.scrollHeight,
+      pageBody.offsetHeight
+    );
+    const viewportHeight = window.innerHeight || root.clientHeight;
+    const scrollableHeight = Math.max(scrollHeight - viewportHeight, 0);
+    return scrollableHeight === 0
+      ? 100
+      : Math.min(100, Math.max(0, (scrollTop / scrollableHeight) * 100));
+  },
+  sendPageScroll: () => {
+    IFrameHelper.sendMessage('page-scroll', {
+      percentage: IFrameHelper.pageScrollPercentage(),
+    });
+  },
+  initPageScrollListener: () => {
+    let frameRequest;
+    window.addEventListener(
+      'scroll',
+      () => {
+        if (frameRequest) return;
+        frameRequest = window.requestAnimationFrame(() => {
+          frameRequest = null;
+          IFrameHelper.sendPageScroll();
+        });
+      },
+      { passive: true }
+    );
   },
   preventDefaultScroll: () => {
     widgetHolder.addEventListener('wheel', event => {
@@ -178,6 +215,7 @@ export const IFrameHelper = {
         widgetColor: message.config.channelConfig.widgetColor,
       });
       IFrameHelper.toggleCloseButton();
+      IFrameHelper.sendPageScroll();
 
       if (window.$chatwoot.user) {
         IFrameHelper.sendMessage('set-user', window.$chatwoot.user);

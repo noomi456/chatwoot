@@ -20,6 +20,12 @@ chat_ring_ai_turn_recovery_sweep_job:
   class: 'ChatRing::AiTurnRecoverySweepJob'
   queue: scheduled_jobs
 
+# removes expired, shareable ChatRing microsite artifacts; native Chatwoot Messages remain untouched
+chat_ring_microsite_cleanup_job:
+  cron: '15 * * * *'
+  class: 'ChatRing::MicrositeCleanupJob'
+  queue: housekeeping
+
 # executed hourly for scheduled jobs that do not need minute-level cadence
 trigger_hourly_scheduled_items_job:
   cron: '0 * * * *'

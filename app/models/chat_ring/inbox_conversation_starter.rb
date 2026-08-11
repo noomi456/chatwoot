@@ -1,12 +1,13 @@
-class ChatRing::InboxEngagement < ApplicationRecord
-  self.table_name = 'chat_ring_inbox_engagements'
+class ChatRing::InboxConversationStarter < ApplicationRecord
+  self.table_name = 'chat_ring_inbox_conversation_starters'
 
-  MAX_STARTERS = 6
+  MAX_STARTERS = 4
+  DISPLAY_LIMIT = 2
   MAX_LABEL_LENGTH = 80
   MAX_PROMPT_LENGTH = 500
   STARTER_KEYS = %w[label prompt].freeze
 
-  belongs_to :workspace, class_name: 'ChatRing::Workspace', inverse_of: :inbox_engagements
+  belongs_to :workspace, class_name: 'ChatRing::Workspace', inverse_of: :inbox_conversation_starters
   belongs_to :inbox, class_name: 'Inbox', foreign_key: :chatwoot_inbox_id, inverse_of: false
   belongs_to :updated_by, class_name: 'User', inverse_of: false, optional: true
 

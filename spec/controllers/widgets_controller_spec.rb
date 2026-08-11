@@ -22,7 +22,7 @@ describe '/widget', type: :request do
     end
 
     it 'renders active Inbox-owned starters without adding a second visitor action path' do
-      ChatRing::InboxEngagement.create!(
+      ChatRing::InboxConversationStarter.create!(
         workspace: ChatRing::Workspace.for_account!(account),
         inbox: web_widget.inbox,
         starters: [{ 'label' => 'See pricing', 'prompt' => 'What pricing plans do you offer?' }]
@@ -36,7 +36,7 @@ describe '/widget', type: :request do
     end
 
     it 'escapes configured starter text at the HTML script boundary' do
-      ChatRing::InboxEngagement.create!(
+      ChatRing::InboxConversationStarter.create!(
         workspace: ChatRing::Workspace.for_account!(account),
         inbox: web_widget.inbox,
         starters: [{ 'label' => 'Unsafe', 'prompt' => '</script><script>alert(1)</script>' }]

@@ -54,6 +54,16 @@
             "PLACEHOLDER": "Please enter the time",
             "ERROR": "Time on page is required"
           },
+          "TRIGGER_TYPE": {
+            "LABEL": "Trigger",
+            "TIME_ON_PAGE": "Wait time",
+            "SCROLL_PERCENTAGE": "Page scroll threshold"
+          },
+          "SCROLL_PERCENTAGE": {
+            "LABEL": "Page scroll threshold (%)",
+            "PLACEHOLDER": "Enter a percentage from 1 to 100",
+            "ERROR": "Page scroll threshold is required"
+          },
           "OTHER_PREFERENCES": {
             "TITLE": "Other preferences",
             "ENABLED": "Enable campaign",

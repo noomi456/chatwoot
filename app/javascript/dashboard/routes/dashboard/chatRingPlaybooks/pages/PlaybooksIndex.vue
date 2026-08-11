@@ -28,14 +28,20 @@ const form = ref({
   collectedFields: [],
   steps: [],
 });
+const toolForm = ref({
+  enabled: false,
+  provider: 'calendly',
+  url: '',
+  linkLabel: 'Book a meeting',
+  calendarEmbed: false,
+});
 
 const stepKindOptions = [
-  { value: 'ask_text', label: 'Ask text question' },
-  { value: 'ask_choice', label: 'Ask choice question' },
-  { value: 'inform', label: 'Share information' },
-  { value: 'tool', label: 'Run approved Tool' },
-  { value: 'terminal', label: 'Complete or hand off' },
-  { value: 'transition', label: 'Transition to Playbook version' },
+  { value: 'ask_text', label: '@ask_question' },
+  { value: 'ask_choice', label: '@show_options' },
+  { value: 'inform', label: '@mention_specifically' },
+  { value: 'tool', label: '@share_booking_link' },
+  { value: 'terminal', label: '@stop_playbook' },
 ];
 const fieldTypeOptions = [
   'string',
@@ -48,10 +54,15 @@ const fieldTypeOptions = [
   value,
   label: value,
 }));
-const outcomeOptions = ['complete', 'stop', 'handoff'].map(value => ({
+const outcomeOptions = ['complete', 'stop'].map(value => ({
   value,
   label: value,
 }));
+const providerOptions = [
+  { value: 'calendly', label: 'Calendly' },
+  { value: 'calcom', label: 'Cal.com' },
+  { value: 'custom_link', label: 'Approved link' },
+];
 
 const inboxOptions = computed(() =>
   policies.value.map(policy => ({
@@ -83,6 +94,11 @@ const appointmentCapability = computed(() =>
 const appointmentAvailable = computed(
   () => appointmentCapability.value?.available === true
 );
+const canEmbedCalendar = computed(
+  () =>
+    selectedPolicy.value?.inbox?.channel_type === 'Channel::WebWidget' &&
+    toolForm.value.provider === 'calendly'
+);
 const isReadOnly = computed(
   () => selectedPlaybook.value?.status === 'archived'
 );
@@ -104,7 +120,6 @@ const editableStep = step => ({
   choicesText: (step.choices || [])
     .map(choice => `${choice.label}|${choice.value}|${choice.next_step_id}`)
     .join('\n'),
-  carryFieldsText: (step.carry_fields || []).join('\n'),
 });
 
 const setForm = playbook => {
@@ -134,7 +149,29 @@ const setForm = playbook => {
   };
 };
 
+const setToolFormFromPolicy = policy => {
+  const version = policy?.current_version;
+  const configuration = version?.tool_configurations?.request_appointment || {};
+  toolForm.value = {
+    enabled:
+      version?.enabled_tools?.some(
+        tool => tool.key === 'request_appointment' && tool.version === 1
+      ) || false,
+    provider: configuration.provider || 'calendly',
+    url: configuration.url || '',
+    linkLabel: configuration.link_label || 'Book a meeting',
+    calendarEmbed: configuration.website_presentation === 'calendar_embed',
+  };
+};
+
 watch(selectedPlaybook, playbook => setForm(playbook));
+watch(selectedPolicy, policy => setToolFormFromPolicy(policy));
+watch(
+  () => toolForm.value.provider,
+  () => {
+    if (!canEmbedCalendar.value) toolForm.value.calendarEmbed = false;
+  }
+);
 watch(selectedInboxId, () => {
   const currentBelongsToInbox = inboxPlaybooks.value.some(
     playbook => String(playbook.id) === String(selectedPlaybookId.value)
@@ -190,14 +227,11 @@ const serializedStep = step => {
         : {}),
     };
   }
-  if (step.kind === 'transition') {
-    return {
-      ...common,
-      target_playbook_version_id: Number(step.target_playbook_version_id),
-      carry_fields: lines(step.carryFieldsText || ''),
-    };
-  }
-  return { ...common, outcome: step.outcome || 'complete' };
+  return {
+    ...common,
+    outcome: step.outcome || 'complete',
+    message: step.message?.trim(),
+  };
 };
 
 const definition = () => ({
@@ -240,10 +274,55 @@ const load = async () => {
     selectedInboxId.value = String(policies.value[0]?.inbox?.id || '');
     selectedPlaybookId.value = String(inboxPlaybooks.value[0]?.id || '');
     setForm(selectedPlaybook.value);
+    setToolFormFromPolicy(selectedPolicy.value);
   } catch (error) {
     useAlert(apiError(error));
   } finally {
     isLoading.value = false;
+  }
+};
+
+const saveToolPolicy = async () => {
+  if (!selectedPolicy.value || isSaving.value) return;
+  isSaving.value = true;
+  try {
+    const payload = toolForm.value.enabled
+      ? {
+          lock_version: selectedPolicy.value.lock_version,
+          enabled_tools: [{ key: 'request_appointment', version: 1 }],
+          tool_configurations: {
+            request_appointment: {
+              provider: toolForm.value.provider,
+              url: toolForm.value.url.trim(),
+              fallback_mode: 'approved_link',
+              link_label: toolForm.value.linkLabel.trim(),
+              website_presentation: toolForm.value.calendarEmbed
+                ? 'calendar_embed'
+                : 'approved_link',
+            },
+          },
+          renderer_policy: {},
+        }
+      : {
+          lock_version: selectedPolicy.value.lock_version,
+          enabled_tools: [],
+          tool_configurations: {},
+          renderer_policy: {},
+        };
+    const response = await ChatRingToolsAPI.publish(
+      selectedPolicy.value.inbox.id,
+      payload
+    );
+    const index = policies.value.findIndex(
+      policy => policy.inbox.id === response.data.inbox.id
+    );
+    policies.value.splice(index, 1, response.data);
+    setToolFormFromPolicy(response.data);
+    useAlert(t('CHATRING_TOOLS.SAVED'));
+  } catch (error) {
+    useAlert(apiError(error));
+  } finally {
+    isSaving.value = false;
   }
 };
 
@@ -447,19 +526,79 @@ onMounted(load);
         </article>
 
         <article class="p-5 border rounded-xl border-n-weak bg-n-solid-1">
-          <h2 class="text-sm font-semibold text-n-slate-12">
-            {{ t('CHATRING_PLAYBOOKS.TOOLS') }}
-          </h2>
-          <div
-            v-if="appointmentAvailable"
-            class="flex items-center gap-2 mt-3 text-sm text-n-slate-12"
-          >
-            <Switch v-model="form.appointmentTool" :disabled="isReadOnly" />
-            <span>{{ t('CHATRING_PLAYBOOKS.APPOINTMENT_TOOL') }}</span>
+          <div class="flex items-start justify-between gap-5">
+            <div>
+              <h2 class="text-sm font-semibold text-n-slate-12">
+                {{ t('CHATRING_PLAYBOOKS.TOOLS') }}
+              </h2>
+              <p class="mt-1 text-sm text-n-slate-10">
+                Tools are configured for this Inbox and selected by Playbook
+                steps. They are not a separate conversation system.
+              </p>
+            </div>
+            <div class="flex items-center gap-2 text-sm text-n-slate-12">
+              <span>{{ t('CHATRING_TOOLS.ENABLED') }}</span>
+              <Switch v-model="toolForm.enabled" />
+            </div>
           </div>
-          <p v-else class="mt-2 text-sm text-n-slate-10">
-            {{ t('CHATRING_PLAYBOOKS.NO_TOOLS') }}
-          </p>
+
+          <div v-if="toolForm.enabled" class="grid gap-4 mt-5 md:grid-cols-2">
+            <Select
+              v-model="toolForm.provider"
+              :label="t('CHATRING_TOOLS.PROVIDER')"
+              :options="providerOptions"
+            />
+            <Input
+              v-model="toolForm.linkLabel"
+              :label="t('CHATRING_TOOLS.LINK_LABEL')"
+            />
+            <div class="md:col-span-2">
+              <Input
+                v-model="toolForm.url"
+                type="url"
+                :label="t('CHATRING_TOOLS.URL')"
+                placeholder="https://calendly.com/your-team/demo"
+              />
+            </div>
+            <div
+              class="flex items-start justify-between gap-5 p-4 border rounded-lg md:col-span-2 border-n-weak"
+            >
+              <div>
+                <p class="text-sm font-medium text-n-slate-12">
+                  {{ t('CHATRING_TOOLS.CALENDAR_EMBED') }}
+                </p>
+                <p class="mt-1 text-xs text-n-slate-10">
+                  {{
+                    canEmbedCalendar
+                      ? t('CHATRING_TOOLS.CALENDAR_EMBED_DESCRIPTION')
+                      : t('CHATRING_TOOLS.CALENDAR_EMBED_UNAVAILABLE')
+                  }}
+                </p>
+              </div>
+              <Switch
+                v-model="toolForm.calendarEmbed"
+                :disabled="!canEmbedCalendar"
+              />
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between gap-4 mt-5">
+            <label class="flex items-center gap-2 text-sm text-n-slate-12">
+              <Switch
+                v-model="form.appointmentTool"
+                :disabled="isReadOnly || !appointmentAvailable"
+              />
+              <span>{{ t('CHATRING_PLAYBOOKS.APPOINTMENT_TOOL') }}</span>
+            </label>
+            <Button
+              variant="outline"
+              :is-loading="isSaving"
+              :disabled="isSaving"
+              @click="saveToolPolicy"
+            >
+              {{ t('CHATRING_TOOLS.SAVE') }}
+            </Button>
+          </div>
         </article>
 
         <article class="p-5 border rounded-xl border-n-weak bg-n-solid-1">
@@ -586,22 +725,13 @@ onMounted(load);
               :disabled="isReadOnly"
               :options="outcomeOptions"
             />
-            <template v-if="step.kind === 'transition'">
-              <Input
-                v-model="step.target_playbook_version_id"
-                type="number"
-                :disabled="isReadOnly"
-                :placeholder="
-                  t('CHATRING_PLAYBOOKS.TARGET_VERSION_PLACEHOLDER')
-                "
-              />
-              <TextArea
-                v-model="step.carryFieldsText"
-                :disabled="isReadOnly"
-                :placeholder="t('CHATRING_PLAYBOOKS.CARRY_FIELDS_PLACEHOLDER')"
-                :max-length="1200"
-              />
-            </template>
+            <TextArea
+              v-if="step.kind === 'terminal'"
+              v-model="step.message"
+              :disabled="isReadOnly"
+              :placeholder="t('CHATRING_PLAYBOOKS.STEP_TEXT')"
+              :max-length="1000"
+            />
           </div>
         </article>
 

@@ -153,6 +153,9 @@ export const actions = {
       commit('setError', true);
     }
   },
+  updatePageScroll: (_, percentage) => {
+    campaignTimer.updateScrollPercentage(percentage);
+  },
 };
 
 export const mutations = {

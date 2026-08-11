@@ -397,7 +397,10 @@ policy, Inbox-owned Playbooks, Website Engagement starter pills, sales administr
 the approved channel set, human voice/calls and the full production proof in
 `ChatRing_Complete_Production_Foundation_Direction.md`. External business-event outbound,
 AI Navigator, media-aware Knowledge and Microsites are separately gated later stages.
-Any failed Sales Core gate leaves the constant false.
+Any failed Sales Core gate leaves the constant false. The 2026-08-11 product correction
+defines Engagement as native Chatwoot Campaign behavior, Conversation Starters as a
+separate pre-conversation prompt surface, Tools as Playbook/Brain-owned administration,
+and the grounded expiring Microsite response as part of the complete Web Widget vertical.
 
 ### Post-PR G — Sales Core feature and channel sequence
 

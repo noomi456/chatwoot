@@ -113,6 +113,57 @@ RSpec.describe ChatRing::Playbooks::CommitEffect do
     )
   end
 
+  it 'executes an allowed appointment Tool from the pinned Playbook and commits one native Message' do
+    context = ChatRingPlaybookSpecSupport.build(tool_enabled: true)
+    initial_turn = context.fetch(:turn)
+    ChatRing::Playbooks::InitialQuestionPreparer.call(
+      initial_turn,
+      context_digest: Digest::SHA256.hexdigest('tool-playbook-context')
+    )
+    service_for_any(initial_turn).perform
+    tool_execution = initial_turn.inbox_playbook_execution
+    trigger = create(
+      :message,
+      account: initial_turn.conversation.account,
+      inbox: initial_turn.conversation.inbox,
+      conversation: initial_turn.conversation,
+      sender: initial_turn.conversation.contact,
+      message_type: :incoming,
+      private: false,
+      content: 'Internet service'
+    )
+    tool_execution.reload.update!(last_trigger_message: trigger)
+    follow_up = ChatRing::AiTurn.create!(
+      follow_up_attributes_for(
+        initial_turn,
+        tool_execution,
+        trigger,
+        'decision_type' => 'playbook',
+        'response_text' => '',
+        'reason_code' => 'answered_pending_question',
+        'evidence_ids' => [],
+        'playbook_control' => { 'action' => 'submit_answer', 'answer_value' => 'Internet service' }
+      )
+    )
+    ChatRing::OutboundCommitPreparer.call(follow_up, 'playbook')
+
+    result = service_for_any(follow_up).perform
+
+    expect(result.message).to have_attributes(
+      sender: follow_up.expected_agent_bot,
+      content: "Book a meeting\nhttps://calendly.com/cqalerts3/30min\n\nThank you. Your request is complete."
+    )
+    expect(result.message.content_attributes.fetch('chatring_tool')).to include(
+      'tool_key' => 'request_appointment',
+      'url' => 'https://calendly.com/cqalerts3/30min'
+    )
+    expect(follow_up.tool_execution.reload).to be_status_committed
+    expect(tool_execution.reload).to have_attributes(status: 'completed', current_step_id: 'complete')
+
+    expect { service_for_any(follow_up).perform }.not_to change(Message, :count)
+    expect(follow_up.tool_execution.reload).to be_status_committed
+  end
+
   it 'answers a grounded side question and resumes the exact published pending question without advancing' do
     service.perform
     side_turn = build_follow_up_turn(
@@ -299,18 +350,22 @@ RSpec.describe ChatRing::Playbooks::CommitEffect do
   end
 
   def follow_up_attributes(trigger, decision_payload)
+    follow_up_attributes_for(turn, execution, trigger, decision_payload)
+  end
+
+  def follow_up_attributes_for(base_turn, playbook_execution, trigger, decision_payload)
     {
-      workspace: turn.workspace,
-      conversation: conversation,
+      workspace: base_turn.workspace,
+      conversation: base_turn.conversation,
       trigger_message: trigger,
-      inbox_assistant_binding: turn.inbox_assistant_binding,
-      binding_version: turn.binding_version,
-      assistant: turn.assistant,
-      assistant_version: turn.assistant_version,
-      expected_agent_bot: turn.expected_agent_bot,
-      inbox_playbook_execution: execution,
-      playbook_execution_lock_version: execution.lock_version,
-      playbook_step_id: execution.current_step_id,
+      inbox_assistant_binding: base_turn.inbox_assistant_binding,
+      binding_version: base_turn.binding_version,
+      assistant: base_turn.assistant,
+      assistant_version: base_turn.assistant_version,
+      expected_agent_bot: base_turn.expected_agent_bot,
+      inbox_playbook_execution: playbook_execution,
+      playbook_execution_lock_version: playbook_execution.lock_version,
+      playbook_step_id: playbook_execution.current_step_id,
       status: :ready_to_commit,
       decision_type: 'playbook',
       decision_payload: decision_payload,
@@ -320,8 +375,12 @@ RSpec.describe ChatRing::Playbooks::CommitEffect do
   end
 
   def service_for(candidate_turn)
+    service_for_any(candidate_turn)
+  end
+
+  def service_for_any(candidate_turn)
     Conversations::AgentBotConditionalCommitService.new(
-      conversation: conversation,
+      conversation: candidate_turn.conversation,
       agent_bot: candidate_turn.expected_agent_bot,
       expected_agent_bot_id: candidate_turn.expected_agent_bot_id,
       responding_to_message_id: candidate_turn.trigger_message_id,
