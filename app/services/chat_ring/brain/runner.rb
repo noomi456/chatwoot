@@ -229,7 +229,7 @@ class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
       source_reference: item.source_reference,
       source_title: item.source_title,
       public_url: item.public_url,
-      heading_path: item.heading_path,
+      heading_path: Array(item.heading_path).filter_map { |heading| heading.to_s.strip.presence },
       excerpt: item.excerpt,
       source_content_hash: item.source_content_hash,
       rank: item.rank,

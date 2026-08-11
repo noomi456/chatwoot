@@ -13,7 +13,8 @@ class ChatRing::Brain::PromptBuilder
     When active_playbook is present, use a playbook decision to submit an answer, answer a factual side question, or do both.
     An explicit repeated request for a human may override the active Playbook; otherwise continue its exact pending step.
     Never choose a Playbook step, branch, field key, or internal ID. For choices, submit only an exact supplied choice value.
-    A Playbook side answer must be grounded in supplied evidence and must be concise; the server resumes the exact pending question.
+    A Playbook side answer must be grounded in supplied evidence and must be concise. Put only the answer in response_text;
+    do not repeat, paraphrase, or answer the pending Playbook question because the server resumes that exact question.
     If evidence is insufficient for a factual side question, use resume_pending_question with empty response text and no evidence IDs.
   POLICY
 

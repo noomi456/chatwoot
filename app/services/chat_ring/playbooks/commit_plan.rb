@@ -73,7 +73,7 @@ class ChatRing::Playbooks::CommitPlan
 
   def build_side_question!
     validate_waiting_question!
-    self.content = compose(turn.decision_payload.fetch('response_text'), ChatRing::Playbooks::QuestionRenderer.call(current_step))
+    self.content = compose(side_answer, rendered_current_question)
     self.execution_attributes = { status: :waiting_for_customer }
     self.transition_action = 'answer_side_question'
     self.from_step_id = execution.current_step_id
@@ -120,7 +120,35 @@ class ChatRing::Playbooks::CommitPlan
     next_content = navigation.fetch(:content)
     return next_content unless include_side_answer
 
-    compose(turn.decision_payload.fetch('response_text'), next_content)
+    compose(side_answer, next_content)
+  end
+
+  def side_answer
+    answer = turn.decision_payload.fetch('response_text').to_s.strip
+    remove_echoed_pending_question(answer)
+  end
+
+  def remove_echoed_pending_question(answer)
+    paragraphs = answer.split(/\n{2,}/)
+    return answer unless echoed_pending_question?(paragraphs.last)
+
+    paragraphs[0...-1].join("\n\n").strip
+  end
+
+  def echoed_pending_question?(paragraph)
+    paragraph.to_s.rstrip.end_with?('?') &&
+      normalized_question(paragraph) == normalized_question(rendered_current_question)
+  end
+
+  def normalized_question(value)
+    value.to_s.unicode_normalize(:nfkc).downcase
+         .gsub(/[^\p{Alnum}]+/u, ' ')
+         .strip
+         .sub(/\A(?:what|which|who|whom|whose|when|where|why|how)\s+/, '')
+  end
+
+  def rendered_current_question
+    @rendered_current_question ||= ChatRing::Playbooks::QuestionRenderer.call(current_step)
   end
 
   def answer_execution_attributes(value, navigation)

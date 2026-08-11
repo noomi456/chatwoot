@@ -11,24 +11,35 @@ class ChatRing::Brain::DecisionSchema < RubyLLM::Schema
         description: 'Only evidence IDs supplied in the prompt and directly supporting the decision.',
         max_items: 8,
         of: :string
-  object :tool_request,
-         description: 'Registered semantic Tool request. Omit unless decision_type is request_appointment.',
-         required: false do
-    string :key, description: 'Registered Tool key.'
-    integer :version, description: 'Registered immutable Tool version.'
-    object :arguments, description: 'Arguments allowed by the registered Tool schema.' do
-      string :requested_time_window, description: 'Optional visitor-requested time window.', max_length: 160, required: false
-      string :reason_code, description: 'Optional stable snake_case request reason.', max_length: 80, required: false
+  any_of :tool_request,
+         description: 'Registered semantic Tool request, or null unless decision_type is request_appointment.' do
+    object do
+      string :key, description: 'Registered Tool key.'
+      integer :version, description: 'Registered immutable Tool version.'
+      object :arguments, description: 'Arguments allowed by the registered Tool schema.' do
+        any_of :requested_time_window, description: 'Optional visitor-requested time window.' do
+          string max_length: 160
+          null
+        end
+        any_of :reason_code, description: 'Optional stable snake_case request reason.' do
+          string max_length: 80
+          null
+        end
+      end
     end
+    null
   end
-  object :playbook_control,
-         description: 'Semantic Playbook action. Omit unless decision_type is playbook.',
-         required: false do
-    string :action,
-           description: 'One of submit_answer, answer_side_question, submit_answer_and_answer_side_question, or resume_pending_question.'
-    string :answer_value,
-           description: 'Normalized answer or exact supplied choice value. Required only when submitting an answer.',
-           max_length: 1000,
-           required: false
+  any_of :playbook_control,
+         description: 'Semantic Playbook action, or null unless decision_type is playbook.' do
+    object do
+      string :action,
+             description: 'One of submit_answer, answer_side_question, submit_answer_and_answer_side_question, or resume_pending_question.'
+      any_of :answer_value,
+             description: 'Normalized answer or exact supplied choice value, or null when not submitting an answer.' do
+        string max_length: 1000
+        null
+      end
+    end
+    null
   end
 end
