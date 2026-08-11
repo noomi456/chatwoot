@@ -49,7 +49,9 @@ describe('ChatRing Engagements administration page', () => {
       'Book a demo',
       'I would like to book a demo.',
     ]);
-    expect(wrapper.text()).toContain('CHATRING_ENGAGEMENTS.NATIVE_MESSAGE_NOTE');
+    expect(wrapper.text()).toContain(
+      'CHATRING_ENGAGEMENTS.NATIVE_MESSAGE_NOTE'
+    );
   });
 
   it('reorders and saves only the bounded starter contract', async () => {
@@ -60,8 +62,7 @@ describe('ChatRing Engagements administration page', () => {
       .findAll('button')
       .find(
         button =>
-          button.attributes('aria-label') ===
-          'CHATRING_ENGAGEMENTS.MOVE_DOWN'
+          button.attributes('aria-label') === 'CHATRING_ENGAGEMENTS.MOVE_DOWN'
       );
     await moveDown.trigger('click');
 

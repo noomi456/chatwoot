@@ -23,8 +23,7 @@ const newStarterKey = () => {
 
 const selectedEngagement = computed(() =>
   engagements.value.find(
-    engagement =>
-      String(engagement.inbox.id) === String(selectedInboxId.value)
+    engagement => String(engagement.inbox.id) === String(selectedInboxId.value)
   )
 );
 const inboxOptions = computed(() =>
