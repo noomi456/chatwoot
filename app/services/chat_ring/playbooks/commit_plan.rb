@@ -73,7 +73,7 @@ class ChatRing::Playbooks::CommitPlan
 
   def build_side_question!
     validate_waiting_question!
-    self.content = compose(turn.decision_payload.fetch('response_text'), ChatRing::Playbooks::QuestionRenderer.call(current_step))
+    self.content = compose(side_answer, rendered_current_question)
     self.execution_attributes = { status: :waiting_for_customer }
     self.transition_action = 'answer_side_question'
     self.from_step_id = execution.current_step_id
@@ -120,7 +120,16 @@ class ChatRing::Playbooks::CommitPlan
     next_content = navigation.fetch(:content)
     return next_content unless include_side_answer
 
-    compose(turn.decision_payload.fetch('response_text'), next_content)
+    compose(side_answer, next_content)
+  end
+
+  def side_answer
+    answer = turn.decision_payload.fetch('response_text').to_s.strip
+    answer.delete_suffix(rendered_current_question).strip
+  end
+
+  def rendered_current_question
+    @rendered_current_question ||= ChatRing::Playbooks::QuestionRenderer.call(current_step)
   end
 
   def answer_execution_attributes(value, navigation)
