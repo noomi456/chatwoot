@@ -10,7 +10,7 @@ class ChatRing::OutboundCommitJob < ApplicationJob
     return unless turn&.status_ready_to_commit?
 
     case turn.decision_type
-    when 'reply', 'clarification'
+    when 'reply', 'clarification', 'playbook'
       commit_reply(turn)
     when 'handoff'
       commit_handoff(turn)
@@ -67,8 +67,7 @@ class ChatRing::OutboundCommitJob < ApplicationJob
   end
 
   def finish_rejected_turn(turn, failure_code)
-    status = %w[newer_customer_message newer_human_reply].include?(failure_code) ? :superseded : :cancelled
-    turn.update!(status: status, failure_code: failure_code)
+    ChatRing::Playbooks::RejectedTurnFinalizer.call(turn, failure_code)
   end
 
   def required_outbound_commit(turn, outcome_type)

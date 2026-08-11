@@ -15,15 +15,21 @@ class Conversations::AssignmentService
 
   def assign_agent
     with_assignment_lock do
-      if assignee.present? && conversation.assignee_agent_bot_id.present? && conversation.pending?
-        conversation.status = :open
-        conversation.waiting_since = Time.current if conversation.waiting_since.blank?
-      end
+      managed_assistant_unassignment = conversation.assignee_agent_bot&.chatring_assistant?
+      prepare_for_human_takeover!
       conversation.assignee = assignee
       conversation.assignee_agent_bot = nil
       conversation.save!
+      finalize_managed_playbook_unassignment! if managed_assistant_unassignment
     end
     assignee
+  end
+
+  def prepare_for_human_takeover!
+    return unless assignee.present? && conversation.assignee_agent_bot_id.present? && conversation.pending?
+
+    conversation.status = :open
+    conversation.waiting_since = Time.current if conversation.waiting_since.blank?
   end
 
   def assign_agent_bot
@@ -88,5 +94,16 @@ class Conversations::AssignmentService
   def active_managed_binding
     workspace = conversation.account.chat_ring_workspace
     workspace&.inbox_assistant_bindings&.active&.find_by(chatwoot_inbox_id: conversation.inbox_id)
+  end
+
+  def finalize_managed_playbook_unassignment!
+    execution = ChatRing::InboxPlaybookExecution.controlling.lock.find_by(chatwoot_conversation_id: conversation.id)
+    human_takeover = assignee.present?
+    ChatRing::Playbooks::ExecutionFinalizer.apply_execution_locked!(
+      execution: execution,
+      status: human_takeover ? :handed_off : :superseded,
+      action: human_takeover ? 'native_human_takeover' : 'native_bot_unassigned',
+      failure_code: human_takeover ? 'human_assigned' : 'agent_bot_unassigned'
+    )
   end
 end

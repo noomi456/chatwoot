@@ -35,13 +35,17 @@ RSpec.describe Conversation do
     let!(:bot_owned_conversation) { create(:conversation, account: account, inbox: inbox, assignee_agent_bot: agent_bot) }
 
     it 'treats human and AgentBot ownership as assigned' do
-      expect(described_class.assigned).to include(human_owned_conversation, bot_owned_conversation)
-      expect(described_class.assigned).not_to include(unassigned_conversation)
+      assigned_ids = described_class.assigned.ids
+
+      expect(assigned_ids).to include(human_owned_conversation.id, bot_owned_conversation.id)
+      expect(assigned_ids).not_to include(unassigned_conversation.id)
     end
 
     it 'only treats conversations without either owner as unassigned' do
-      expect(described_class.unassigned).to include(unassigned_conversation)
-      expect(described_class.unassigned).not_to include(human_owned_conversation, bot_owned_conversation)
+      unassigned_ids = described_class.unassigned.ids
+
+      expect(unassigned_ids).to include(unassigned_conversation.id)
+      expect(unassigned_ids).not_to include(human_owned_conversation.id, bot_owned_conversation.id)
     end
   end
 

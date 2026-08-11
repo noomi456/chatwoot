@@ -52,6 +52,24 @@ RSpec.describe ChatRing::AiTurnRecoverySweepJob, type: :job do
     expect([queued_turn, running_turn, ready_turn].map { |turn| turn.conversation.reload.status }).to all(eq('pending'))
   end
 
+  it 'terminalizes a waiting Playbook with no recoverable AI turn while the public gate is closed' do
+    stub_const('ChatRing::AssistantSpike::PUBLIC_AI_RELEASE_READY', false)
+    context = ChatRingPlaybookSpecSupport.build
+    turn = context.fetch(:turn)
+    execution = turn.inbox_playbook_execution
+    execution.update!(status: :waiting_for_customer)
+    turn.update!(status: :committed, completed_at: Time.current)
+
+    expect { described_class.perform_now }.not_to change(Message, :count)
+
+    expect(execution.reload).to be_status_superseded
+    expect(execution.transition_history.last).to include(
+      'action' => 'public_response_gate_closed',
+      'failure_code' => 'public_response_gate_closed'
+    )
+    expect(turn.reload).to be_status_committed
+  end
+
   it 'leaves rejected recovery enqueue work due for the next condition-driven sweep' do
     turn = create_turn(status: :received, deadline_at: 1.minute.from_now, updated_at: 2.minutes.ago)
     accepted_job = instance_double(ActiveJob::Base, successfully_enqueued?: true)

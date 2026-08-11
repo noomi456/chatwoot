@@ -82,14 +82,14 @@ class Conversations::AgentBotConditionalCommitService
   def commit_or_reject(outbound_commit, turn, playbook_execution)
     playbook_effect = build_playbook_effect(outbound_commit, turn, playbook_execution)
     native_failure = native_precondition_failure(outbound_commit, turn)
-    return reject(outbound_commit, native_failure) if native_failure
+    return reject(outbound_commit, native_failure, turn, playbook_execution) if native_failure
 
     playbook_failure = playbook_effect&.failure_code
-    return reject(outbound_commit, playbook_failure) if playbook_failure
+    return reject(outbound_commit, playbook_failure, turn, playbook_execution) if playbook_failure
 
     effective_attributes = playbook_effect&.message_attributes || message_attributes
     failure_code = effect_precondition_failure(outbound_commit, turn, effective_attributes)
-    return reject(outbound_commit, failure_code) if failure_code
+    return reject(outbound_commit, failure_code, turn, playbook_execution) if failure_code
 
     message = create_message(turn, effective_attributes)
     playbook_effect&.apply!(message)
@@ -150,8 +150,14 @@ class Conversations::AgentBotConditionalCommitService
     attributes[:content].to_s.strip.present? && (attributes[:content_type].presence || 'text').to_s == 'text'
   end
 
-  def reject(outbound_commit, failure_code)
+  def reject(outbound_commit, failure_code, turn, playbook_execution)
     outbound_commit.update!(status: :rejected, attempted_at: Time.current, failure_code: failure_code)
+    ChatRing::Playbooks::ExecutionFinalizer.apply_locked!(
+      turn: turn,
+      execution: playbook_execution,
+      conversation: conversation,
+      failure_code: failure_code
+    )
     outbound_commit
   end
 

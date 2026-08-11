@@ -24,7 +24,7 @@ RSpec.describe ChatRing::Playbooks::Publisher do
       tool_allowlist: [],
       steps: [
         { id: 'ask_need', kind: 'ask_text', prompt: 'What service do you need?', field_key: 'service_need', next_step_id: 'complete' },
-        { id: 'complete', kind: 'terminal', outcome: 'complete' }
+        { id: 'complete', kind: 'terminal', outcome: 'complete', message: 'Thank you. Your request is complete.' }
       ],
       safety_rules: {
         on_human_request: 'native_availability',
@@ -52,10 +52,10 @@ RSpec.describe ChatRing::Playbooks::Publisher do
           { label: 'Television', value: 'v' * 161, next_step_id: 'complete' }
         ]
       },
-      { id: 'complete', kind: 'terminal', outcome: 'complete' }
+      { id: 'complete', kind: 'terminal', outcome: 'complete', message: 'Thank you. Your request is complete.' }
     ]
 
-    expect { publish(playbook) }.to raise_error(ChatRing::Playbooks::Publisher::InvalidDefinition) do |error|
+    expect { publish(playbook) }.to raise_error(described_class::InvalidDefinition) do |error|
       expect(error.result.errors.pluck(:code)).to include('choice_label_too_long', 'choice_value_too_long')
     end
   end
@@ -93,11 +93,46 @@ RSpec.describe ChatRing::Playbooks::Publisher do
 
     expect { publish(playbook, lock_version: playbook.lock_version) }
       .to raise_error(described_class::InvalidDefinition) do |error|
-        expect(error.result.errors).to include(include(code: 'step_cycle'))
-      end
+      expect(error.result.errors).to include(include(code: 'step_cycle'))
+    end
   end
 
-  it 'requires Playbook Tools to be available from the current Inbox policy' do
+  it 'requires published terminal copy and every completion path to collect required fields' do
+    definition[:steps] = [
+      {
+        id: 'ask_need', kind: 'ask_choice', prompt: 'Choose one', field_key: 'service_need',
+        choices: [
+          { label: 'Answer', value: 'answer', next_step_id: 'complete' },
+          { label: 'Skip', value: 'skip', next_step_id: 'complete' }
+        ]
+      },
+      { id: 'complete', kind: 'terminal', outcome: 'complete' }
+    ]
+
+    expect { publish(playbook) }.to raise_error(described_class::InvalidDefinition) do |error|
+      expect(error.result.errors.pluck(:code)).to include('missing_step_text')
+    end
+
+    definition[:entry_step_id] = 'complete'
+    definition[:steps] = [
+      { id: 'complete', kind: 'terminal', outcome: 'complete', message: 'Thank you.' }
+    ]
+    playbook.update!(draft_definition: definition)
+
+    expect { publish(playbook, lock_version: playbook.lock_version) }.to raise_error(described_class::InvalidDefinition) do |error|
+      expect(error.result.errors.pluck(:code)).to include('required_fields_incomplete')
+    end
+  end
+
+  it 'rejects native Contact projection until the audited native mutation seam exists' do
+    definition[:collected_fields].first[:native_contact_attribute_key] = 'service_need'
+
+    expect { publish(playbook) }.to raise_error(described_class::InvalidDefinition) do |error|
+      expect(error.result.errors.pluck(:code)).to include('native_contact_projection_unsupported')
+    end
+  end
+
+  it 'rejects Tool and transition steps until their native-first execution paths are certified', :aggregate_failures do
     playbook.draft_definition = definition.deep_merge(
       tool_allowlist: [{ key: 'request_appointment', version: 1 }],
       steps: [
@@ -113,8 +148,19 @@ RSpec.describe ChatRing::Playbooks::Publisher do
 
     expect { publish(playbook, lock_version: playbook.lock_version) }
       .to raise_error(described_class::InvalidDefinition) do |error|
-        expect(error.result.errors).to include(include(code: 'tool_policy_missing'))
-      end
+      expect(error.result.errors).to include(include(code: 'invalid_step_kind'))
+    end
+    playbook.draft_definition = definition.deep_merge(
+      steps: [{ id: 'switch', kind: 'transition', target_playbook_version_id: 123, carry_fields: [] }],
+      entry_step_id: 'switch',
+      collected_fields: []
+    )
+    playbook.save!
+
+    expect { publish(playbook, lock_version: playbook.lock_version) }
+      .to raise_error(described_class::InvalidDefinition) do |error|
+      expect(error.result.errors).to include(include(code: 'invalid_step_kind'))
+    end
   end
 
   private

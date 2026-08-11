@@ -1,4 +1,4 @@
-module ChatRing::Playbooks::InitialQuestionPreparerSpecSupport
+module ChatRingPlaybookSpecSupport
   module_function
 
   def build
@@ -80,7 +80,7 @@ module ChatRing::Playbooks::InitialQuestionPreparerSpecSupport
       tool_allowlist: [],
       steps: [
         { id: 'ask_need', kind: 'ask_text', prompt: 'What service do you need?', field_key: 'need', next_step_id: 'complete' },
-        { id: 'complete', kind: 'terminal', outcome: 'complete' }
+        { id: 'complete', kind: 'terminal', outcome: 'complete', message: 'Thank you. Your request is complete.' }
       ],
       safety_rules: { on_human_request: 'native_availability', on_side_question: 'answer_then_resume' }
     }

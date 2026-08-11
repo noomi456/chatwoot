@@ -33,11 +33,15 @@ RSpec.describe ChatRing::Playbooks::ToolPolicyGuard do
       purpose: 'Offer the approved booking path.',
       draft_definition: {
         trigger_phrases: ['book a demo'],
-        entry_step_id: 'appointment',
+        entry_step_id: 'explain',
         collected_fields: [],
         tool_allowlist: [tool],
         steps: [
-          { id: 'appointment', kind: 'tool', tool: tool, tool_allowlist: [tool] }
+          {
+            id: 'explain', kind: 'inform', message: 'I can help arrange a demo.', next_step_id: 'complete',
+            tool_allowlist: [tool]
+          },
+          { id: 'complete', kind: 'terminal', outcome: 'complete', message: 'Thank you.' }
         ],
         safety_rules: {
           on_human_request: 'native_availability',
@@ -56,6 +60,6 @@ RSpec.describe ChatRing::Playbooks::ToolPolicyGuard do
         enabled_tools: [],
         tool_configurations: {}
       ).call
-    end.to raise_error(described_class::InvalidActivePlaybooks, /Book a demo/)
+    end.to raise_error(ChatRing::Playbooks::ToolPolicyGuard::InvalidActivePlaybooks, /Book a demo/)
   end
 end

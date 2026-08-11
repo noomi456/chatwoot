@@ -20,7 +20,7 @@ class ChatRing::Playbooks::InvocationProjection
     {
       'goal' => version.purpose,
       'status' => execution.status,
-      'current_step' => step.slice('kind', 'prompt', 'message', 'choices', 'outcome'),
+      'current_step' => projected_step,
       'collected_field_keys' => execution.collected_fields.keys.sort,
       'pending_question' => pending_question,
       'safety_rules' => version.definition['safety_rules']
@@ -57,6 +57,14 @@ class ChatRing::Playbooks::InvocationProjection
 
   def pending_question
     step['prompt'] if %w[ask_text ask_choice].include?(step['kind'])
+  end
+
+  def projected_step
+    result = step.slice('kind', 'prompt')
+    field = Array(version.definition['collected_fields']).find { |item| item['key'] == step['field_key'] }
+    result['field'] = field.slice('type', 'required') if field
+    result['choices'] = Array(step['choices']).map { |choice| choice.slice('label', 'value') } if step['kind'] == 'ask_choice'
+    result
   end
 
   def version_tools

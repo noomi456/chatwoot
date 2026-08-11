@@ -18,6 +18,7 @@ class ChatRing::AiTurnJob < ApplicationJob
   private
 
   def cancel_gate_closed_turn(turn)
+    cancelled = false
     turn.with_lock do
       turn.reload
       turn.fail_running_attempts!('public_response_gate_closed')
@@ -33,7 +34,9 @@ class ChatRing::AiTurnJob < ApplicationJob
         failure_code: 'public_response_gate_closed',
         completed_at: Time.current
       )
+      cancelled = true
     end
+    ChatRing::Playbooks::ExecutionFinalizer.call(turn, 'public_response_gate_closed') if cancelled
   end
 
   def reconcile_committed_outcome(turn, outcome)

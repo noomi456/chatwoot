@@ -20,6 +20,7 @@ class ChatRing::Brain::FailureFinalizer
 
   def prepare_outcome
     dispatch_outcome = false
+    finalization_reason = nil
     turn.with_lock do
       turn.reload
       turn.fail_running_attempts!(failure_code)
@@ -28,11 +29,13 @@ class ChatRing::Brain::FailureFinalizer
       eligibility = ChatRing::Brain::Eligibility.check(turn, enforce_deadline: false)
       unless eligibility.eligible
         mark_ineligible(eligibility.reason)
+        finalization_reason = eligibility.reason
         next
       end
 
       dispatch_outcome = prepare_fallback
     end
+    ChatRing::Playbooks::ExecutionFinalizer.call(turn, finalization_reason) if finalization_reason
     dispatch_outcome
   end
 
