@@ -56,7 +56,8 @@ class ChatRing::Knowledge::IndexBuilder
       manifest_digest = Digest::SHA256.hexdigest(manifest.to_json)
       provider_release = ENV.fetch('DOCSGPT_RELEASE', '616e6fe9c435bbc6bb472636db6b3ee2b9bcaf66')
       config_snapshot = ChatRing::Knowledge::SyncService.configuration_snapshot.merge(
-        'build_mode' => 'material_catalog_index'
+        'build_mode' => 'material_catalog_index',
+        'source_policy_version' => ChatRing::Knowledge::SourcePolicy::VERSION
       )
       if current_index_matches?(@knowledge_base.active_knowledge_index, manifest_digest, provider_release, config_snapshot)
         mark_materials_available!(@knowledge_base.active_knowledge_index, materials)
@@ -74,6 +75,7 @@ class ChatRing::Knowledge::IndexBuilder
       end
 
       validate_corpus_size!(materials)
+      validate_unique_content!(materials)
       index = @knowledge_base.knowledge_indexes.create!(
         workspace: @knowledge_base.workspace,
         status: 'building',
@@ -146,5 +148,13 @@ class ChatRing::Knowledge::IndexBuilder
     return if total_bytes <= ChatRing::Knowledge::SourcePolicy::MAX_CORPUS_BYTES
 
     raise Error, "Knowledge corpus exceeds #{ChatRing::Knowledge::SourcePolicy::MAX_CORPUS_BYTES} bytes"
+  end
+
+  def validate_unique_content!(materials)
+    duplicate_group = materials.group_by(&:content_hash).values.find(&:many?)
+    return unless duplicate_group
+
+    references = duplicate_group.map(&:source_reference).sort.join(', ')
+    raise Error, "Knowledge corpus contains duplicate content: #{references}"
   end
 end

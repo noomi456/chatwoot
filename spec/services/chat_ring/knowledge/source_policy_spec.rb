@@ -11,6 +11,8 @@ RSpec.describe ChatRing::Knowledge::SourcePolicy do
         { url: 'https://example.com/cookies' },
         { url: 'https://example.com/terms-of-service' },
         { url: 'https://example.com/sitemap.xml' },
+        { url: 'https://example.com/docs' },
+        { url: 'https://example.com/help' },
         { url: 'https://example.com/docs/start' },
         { url: 'https://example.com/help/getting-started' },
         { url: 'https://example.com/blog/product-news' },
@@ -20,8 +22,8 @@ RSpec.describe ChatRing::Knowledge::SourcePolicy do
 
     expect(manifest.reject { |entry| entry['included'] }.pluck('url')).to contain_exactly(
       'https://example.com/cookies',
-      'https://example.com/docs/start',
-      'https://example.com/help/getting-started',
+      'https://example.com/docs',
+      'https://example.com/help',
       'https://example.com/blog/product-news',
       'https://example.com/login',
       'https://example.com/privacy-policy',
@@ -29,6 +31,37 @@ RSpec.describe ChatRing::Knowledge::SourcePolicy do
       'https://example.com/terms-of-service'
     )
     expect(manifest.find { |entry| entry['url'].end_with?('/features') }).to include('included' => true)
+    expect(manifest.find { |entry| entry['url'].end_with?('/docs/start') }).to include('included' => true)
+    expect(manifest.find { |entry| entry['url'].end_with?('/help/getting-started') }).to include('included' => true)
+  end
+
+  it 'rejects every duplicate page instead of silently selecting a scoped material authority' do
+    manifest = policy.prepare_manifest(
+      [{ url: 'https://example.com/features' }, { url: 'https://example.com/plans' }]
+    )
+    markdown = '# Product\n\nUseful product information that is long enough for the knowledge base.'
+    records = %w[plans features].map do |path|
+      {
+        markdown: markdown,
+        metadata: { sourceURL: "https://example.com/#{path}", title: path.titleize, statusCode: 200 }
+      }.deep_stringify_keys
+    end
+
+    pages, errors = policy.normalize_pages_with_errors(records: records, manifest: manifest)
+
+    expect(pages).to be_empty
+    expect(errors).to eq(
+      [
+        {
+          'url' => 'https://example.com/features',
+          'error' => 'Firecrawl returned duplicate content for https://example.com/features, https://example.com/plans'
+        },
+        {
+          'url' => 'https://example.com/plans',
+          'error' => 'Firecrawl returned duplicate content for https://example.com/features, https://example.com/plans'
+        }
+      ]
+    )
   end
 
   it 'keeps security text, named examples, and non-English pages as customer content' do

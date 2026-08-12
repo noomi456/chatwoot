@@ -19,6 +19,7 @@ RSpec.describe ChatRing::Knowledge::IndexBuilder do
 
     expect(index.documents.map(&:knowledge_material)).to contain_exactly(first_page, second_page, file)
     expect(index.documents.pluck(:provider_status).uniq).to eq(['pending'])
+    expect(index.config_snapshot.fetch('source_policy_version')).to eq(ChatRing::Knowledge::SourcePolicy::VERSION)
     expect(knowledge_base.knowledge_indexes.count).to eq(1)
     expect(described_class.build!(knowledge_base)).to eq(index)
     expect(knowledge_base.knowledge_indexes.count).to eq(1)
@@ -40,6 +41,24 @@ RSpec.describe ChatRing::Knowledge::IndexBuilder do
     make_ready(replacement)
     expect(ChatRing::Knowledge::IndexActivationService.activate!(replacement)).to eq(:activated)
     expect(knowledge_base.reload.active_knowledge_index).to eq(replacement)
+  end
+
+  it 'fails closed instead of silently collapsing materials with identical content' do
+    first = website_material('https://first.example/docs', 'Shared content')
+    active_index = described_class.build!(knowledge_base)
+    make_ready(active_index)
+    ChatRing::Knowledge::IndexActivationService.activate!(active_index)
+
+    second = website_material('https://second.example/docs', 'Other content')
+    second.update!(markdown: first.markdown, content_hash: first.content_hash)
+
+    expect { described_class.build!(knowledge_base) }
+      .to raise_error(
+        described_class::Error,
+        'Knowledge corpus contains duplicate content: https://first.example/docs, https://second.example/docs'
+      )
+    expect(knowledge_base.reload.active_knowledge_index).to eq(active_index)
+    expect(knowledge_base.knowledge_indexes).to contain_exactly(active_index)
   end
 
   it 'discards an older build instead of activating it over a newer material catalog' do
