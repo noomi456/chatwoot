@@ -15,7 +15,7 @@ RSpec.describe ChatRing::MicrositeCleanupJob do
 
   private
 
-  def create_artifact(turn, expires_at)
+  def create_artifact(turn, expires_at) # rubocop:disable Metrics/MethodLength
     turn.evidence.create!(
       position: 0,
       evidence_id: 'evidence-1',

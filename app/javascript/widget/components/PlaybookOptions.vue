@@ -13,7 +13,7 @@ const emit = defineEmits(['select']);
   <div
     v-if="options.length"
     class="flex flex-wrap gap-2"
-    aria-label="Playbook options"
+    :aria-label="$t('PLAYBOOK_OPTIONS')"
   >
     <button
       v-for="option in options"

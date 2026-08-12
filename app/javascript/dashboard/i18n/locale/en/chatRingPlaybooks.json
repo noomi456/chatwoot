@@ -9,6 +9,7 @@
     "TRIGGERS": "Trigger phrases",
     "TRIGGERS_HINT": "One exact phrase or synonym per line. Greetings and vague acknowledgements are rejected.",
     "TOOLS": "Allowed Tools",
+    "TOOLS_DESCRIPTION": "Tools are configured for this Inbox and selected by Playbook steps. They are not a separate conversation system.",
     "NO_TOOLS": "No certified Tools are enabled for this Inbox.",
     "STEPS": "Typed steps",
     "FIELDS": "Collected fields",

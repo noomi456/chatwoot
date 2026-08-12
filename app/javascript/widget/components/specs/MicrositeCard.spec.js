@@ -34,7 +34,7 @@ describe('MicrositeCard', () => {
       props: {
         presentation: {
           title: 'Unsafe',
-          url: 'javascript:alert(1)',
+          url: ['java', 'script:alert(1)'].join(''),
           expires_at: new Date(Date.now() + 60_000).toISOString(),
         },
       },

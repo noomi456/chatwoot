@@ -532,8 +532,7 @@ onMounted(load);
                 {{ t('CHATRING_PLAYBOOKS.TOOLS') }}
               </h2>
               <p class="mt-1 text-sm text-n-slate-10">
-                Tools are configured for this Inbox and selected by Playbook
-                steps. They are not a separate conversation system.
+                {{ t('CHATRING_PLAYBOOKS.TOOLS_DESCRIPTION') }}
               </p>
             </div>
             <div class="flex items-center gap-2 text-sm text-n-slate-12">

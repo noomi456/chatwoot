@@ -1,17 +1,19 @@
-const { dispatch } = vi.hoisted(() => ({ dispatch: vi.fn() }));
-
-vi.mock('../../store', () => ({ default: { dispatch } }));
-
+import store from '../../store';
 import campaignTimer from '../campaignTimer';
 
 describe('CampaignTimer', () => {
+  let dispatchSpy;
+
   beforeEach(() => {
     vi.useFakeTimers();
-    dispatch.mockClear();
+    dispatchSpy = vi.spyOn(store, 'dispatch').mockImplementation(() => {});
     campaignTimer.clearTimers();
   });
 
-  afterEach(() => vi.useRealTimers());
+  afterEach(() => {
+    dispatchSpy.mockRestore();
+    vi.useRealTimers();
+  });
 
   it('uses the existing native Campaign start action for wait-time triggers', () => {
     campaignTimer.initTimers(
@@ -23,8 +25,8 @@ describe('CampaignTimer', () => {
 
     vi.advanceTimersByTime(3000);
 
-    expect(dispatch).toHaveBeenCalledOnce();
-    expect(dispatch).toHaveBeenCalledWith('campaign/startCampaign', {
+    expect(store.dispatch).toHaveBeenCalledOnce();
+    expect(store.dispatch).toHaveBeenCalledWith('campaign/startCampaign', {
       campaignId: 1,
       websiteToken: 'website-token',
     });
@@ -48,8 +50,8 @@ describe('CampaignTimer', () => {
     campaignTimer.updateScrollPercentage(60);
     campaignTimer.updateScrollPercentage(90);
 
-    expect(dispatch).toHaveBeenCalledOnce();
-    expect(dispatch).toHaveBeenCalledWith('campaign/startCampaign', {
+    expect(store.dispatch).toHaveBeenCalledOnce();
+    expect(store.dispatch).toHaveBeenCalledWith('campaign/startCampaign', {
       campaignId: 2,
       websiteToken: 'website-token',
     });

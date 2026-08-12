@@ -16,11 +16,13 @@ class ChatRing::Brain::DecisionSchema < RubyLLM::Schema
         max_items: 2,
         of: :string
   array :response_options,
-        description: 'Zero to six short answer options for a single customer-facing choice question; empty unless the response text asks that question.',
+        description: 'Zero to six short answer options for a single customer-facing choice question; ' \
+                     'empty unless the response text asks that question.',
         max_items: 6,
         of: :string
   array :microsite_section_types,
-        description: 'Zero to three useful grounded microsite section types. Empty for weak evidence, close-ended answers, active Playbooks, Tools, handoff, or abstention.',
+        description: 'Zero to three useful grounded microsite section types. Empty for weak evidence, close-ended answers, ' \
+                     'active Playbooks, Tools, handoff, or abstention.',
         max_items: 3,
         of: :string
   any_of :tool_request,

@@ -70,9 +70,12 @@ RSpec.describe ChatRing::OutboundCommitJob, type: :job do
       playbook_turn = context.fetch(:turn)
       playbook_turn.update!(status: :received)
       allow(ChatRing::Knowledge::Retriever).to receive(:active_index_id).and_return(nil)
+      matching_commit_job = lambda do |job|
+        job.class.name == described_class.name # rubocop:disable Style/ClassEqualityComparison -- reload-safe identity
+      end
 
       expect(ChatRing::Knowledge::Retriever).not_to receive(:retrieve)
-      perform_enqueued_jobs(only: described_class) do
+      perform_enqueued_jobs(only: matching_commit_job) do
         ChatRing::AiTurnJob.perform_now(playbook_turn.id)
       end
 
