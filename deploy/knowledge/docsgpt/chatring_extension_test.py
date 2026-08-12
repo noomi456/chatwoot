@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import inspect
 import json
 import os
 import time
@@ -13,6 +14,7 @@ from flask import Blueprint, Flask
 
 from application.api.internal import chatring_extension as extension
 from application.parser.schema.base import Document
+from application.vectorstore import pgvector as pgvector_module
 
 
 class ChatRingExtensionImageTest(unittest.TestCase):
@@ -22,6 +24,13 @@ class ChatRingExtensionImageTest(unittest.TestCase):
     SOURCE_ID = "11111111-1111-4111-8111-111111111111"
     INTERNAL_KEY = "ci-internal-key"
     SERVICE_SECRET = "ci-service-secret"
+
+    def test_pgvector_correctness_backport_is_pinned_to_the_reviewed_upstream_change(self):
+        self.assertEqual(
+            extension.PGVECTOR_CORRECTNESS_SOURCE_COMMIT,
+            "795e39a6bc40ea499f92290ac19540a842713841",
+        )
+        self.assertIsNone(pgvector_module.settings.PGVECTOR_IVFFLAT_PROBES)
 
     @classmethod
     def setUpClass(cls):
@@ -219,6 +228,131 @@ class ChatRingExtensionImageTest(unittest.TestCase):
                 "/api/internal/chatring/retrieve", body, "retrieve"
             )
         self.assertEqual(response.get_json()["status"], "insufficient_evidence")
+
+    def test_pgvector_native_search_keeps_threshold_and_stable_identity_contracts(self):
+        store = MagicMock()
+        store._table_name = "documents"
+        store._source_id = self.SOURCE_ID
+        connection = MagicMock()
+        cursor = connection.cursor.return_value
+        cursor.fetchone.return_value = (2,)
+        store._get_connection.return_value = connection
+        native_results = [
+            (extension.VectorDocument("first", {}), 0.82),
+            (extension.VectorDocument("second", {}), 0.31),
+        ]
+
+        with patch.object(
+            extension, "_ORIGINAL_PGVECTOR_SEARCH", return_value=native_results
+        ) as native_search:
+            results = extension._corrected_pgvector_search(
+                store, "question", k=2, score_threshold=0.4
+            )
+
+        native_search.assert_called_once_with(
+            store, "question", 2, score_threshold=None
+        )
+        self.assertEqual(
+            [(str(document), score) for document, score in results],
+            [("first", 0.82)],
+        )
+        store._embedding.embed_query.assert_not_called()
+
+        metadata = {
+            "chatring_document_id": "document-1",
+            "chatring_chunk_index": 3,
+            "chatring_content_hash": "b" * 64,
+        }
+        with patch.object(extension, "_ORIGINAL_LABELS_FROM_METADATA", return_value={}):
+            first = extension._chatring_labels_from_metadata(
+                metadata, "text", self.SOURCE_ID
+            )
+            second = extension._chatring_labels_from_metadata(
+                metadata, "text", self.SOURCE_ID
+            )
+        self.assertEqual(
+            first["chatring_provider_chunk_id"],
+            second["chatring_provider_chunk_id"],
+        )
+        self.assertEqual(len(first["chatring_provider_chunk_id"]), 64)
+
+        with patch.object(
+            extension,
+            "_ORIGINAL_LABELS_FROM_METADATA",
+            return_value={"chatring_provider_chunk_id": "legacy-row-id"},
+        ):
+            incomplete = extension._chatring_labels_from_metadata(
+                {"chatring_provider_chunk_id": "legacy-row-id"},
+                "text",
+                self.SOURCE_ID,
+            )
+        self.assertNotIn("chatring_provider_chunk_id", incomplete)
+
+    def test_pgvector_under_return_uses_exact_search_and_dependency_failure_is_not_abstention(self):
+        store = MagicMock()
+        store._table_name = "documents"
+        store._vector_column = "embedding"
+        store._text_column = "text"
+        store._metadata_column = "metadata"
+        store._source_id = self.SOURCE_ID
+        store._embedding.embed_query.return_value = [0.1, 0.2]
+        connection = MagicMock()
+        cursor = connection.cursor.return_value
+        cursor.fetchone.return_value = (2,)
+        cursor.fetchall.return_value = [
+            ("first", {"chatring_document_id": "d1"}, 0.1),
+            ("second", {"chatring_document_id": "d2"}, 0.2),
+        ]
+        store._get_connection.return_value = connection
+
+        with patch.object(
+            extension,
+            "_ORIGINAL_PGVECTOR_SEARCH",
+            return_value=[(extension.VectorDocument("first", {}), 0.9)],
+        ):
+            results = extension._corrected_pgvector_search(store, "question", k=2)
+
+        self.assertEqual(
+            [(str(document), score) for document, score in results],
+            [("first", 0.9), ("second", 0.8)],
+        )
+        store._embedding.embed_query.assert_called_once_with("question")
+        self.assertTrue(
+            any(
+                "enable_indexscan = off" in call.args[0]
+                for call in cursor.execute.call_args_list
+            )
+        )
+
+        cursor.execute.side_effect = RuntimeError("database unavailable")
+        with patch.object(extension, "_ORIGINAL_PGVECTOR_SEARCH", return_value=[]):
+            with self.assertRaises(extension.ChatRingProviderError):
+                extension._corrected_pgvector_search(store, "question", k=2)
+
+    def test_pgvector_prevents_automatic_ivfflat_and_raises_legacy_probes(self):
+        ensure_source = inspect.getsource(extension.PGVectorStore._ensure_table_exists)
+        self.assertNotIn("USING ivfflat", ensure_source)
+
+        store = object.__new__(extension.PGVectorStore)
+        store._table_name = "documents"
+        pgvector_module._IVFFLAT_LISTS_CACHE.clear()
+        probe_connection = MagicMock()
+        probe_cursor = probe_connection.cursor.return_value.__enter__.return_value
+        index_definition = (
+            "CREATE INDEX documents_embedding_idx ON documents "
+            "USING ivfflat (embedding vector_cosine_ops) WITH (lists='100')"
+        )
+        probe_cursor.fetchone.side_effect = [None, (index_definition,)]
+        self.assertIsNone(store._ivfflat_lists(probe_connection))
+        self.assertEqual(store._ivfflat_lists(probe_connection), 100)
+        with patch.object(pgvector_module.settings, "PGVECTOR_IVFFLAT_PROBES", None):
+            store._apply_ivfflat_probes(probe_connection)
+        self.assertTrue(
+            any(
+                call.args[0] == "SET ivfflat.probes = 10;"
+                for call in probe_cursor.execute.call_args_list
+            )
+        )
 
     def test_authentication_scope_expiry_and_provider_failure(self):
         body = {
