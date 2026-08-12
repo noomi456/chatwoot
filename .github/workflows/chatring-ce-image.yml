@@ -16,6 +16,7 @@ on:
       - codex/sales-core-realtimekit-credentials
       - codex/sales-core-web-widget-live-test
       - codex/knowledge-contextual-indexing
+      - codex/knowledge-corpus-integrity
   workflow_dispatch:
 
 concurrency:

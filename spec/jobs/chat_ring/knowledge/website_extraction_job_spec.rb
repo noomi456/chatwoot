@@ -48,6 +48,46 @@ RSpec.describe ChatRing::Knowledge::WebsiteExtractionJob do
     expect(ChatRing::Knowledge::IndexBuilder).to have_received(:enqueue!).with(knowledge_base)
   end
 
+  it 'rejects duplicate Firecrawl content without silently selecting material authority' do
+    source.materials.find_by!(source_reference: 'https://example.com/missing')
+          .update!(source_reference: 'https://example.com/z-alias', public_url: 'https://example.com/z-alias')
+    source.update!(
+      mapped_manifest: [
+        { 'url' => 'https://example.com/good', 'included' => true, 'authority_class' => 'product_documentation' },
+        { 'url' => 'https://example.com/z-alias', 'included' => true, 'authority_class' => 'product_documentation' }
+      ]
+    )
+    markdown = '# Shared\n\nUseful current product information that is long enough for the knowledge base.'
+    records = %w[good z-alias].map do |path|
+      {
+        'markdown' => markdown,
+        'metadata' => { 'sourceURL' => "https://example.com/#{path}", 'title' => path.titleize, 'statusCode' => 200 }
+      }
+    end
+    allow_any_instance_of(described_class).to receive(:firecrawl).and_return(firecrawl)
+    allow(firecrawl).to receive(:batch_status).and_return('status' => 'completed', 'data' => records)
+    allow(firecrawl).to receive(:batch_errors).and_return('errors' => [], 'robotsBlocked' => [])
+    allow(ChatRing::Knowledge::IndexBuilder).to receive(:enqueue!)
+
+    described_class.perform_now(source.id, source.mapped_manifest.pluck('url'), false, 'batch', extraction_token)
+
+    references = %w[https://example.com/good https://example.com/z-alias]
+    expect(source.materials.where(source_reference: references).pluck(:status)).to contain_exactly('failed', 'failed')
+    expect(source.reload.crawl_errors.fetch('pages')).to eq(
+      [
+        {
+          'url' => 'https://example.com/good',
+          'error' => 'Firecrawl returned duplicate content for https://example.com/good, https://example.com/z-alias'
+        },
+        {
+          'url' => 'https://example.com/z-alias',
+          'error' => 'Firecrawl returned duplicate content for https://example.com/good, https://example.com/z-alias'
+        }
+      ]
+    )
+    expect(ChatRing::Knowledge::IndexBuilder).not_to have_received(:enqueue!)
+  end
+
   it 'forces Firecrawl freshness only for an explicit user re-run' do
     source.update!(firecrawl_crawl_id: nil, status: 'refreshing')
     allow_any_instance_of(described_class).to receive(:firecrawl).and_return(firecrawl)

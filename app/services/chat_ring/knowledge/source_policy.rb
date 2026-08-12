@@ -2,7 +2,7 @@ require 'digest'
 require 'uri'
 
 class ChatRing::Knowledge::SourcePolicy
-  VERSION = 5
+  VERSION = 6
   MAX_CORPUS_BYTES = 50.megabytes
   MIN_MEANINGFUL_CHARACTERS = 80
 
@@ -12,10 +12,11 @@ class ChatRing::Knowledge::SourcePolicy
   # the exact-webpage path.
   EXCLUDED_PATHS = %r{\A/(?:
     auth|login|log-in|sign[-_]?in|sign[-_]?up|register|admin|account|cart|checkout|search|unsubscribe|
-    blog|blogs|help|docs|documentation|
+    blog|blogs|
     sitemaps?(?:\.xml)?|robots\.txt|404|privacy(?:-policy)?|cookie(?:-policy|s)?|
     terms(?:-of-(?:service|use))?
   )(?:/|\z)}ix
+  DOCUMENTATION_LANDING_PATHS = %r{\A/(?:help|docs|documentation)/?\z}i
   NESTED_POLICY_PATHS = %r{/(?:legal|polic(?:y|ies))/(?:privacy(?:-policy)?|cookie(?:-policy|s)?|terms(?:-of-(?:service|use))?)(?:/|\z)}i
   USELESS_PAGE_TITLE = /\A\s*(?:privacy policy|cookie policy|terms (?:of service|of use)|sign in|log in|sign up|sitemap)\s*\z/i
   SOFT_404 = /\b(?:page not found|404 not found|this page (?:does not|doesn't) exist)\b/i
@@ -63,8 +64,10 @@ class ChatRing::Knowledge::SourcePolicy
     rescue PageQualityError, OriginError => e
       errors << { 'url' => page_url(record), 'error' => e.message }.compact
     end
-    returned_urls = pages.pluck(:source_reference)
-    (allowed.keys - returned_urls).each do |url|
+    observed_urls = pages.pluck(:source_reference)
+    pages, duplicate_errors = reject_duplicate_pages(pages)
+    errors.concat(duplicate_errors)
+    (allowed.keys - observed_urls).each do |url|
       errors << { 'url' => url, 'error' => 'Firecrawl did not return this requested page' }
     end
     total_bytes = pages.sum { |page| page.fetch(:markdown).bytesize }
@@ -142,7 +145,24 @@ class ChatRing::Knowledge::SourcePolicy
   end
 
   def excluded_before_scrape?(path, entry)
-    EXCLUDED_PATHS.match?(path) || NESTED_POLICY_PATHS.match?(path) || USELESS_PAGE_TITLE.match?(entry['title'].to_s)
+    EXCLUDED_PATHS.match?(path) || DOCUMENTATION_LANDING_PATHS.match?(path) ||
+      NESTED_POLICY_PATHS.match?(path) || USELESS_PAGE_TITLE.match?(entry['title'].to_s)
+  end
+
+  def reject_duplicate_pages(pages)
+    duplicates = pages.group_by { |page| page.fetch(:content_hash) }.values.select(&:many?)
+    errors = duplicates.flat_map do |group|
+      references = group.pluck(:source_reference).sort
+      group.map do |page|
+        {
+          'url' => page.fetch(:source_reference),
+          'error' => "Firecrawl returned duplicate content for #{references.join(', ')}"
+        }
+      end
+    end
+    rejected_urls = errors.pluck('url').to_set
+
+    [pages.reject { |page| rejected_urls.include?(page.fetch(:source_reference)) }, errors.sort_by { |error| error.fetch('url') }]
   end
 
   def authority_class(path)

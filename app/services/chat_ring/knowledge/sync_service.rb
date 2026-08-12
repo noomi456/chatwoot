@@ -76,13 +76,17 @@ class ChatRing::Knowledge::SyncService
     raise ProviderIngestionError, "DocsGPT returned unknown task status #{task_status.inspect}" unless task_status == 'SUCCESS'
 
     finalize_documents(documents) if documents.any? { |document| document.provider_status != 'ready' }
-    @index.update!(
-      status: 'ready',
-      provider_agent_id: nil,
-      provider_agent_api_key: nil,
-      provider_agent_creation_started_at: nil,
-      ready_at: Time.current
-    )
+    @index.with_lock do
+      next unless @index.status == 'building'
+
+      @index.update!(
+        status: 'ready',
+        provider_agent_id: nil,
+        provider_agent_api_key: nil,
+        provider_agent_creation_started_at: nil,
+        ready_at: Time.current
+      )
+    end
     :complete
   end
   # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
