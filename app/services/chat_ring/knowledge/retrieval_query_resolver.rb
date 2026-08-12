@@ -14,9 +14,14 @@ class ChatRing::Knowledge::RetrievalQueryResolver
   ALTERNATIVE_ANTECEDENT_PATTERN = /\b(?:and|or|between|compare|comparison|versus|vs\.?)\b/i
   HISTORY_REQUEST_PATTERN = /
     \b(?:
-      (?:what|which|who|when|where|how)\s+(?:did|were|was|have)\s+(?:i|we|you|the\s+(?:agent|human))\b.{0,48}
-      (?:ask|say|mention|discuss|talk|tell|recommend)|
-      (?:earlier|previous(?:ly)?|before|conversation\s+history|chat\s+history|last\s+(?:message|question|topic))
+      (?:what|which|who|when|where|how)\s+(?:did|have)\s+(?:i|we|you|the\s+(?:agent|human))\b.{0,48}
+      \b(?:ask|say|mention|discuss|talk|tell|recommend)|
+      (?:what|which|who|when|where|how)\s+(?:was|were)\s+(?:i|we|you|the\s+(?:agent|human))\b.{0,48}
+      \b(?:asking|saying|mentioning|discussing|talking|telling|recommending)|
+      (?:what|which|who|when|where|how)\s+(?:i|we|you|the\s+(?:agent|human))\b.{0,48}
+      \b(?:asked|said|mentioned|discussed|talked|told|recommended)|
+      (?:conversation|chat)\s+history|last\s+(?:message|question|topic)|
+      (?:remind\s+me|recap|summarize).{0,48}(?:conversation|chat|discussion)
     )\b
   /ix
   GENERIC_ANTECEDENT_WORDS = %w[

@@ -33,6 +33,23 @@ class ChatRing::Knowledge::EvidenceSetMerger
       values = evidence_sets.map { |set| set.public_send(attribute) }.uniq
       raise ChatRing::Knowledge::Retriever::Error, "Evidence fusion #{attribute} mismatch" unless values.length == 1
     end
+    validate_retrieval_contract!
+  end
+
+  def validate_retrieval_contract!
+    strategies = evidence_sets.map(&:retrieval_strategy).uniq
+    configurations = evidence_sets.map { |set| comparable_configuration(set.retrieval_configuration) }.uniq
+    score_kinds = evidence_sets.flat_map(&:items).map(&:score_kind).uniq
+    item_strategies = evidence_sets.flat_map(&:items).map(&:retrieval_strategy).uniq
+    unless strategies.one? && configurations.one? && score_kinds.length <= 1 && (item_strategies - strategies).empty?
+      raise ChatRing::Knowledge::Retriever::Error, 'Evidence fusion retrieval contract mismatch'
+    end
+  end
+
+  def comparable_configuration(configuration)
+    configuration.to_h.slice(
+      'endpoint', 'limit', 'candidate_selection', 'score_threshold', 'binding_digest'
+    )
   end
 
   def provider_error?
@@ -81,6 +98,7 @@ class ChatRing::Knowledge::EvidenceSetMerger
   def retrieval_configuration
     {
       'fusion' => 'max_score',
+      'score_kind' => evidence_sets.flat_map(&:items).first&.score_kind,
       'query_count' => evidence_sets.length,
       'queries' => evidence_sets.map do |set|
         {

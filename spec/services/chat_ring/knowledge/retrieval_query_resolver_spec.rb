@@ -147,6 +147,24 @@ RSpec.describe ChatRing::Knowledge::RetrievalQueryResolver do
     expect(result.audit_metadata).to include('conversation_history_request' => true)
   end
 
+  it 'does not treat an ordinary historical business question as transcript recall' do
+    result = described_class.new(
+      raw_query: 'What features were available before 2020?',
+      history: [history_item(11, 'customer', 'Tell me about Playbooks.')]
+    ).call
+
+    expect(result.conversation_history_request).to be(false)
+  end
+
+  it 'recognizes explicit conversational recall without relying on a bare temporal word' do
+    result = described_class.new(
+      raw_query: 'Tell me what we discussed earlier.',
+      history: [history_item(11, 'customer', 'Tell me about Playbooks.')]
+    ).call
+
+    expect(result.conversation_history_request).to be(true)
+  end
+
   def history_item(message_id, speaker, content)
     { 'message_id' => message_id, 'speaker' => speaker, 'content' => content }
   end
