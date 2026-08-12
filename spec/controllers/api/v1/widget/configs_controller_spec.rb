@@ -60,7 +60,7 @@ RSpec.describe '/api/v1/widget/config', type: :request do
       end
 
       it 'returns only the active Inbox-owned conversation starters' do
-        ChatRing::InboxEngagement.create!(
+        ChatRing::InboxConversationStarter.create!(
           workspace: ChatRing::Workspace.for_account!(account),
           inbox: web_widget.inbox,
           starters: [{ 'label' => 'See pricing', 'prompt' => 'What pricing plans do you offer?' }]
@@ -77,7 +77,7 @@ RSpec.describe '/api/v1/widget/config', type: :request do
       end
 
       it 'returns no conversation starters when the Inbox configuration is disabled' do
-        ChatRing::InboxEngagement.create!(
+        ChatRing::InboxConversationStarter.create!(
           workspace: ChatRing::Workspace.for_account!(account),
           inbox: web_widget.inbox,
           enabled: false,

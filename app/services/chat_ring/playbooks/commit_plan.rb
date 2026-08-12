@@ -1,4 +1,4 @@
-class ChatRing::Playbooks::CommitPlan
+class ChatRing::Playbooks::CommitPlan # rubocop:disable Metrics/ClassLength
   class Invalid < StandardError
     attr_reader :code
 
@@ -18,7 +18,7 @@ class ChatRing::Playbooks::CommitPlan
     'resume_pending_question' => :build_resume_pending_question!
   }.freeze
 
-  attr_reader :content
+  attr_reader :content, :content_type, :content_attributes
 
   def self.build(turn:, execution:)
     new(turn: turn, execution: execution).tap(&:build!)
@@ -50,8 +50,8 @@ class ChatRing::Playbooks::CommitPlan
   private
 
   attr_reader :turn, :execution, :control
-  attr_writer :content
   attr_accessor :execution_attributes, :transition_action, :from_step_id, :to_step_id
+  attr_writer :content, :content_type, :content_attributes
 
   def validate_snapshot!
     raise Invalid, 'playbook_commit_control_stale' unless execution.id == turn.inbox_playbook_execution_id
@@ -65,6 +65,7 @@ class ChatRing::Playbooks::CommitPlan
     raise Invalid, 'playbook_step_unsupported' unless question_step?(current_step)
 
     self.content = ChatRing::Playbooks::QuestionRenderer.call(current_step)
+    configure_presentation(current_step)
     self.execution_attributes = { status: :waiting_for_customer }
     self.transition_action = 'ask_current_step'
     self.from_step_id = execution.current_step_id
@@ -74,6 +75,7 @@ class ChatRing::Playbooks::CommitPlan
   def build_side_question!
     validate_waiting_question!
     self.content = compose(side_answer, rendered_current_question)
+    configure_presentation(current_step)
     self.execution_attributes = { status: :waiting_for_customer }
     self.transition_action = 'answer_side_question'
     self.from_step_id = execution.current_step_id
@@ -83,6 +85,7 @@ class ChatRing::Playbooks::CommitPlan
   def build_resume_pending_question!
     validate_waiting_question!
     self.content = compose(UNAVAILABLE_SIDE_ANSWER, ChatRing::Playbooks::QuestionRenderer.call(current_step))
+    configure_presentation(current_step)
     self.execution_attributes = { status: :waiting_for_customer }
     self.transition_action = 'resume_pending_question'
     self.from_step_id = execution.current_step_id
@@ -94,6 +97,7 @@ class ChatRing::Playbooks::CommitPlan
     value = coerced_answer
     navigation = navigate_from(next_step_id(value))
     self.content = answer_content(navigation, include_side_answer)
+    configure_presentation(navigation.fetch(:step))
     self.execution_attributes = answer_execution_attributes(value, navigation)
     self.transition_action = include_side_answer ? 'submit_answer_and_answer_side_question' : 'submit_answer'
     self.from_step_id = execution.current_step_id
@@ -193,9 +197,45 @@ class ChatRing::Playbooks::CommitPlan
   end
 
   def navigate_from(step_id)
+    step = version_step(step_id)
+    return navigate_tool_step(step) if step['kind'] == 'tool'
+
     ChatRing::Playbooks::StepNavigator.call(version: version, step_id: step_id)
   rescue ChatRing::Playbooks::StepNavigator::Invalid => e
     raise Invalid, e.message
+  rescue ChatRing::Tools::OutcomePreparer::Rejected => e
+    raise Invalid, e.code
+  end
+
+  def navigate_tool_step(step) # rubocop:disable Metrics/MethodLength
+    tool = step.fetch('tool')
+    raise Invalid, 'playbook_tool_unsupported' unless tool.values_at('key', 'version') == ['request_appointment', 1]
+
+    authorization = ChatRing::Tools::RequestAppointmentAuthorization.call(
+      turn,
+      enforce_playbook_allowlist: true,
+      presentation_context: 'playbook_step',
+      playbook_step_id: step.fetch('id')
+    )
+    tool_execution = ChatRing::Tools::RequestAppointmentExecutionBuilder.call(
+      turn: turn,
+      outbound_commit: turn.outbound_commit,
+      authorization: authorization,
+      arguments: {},
+      authorization_result: 'authorized_playbook_step'
+    )
+    next_result = ChatRing::Playbooks::StepNavigator.call(
+      version: version,
+      step_id: step.fetch('next_step_id')
+    )
+    next_result.merge(content: compose(tool_execution.rendered_content, next_result.fetch(:content)))
+  end
+
+  def version_step(step_id)
+    step = Array(version.definition['steps']).find { |item| item['id'] == step_id }
+    raise Invalid, 'playbook_next_step_missing' unless step
+
+    step.deep_stringify_keys
   end
 
   def question_step?(step)
@@ -217,6 +257,18 @@ class ChatRing::Playbooks::CommitPlan
 
   def compose(*parts)
     parts.map { |part| part.to_s.strip }.reject(&:blank?).join("\n\n")
+  end
+
+  def configure_presentation(step)
+    self.content_type = 'text'
+    self.content_attributes = {}
+    return unless step['kind'] == 'ask_choice'
+
+    self.content_attributes = {
+      'chatring_playbook_options' => Array(step['choices']).map do |choice|
+        choice.slice('label', 'value')
+      end
+    }
   end
 
   def transition_record(message)

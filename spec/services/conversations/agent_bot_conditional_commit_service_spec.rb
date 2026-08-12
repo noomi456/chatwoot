@@ -44,7 +44,9 @@ RSpec.describe Conversations::AgentBotConditionalCommitService do
         'decision_type' => 'reply',
         'response_text' => 'Widgets are supported.',
         'reason_code' => 'answered',
-        'evidence_ids' => ['evidence-1']
+        'evidence_ids' => ['evidence-1'],
+        'suggested_questions' => ['How much does it cost?', 'Can I book a demo?'],
+        'microsite_section_types' => []
       }
     )
   end
@@ -98,6 +100,9 @@ RSpec.describe Conversations::AgentBotConditionalCommitService do
     )
     expect(message.content_attributes.to_json).not_to match(/Internal evidence excerpt|evidence-1|"internal"/)
     expect(message.additional_attributes).not_to include('chatring_ai_turn_id', 'chatring_evidence_ids')
+    expect(message.content_attributes.fetch('chatring_suggestions')).to eq(
+      ['How much does it cost?', 'Can I book a demo?']
+    )
   end
 
   it 'cannot bypass the compile-time public response gate' do

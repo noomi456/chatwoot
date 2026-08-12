@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_08_11_000000) do
+ActiveRecord::Schema[7.1].define(version: 2026_08_11_002000) do
   # These extensions should be enabled to support this database
   enable_extension "pg_stat_statements"
   enable_extension "pg_trgm"
@@ -863,7 +863,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_11_000000) do
     t.index ["workspace_id"], name: "index_chat_ring_inbox_assistant_bindings_on_workspace_id"
   end
 
-  create_table "chat_ring_inbox_engagements", force: :cascade do |t|
+  create_table "chat_ring_inbox_conversation_starters", force: :cascade do |t|
     t.bigint "workspace_id", null: false
     t.integer "chatwoot_inbox_id", null: false
     t.bigint "updated_by_id"
@@ -872,9 +872,27 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_11_000000) do
     t.integer "lock_version", default: 0, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.index ["chatwoot_inbox_id"], name: "idx_chatring_engagements_unique_inbox", unique: true
-    t.index ["updated_by_id"], name: "index_chat_ring_inbox_engagements_on_updated_by_id"
-    t.index ["workspace_id"], name: "index_chat_ring_inbox_engagements_on_workspace_id"
+    t.index ["chatwoot_inbox_id"], name: "idx_chatring_starters_unique_inbox", unique: true
+    t.index ["updated_by_id"], name: "index_chat_ring_inbox_conversation_starters_on_updated_by_id"
+    t.index ["workspace_id"], name: "index_chat_ring_inbox_conversation_starters_on_workspace_id"
+  end
+
+  create_table "chat_ring_microsite_artifacts", force: :cascade do |t|
+    t.bigint "workspace_id", null: false
+    t.bigint "ai_turn_id", null: false
+    t.integer "message_id"
+    t.string "public_token", null: false
+    t.integer "contract_version", default: 1, null: false
+    t.jsonb "content", default: {}, null: false
+    t.jsonb "source_evidence_ids", default: [], null: false
+    t.datetime "expires_at", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["ai_turn_id"], name: "index_chat_ring_microsite_artifacts_on_ai_turn_id", unique: true
+    t.index ["expires_at"], name: "index_chat_ring_microsite_artifacts_on_expires_at"
+    t.index ["message_id"], name: "index_chat_ring_microsite_artifacts_on_message_id"
+    t.index ["public_token"], name: "index_chat_ring_microsite_artifacts_on_public_token", unique: true
+    t.index ["workspace_id"], name: "index_chat_ring_microsite_artifacts_on_workspace_id"
   end
 
   create_table "chat_ring_inbox_playbook_executions", force: :cascade do |t|
@@ -2083,9 +2101,12 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_11_000000) do
   add_foreign_key "chat_ring_inbox_assistant_bindings", "chat_ring_assistants", column: "assistant_id", on_delete: :cascade
   add_foreign_key "chat_ring_inbox_assistant_bindings", "chat_ring_workspaces", column: "workspace_id", on_delete: :cascade
   add_foreign_key "chat_ring_inbox_assistant_bindings", "inboxes", column: "chatwoot_inbox_id", on_delete: :cascade
-  add_foreign_key "chat_ring_inbox_engagements", "chat_ring_workspaces", column: "workspace_id", on_delete: :cascade
-  add_foreign_key "chat_ring_inbox_engagements", "inboxes", column: "chatwoot_inbox_id", on_delete: :cascade
-  add_foreign_key "chat_ring_inbox_engagements", "users", column: "updated_by_id", on_delete: :nullify
+  add_foreign_key "chat_ring_inbox_conversation_starters", "chat_ring_workspaces", column: "workspace_id", on_delete: :cascade
+  add_foreign_key "chat_ring_inbox_conversation_starters", "inboxes", column: "chatwoot_inbox_id", on_delete: :cascade
+  add_foreign_key "chat_ring_inbox_conversation_starters", "users", column: "updated_by_id", on_delete: :nullify
+  add_foreign_key "chat_ring_microsite_artifacts", "chat_ring_ai_turns", column: "ai_turn_id", on_delete: :cascade
+  add_foreign_key "chat_ring_microsite_artifacts", "chat_ring_workspaces", column: "workspace_id", on_delete: :cascade
+  add_foreign_key "chat_ring_microsite_artifacts", "messages", column: "message_id", on_delete: :nullify
   add_foreign_key "chat_ring_inbox_playbook_executions", "chat_ring_inbox_playbook_versions", column: "inbox_playbook_version_id", on_delete: :restrict
   add_foreign_key "chat_ring_inbox_playbook_executions", "chat_ring_workspaces", column: "workspace_id", on_delete: :cascade
   add_foreign_key "chat_ring_inbox_playbook_executions", "conversations", column: "chatwoot_conversation_id", on_delete: :cascade

@@ -14,7 +14,7 @@ import { routes as chatRingKnowledgeRoutes } from './chatRingKnowledge/chatRingK
 import { routes as chatRingAssistantsRoutes } from './chatRingAssistants/chatRingAssistants.routes';
 import { routes as chatRingToolsRoutes } from './chatRingTools/chatRingTools.routes';
 import { routes as chatRingPlaybooksRoutes } from './chatRingPlaybooks/chatRingPlaybooks.routes';
-import { routes as chatRingEngagementsRoutes } from './chatRingEngagements/chatRingEngagements.routes';
+import { routes as chatRingConversationStartersRoutes } from './chatRingConversationStarters/chatRingConversationStarters.routes';
 import AppContainer from './Dashboard.vue';
 import Suspended from './suspended/Index.vue';
 import NoAccounts from './noAccounts/Index.vue';
@@ -31,7 +31,7 @@ export default {
         ...chatRingAssistantsRoutes,
         ...chatRingToolsRoutes,
         ...chatRingPlaybooksRoutes,
-        ...chatRingEngagementsRoutes,
+        ...chatRingConversationStartersRoutes,
         ...chatRingKnowledgeRoutes,
         ...inboxRoutes,
         ...conversation.routes,

@@ -1,11 +1,11 @@
 require 'rails_helper'
 
-RSpec.describe 'ChatRing Inbox Engagements API', type: :request do
+RSpec.describe 'ChatRing Inbox Conversation Starters API', type: :request do
   let(:account) { create(:account) }
   let(:admin) { create(:user, account: account, role: :administrator) }
   let(:agent) { create(:user, account: account, role: :agent) }
   let(:inbox) { create(:inbox, account: account, channel: create(:channel_widget, account: account)) }
-  let(:base_path) { "/api/v1/accounts/#{account.id}/chat_ring/inbox_engagements" }
+  let(:base_path) { "/api/v1/accounts/#{account.id}/chat_ring/inbox_conversation_starters" }
   let(:starters) do
     [
       { label: 'See pricing', prompt: 'What pricing plans do you offer?' },
@@ -16,11 +16,11 @@ RSpec.describe 'ChatRing Inbox Engagements API', type: :request do
   it 'stores one ordered Website Inbox configuration without creating conversation state', :aggregate_failures do
     expect do
       patch "#{base_path}/#{inbox.id}",
-            params: { engagement: { lock_version: 0, enabled: true, starters: starters } },
+            params: { conversation_starters: { lock_version: 0, enabled: true, starters: starters } },
             headers: admin.create_new_auth_token,
             as: :json
     end.to(
-      change(ChatRing::InboxEngagement, :count).by(1)
+      change(ChatRing::InboxConversationStarter, :count).by(1)
         .and(not_change(Conversation, :count))
         .and(not_change(Message, :count))
         .and(not_change(ChatRing::AiTurn, :count))
@@ -36,14 +36,14 @@ RSpec.describe 'ChatRing Inbox Engagements API', type: :request do
 
   it 'uses optimistic locking and rejects fields outside the bounded starter contract', :aggregate_failures do
     patch "#{base_path}/#{inbox.id}",
-          params: { engagement: { lock_version: 0, enabled: true, starters: starters } },
+          params: { conversation_starters: { lock_version: 0, enabled: true, starters: starters } },
           headers: admin.create_new_auth_token,
           as: :json
     lock_version = response.parsed_body.fetch('lock_version')
 
     patch "#{base_path}/#{inbox.id}",
           params: {
-            engagement: {
+            conversation_starters: {
               lock_version: lock_version,
               enabled: true,
               starters: [{ label: 'Unsafe', prompt: 'Hello', destination_url: 'https://example.com' }]
@@ -55,13 +55,13 @@ RSpec.describe 'ChatRing Inbox Engagements API', type: :request do
     expect(response).to have_http_status(:unprocessable_entity), response.body
 
     patch "#{base_path}/#{inbox.id}",
-          params: { engagement: { lock_version: lock_version, enabled: false, starters: [] } },
+          params: { conversation_starters: { lock_version: lock_version, enabled: false, starters: [] } },
           headers: admin.create_new_auth_token,
           as: :json
     expect(response).to have_http_status(:ok), response.body
 
     patch "#{base_path}/#{inbox.id}",
-          params: { engagement: { lock_version: 0, enabled: false, starters: [] } },
+          params: { conversation_starters: { lock_version: 0, enabled: false, starters: [] } },
           headers: admin.create_new_auth_token,
           as: :json
     expect(response).to have_http_status(:conflict), response.body
@@ -72,13 +72,13 @@ RSpec.describe 'ChatRing Inbox Engagements API', type: :request do
     email_inbox = create(:inbox, account: account, channel: create(:channel_email, account: account))
 
     patch "#{base_path}/#{foreign_inbox.id}",
-          params: { engagement: { lock_version: 0, enabled: true, starters: starters } },
+          params: { conversation_starters: { lock_version: 0, enabled: true, starters: starters } },
           headers: admin.create_new_auth_token,
           as: :json
     expect(response).to have_http_status(:not_found)
 
     patch "#{base_path}/#{email_inbox.id}",
-          params: { engagement: { lock_version: 0, enabled: true, starters: starters } },
+          params: { conversation_starters: { lock_version: 0, enabled: true, starters: starters } },
           headers: admin.create_new_auth_token,
           as: :json
     expect(response).to have_http_status(:not_found)

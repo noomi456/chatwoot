@@ -512,19 +512,14 @@ const menuItems = computed(() => {
                 to: accountScopedRoute('chatring_knowledge_index'),
               },
               {
-                name: 'ChatRing Tools',
-                label: t('SIDEBAR.CHATRING_TOOLS'),
-                to: accountScopedRoute('chatring_tools_index'),
-              },
-              {
                 name: 'ChatRing Playbooks',
                 label: t('SIDEBAR.CHATRING_PLAYBOOKS'),
                 to: accountScopedRoute('chatring_playbooks_index'),
               },
               {
-                name: 'ChatRing Engagements',
-                label: t('SIDEBAR.CHATRING_ENGAGEMENTS'),
-                to: accountScopedRoute('chatring_engagements_index'),
+                name: 'ChatRing Conversation Starters',
+                label: t('SIDEBAR.CHATRING_CONVERSATION_STARTERS'),
+                to: accountScopedRoute('chatring_conversation_starters_index'),
               },
             ],
           },

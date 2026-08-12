@@ -37,6 +37,7 @@ class Campaign < ApplicationRecord
   validates :message, presence: true
   validate :validate_campaign_inbox
   validate :validate_url
+  validate :validate_website_trigger
   validate :prevent_completed_campaign_from_update, on: :update
   validate :sender_must_belong_to_account
   validate :inbox_must_belong_to_account
@@ -126,6 +127,31 @@ class Campaign < ApplicationRecord
 
     use_http_protocol = trigger_rules['url'].starts_with?('http://') || trigger_rules['url'].starts_with?('https://')
     errors.add(:url, 'invalid') if inbox.inbox_type == 'Website' && !use_http_protocol
+  end
+
+  def validate_website_trigger # rubocop:disable Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
+    return unless inbox&.inbox_type == 'Website'
+
+    rules = trigger_rules.to_h.stringify_keys
+    trigger_type = rules['trigger_type'].presence || 'time_on_page'
+    unless %w[time_on_page scroll_percentage].include?(trigger_type)
+      errors.add(:trigger_rules, 'must use time on page or scroll percentage')
+      return
+    end
+
+    value = trigger_type == 'time_on_page' ? rules.fetch('time_on_page', 10) : rules['scroll_percentage']
+    if trigger_type == 'time_on_page'
+      errors.add(:trigger_rules, 'time on page must be between 0 and 86,400 seconds') unless numeric_between?(value, 0, 86_400)
+    elsif !numeric_between?(value, 1, 100)
+      errors.add(:trigger_rules, 'scroll percentage must be between 1 and 100')
+    end
+  end
+
+  def numeric_between?(value, minimum, maximum)
+    number = Float(value)
+    number.finite? && number.between?(minimum, maximum)
+  rescue ArgumentError, TypeError
+    false
   end
 
   def inbox_must_belong_to_account

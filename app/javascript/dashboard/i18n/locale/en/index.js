@@ -13,7 +13,7 @@ import chatRingKnowledge from './chatRingKnowledge.json';
 import chatRingAssistants from './chatRingAssistants.json';
 import chatRingTools from './chatRingTools.json';
 import chatRingPlaybooks from './chatRingPlaybooks.json';
-import chatRingEngagements from './chatRingEngagements.json';
+import chatRingConversationStarters from './chatRingConversationStarters.json';
 import companies from './companies.json';
 import components from './components.json';
 import contact from './contact.json';
@@ -65,7 +65,7 @@ export default {
   ...chatRingAssistants,
   ...chatRingTools,
   ...chatRingPlaybooks,
-  ...chatRingEngagements,
+  ...chatRingConversationStarters,
   ...companies,
   ...components,
   ...contact,

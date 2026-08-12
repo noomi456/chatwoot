@@ -10,6 +10,7 @@ import { URLPattern } from 'urlpattern-polyfill';
 import Input from 'dashboard/components-next/input/Input.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
+import Select from 'dashboard/components-next/select/Select.vue';
 import Editor from 'dashboard/components-next/Editor/Editor.vue';
 
 const props = defineProps({
@@ -48,7 +49,9 @@ const initialState = {
   enabled: true,
   triggerOnlyDuringBusinessHours: false,
   endPoint: '',
+  triggerType: 'time_on_page',
   timeOnPage: 10,
+  scrollPercentage: 50,
 };
 
 const state = reactive({ ...initialState });
@@ -74,6 +77,7 @@ const validationRules = {
   senderId: { required },
   endPoint: { required, ...urlValidators },
   timeOnPage: { required },
+  scrollPercentage: { required },
 };
 
 const v$ = useVuelidate(validationRules, state);
@@ -96,6 +100,17 @@ const sendersAndBotList = computed(() => [
   ...mapToOptions(senderList.value, 'id', 'name'),
 ]);
 
+const triggerTypeOptions = computed(() => [
+  {
+    value: 'time_on_page',
+    label: t('CAMPAIGN.LIVE_CHAT.CREATE.FORM.TRIGGER_TYPE.TIME_ON_PAGE'),
+  },
+  {
+    value: 'scroll_percentage',
+    label: t('CAMPAIGN.LIVE_CHAT.CREATE.FORM.TRIGGER_TYPE.SCROLL_PERCENTAGE'),
+  },
+]);
+
 const getErrorMessage = (field, errorKey) => {
   const baseKey = 'CAMPAIGN.LIVE_CHAT.CREATE.FORM';
   return v$.value[field].$error ? t(`${baseKey}.${errorKey}.ERROR`) : '';
@@ -107,6 +122,7 @@ const formErrors = computed(() => ({
   inbox: getErrorMessage('inboxId', 'INBOX'),
   endPoint: getErrorMessage('endPoint', 'END_POINT'),
   timeOnPage: getErrorMessage('timeOnPage', 'TIME_ON_PAGE'),
+  scrollPercentage: getErrorMessage('scrollPercentage', 'SCROLL_PERCENTAGE'),
   sender: getErrorMessage('senderId', 'SENT_BY'),
 }));
 
@@ -141,7 +157,10 @@ const prepareCampaignDetails = () => ({
   trigger_only_during_business_hours: state.triggerOnlyDuringBusinessHours,
   trigger_rules: {
     url: state.endPoint,
-    time_on_page: state.timeOnPage,
+    trigger_type: state.triggerType,
+    ...(state.triggerType === 'time_on_page'
+      ? { time_on_page: state.timeOnPage }
+      : { scroll_percentage: state.scrollPercentage }),
   },
 });
 
@@ -166,7 +185,12 @@ const updateStateFromCampaign = campaign => {
     sender,
     enabled,
     trigger_only_during_business_hours: triggerOnlyDuringBusinessHours,
-    trigger_rules: { url: endPoint, time_on_page: timeOnPage },
+    trigger_rules: {
+      url: endPoint,
+      trigger_type: triggerType = 'time_on_page',
+      time_on_page: timeOnPage,
+      scroll_percentage: scrollPercentage,
+    },
   } = campaign;
 
   Object.assign(state, {
@@ -177,7 +201,9 @@ const updateStateFromCampaign = campaign => {
     enabled,
     triggerOnlyDuringBusinessHours,
     endPoint,
-    timeOnPage,
+    triggerType,
+    timeOnPage: timeOnPage ?? 10,
+    scrollPercentage: scrollPercentage ?? 50,
   });
 };
 
@@ -262,7 +288,14 @@ defineExpose({ prepareCampaignDetails, isSubmitDisabled });
       :message-type="formErrors.endPoint ? 'error' : 'info'"
     />
 
+    <Select
+      v-model="state.triggerType"
+      :label="t('CAMPAIGN.LIVE_CHAT.CREATE.FORM.TRIGGER_TYPE.LABEL')"
+      :options="triggerTypeOptions"
+    />
+
     <Input
+      v-if="state.triggerType === 'time_on_page'"
       v-model="state.timeOnPage"
       type="number"
       :label="t('CAMPAIGN.LIVE_CHAT.CREATE.FORM.TIME_ON_PAGE.LABEL')"
@@ -271,6 +304,20 @@ defineExpose({ prepareCampaignDetails, isSubmitDisabled });
       "
       :message="formErrors.timeOnPage"
       :message-type="formErrors.timeOnPage ? 'error' : 'info'"
+    />
+
+    <Input
+      v-else
+      v-model="state.scrollPercentage"
+      type="number"
+      min="1"
+      max="100"
+      :label="t('CAMPAIGN.LIVE_CHAT.CREATE.FORM.SCROLL_PERCENTAGE.LABEL')"
+      :placeholder="
+        t('CAMPAIGN.LIVE_CHAT.CREATE.FORM.SCROLL_PERCENTAGE.PLACEHOLDER')
+      "
+      :message="formErrors.scrollPercentage"
+      :message-type="formErrors.scrollPercentage ? 'error' : 'info'"
     />
 
     <fieldset class="flex flex-col gap-2.5">

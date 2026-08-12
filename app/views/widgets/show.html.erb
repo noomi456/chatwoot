@@ -27,7 +27,7 @@
         utcOffset: '<%= ActiveSupport::TimeZone[@web_widget.inbox.timezone].now.formatted_offset %>',
         timezone: '<%= @web_widget.inbox.timezone %>',
         allowMessagesAfterResolved: <%= @web_widget.inbox.allow_messages_after_resolved %>,
-        conversationStarters: <%= raw json_escape(ChatRing::Engagements::StarterProjection.call(@web_widget.inbox).to_json) %>,
+        conversationStarters: <%= raw json_escape(ChatRing::ConversationStarters::StarterProjection.call(@web_widget.inbox).to_json) %>,
         disableBranding: <%= @web_widget.inbox.account.feature_enabled?('disable_branding') %>,
       }
       window.chatwootPubsubToken = '<%= @contact_inbox.pubsub_token %>'

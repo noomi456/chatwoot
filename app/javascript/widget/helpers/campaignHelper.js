@@ -19,11 +19,22 @@ export const isPatternMatchingWithURL = (urlPattern, url) => {
 // Format all campaigns
 export const formatCampaigns = ({ campaigns }) => {
   return campaigns.map(item => {
+    const triggerType = item?.trigger_rules?.trigger_type || 'time_on_page';
+    const trigger =
+      triggerType === 'scroll_percentage'
+        ? {
+            triggerType,
+            scrollPercentage: item?.trigger_rules?.scroll_percentage,
+          }
+        : {
+            ...(item?.trigger_rules?.trigger_type ? { triggerType } : {}),
+            timeOnPage: item?.trigger_rules?.time_on_page ?? 10,
+          };
     return {
       id: item.id,
       triggerOnlyDuringBusinessHours:
         item.trigger_only_during_business_hours || false,
-      timeOnPage: item?.trigger_rules?.time_on_page,
+      ...trigger,
       url: item?.trigger_rules?.url,
     };
   });

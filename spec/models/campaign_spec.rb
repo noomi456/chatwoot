@@ -245,4 +245,45 @@ RSpec.describe Campaign do
       )
     end
   end
+
+  describe 'Website trigger rules' do
+    let(:account) { create(:account) }
+    let(:inbox) { create(:inbox, account: account, channel: create(:channel_widget, account: account)) }
+
+    it 'accepts either the native wait-time trigger or the page-scroll trigger' do
+      wait_campaign = build(
+        :campaign,
+        account: account,
+        inbox: inbox,
+        trigger_rules: { 'url' => 'https://example.com/*', 'trigger_type' => 'time_on_page', 'time_on_page' => 15 }
+      )
+      scroll_campaign = build(
+        :campaign,
+        account: account,
+        inbox: inbox,
+        trigger_rules: { 'url' => 'https://example.com/*', 'trigger_type' => 'scroll_percentage', 'scroll_percentage' => 55 }
+      )
+
+      expect(wait_campaign).to be_valid
+      expect(scroll_campaign).to be_valid
+    end
+
+    it 'rejects unknown or out-of-range Website triggers' do
+      unknown = build(
+        :campaign,
+        account: account,
+        inbox: inbox,
+        trigger_rules: { 'url' => 'https://example.com/*', 'trigger_type' => 'custom' }
+      )
+      invalid_scroll = build(
+        :campaign,
+        account: account,
+        inbox: inbox,
+        trigger_rules: { 'url' => 'https://example.com/*', 'trigger_type' => 'scroll_percentage', 'scroll_percentage' => 101 }
+      )
+
+      expect(unknown).not_to be_valid
+      expect(invalid_scroll).not_to be_valid
+    end
+  end
 end

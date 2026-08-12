@@ -1,6 +1,7 @@
 class ChatRing::Playbooks::InvocationProjection
-  def initialize(turn)
+  def initialize(turn, step_id: nil)
     @turn = turn
+    @step_id = step_id || turn.playbook_step_id
   end
 
   def trusted_context
@@ -41,7 +42,7 @@ class ChatRing::Playbooks::InvocationProjection
 
   private
 
-  attr_reader :turn
+  attr_reader :turn, :step_id
 
   def execution
     @execution ||= turn.inbox_playbook_execution
@@ -52,7 +53,7 @@ class ChatRing::Playbooks::InvocationProjection
   end
 
   def step
-    @step ||= Array(version.definition['steps']).find { |item| item['id'] == turn.playbook_step_id } || {}
+    @step ||= Array(version.definition['steps']).find { |item| item['id'] == step_id } || {}
   end
 
   def pending_question
