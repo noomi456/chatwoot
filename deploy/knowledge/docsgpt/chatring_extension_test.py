@@ -198,7 +198,6 @@ class ChatRingExtensionImageTest(unittest.TestCase):
             "query": "What does the product do?",
             "source_id": self.SOURCE_ID,
             "limit": 4,
-            "score_threshold": 0.62,
         }
         chunks = [
             {
@@ -359,7 +358,6 @@ class ChatRingExtensionImageTest(unittest.TestCase):
             "query": "Question",
             "source_id": self.SOURCE_ID,
             "limit": 4,
-            "score_threshold": 0.62,
         }
         encoded = json.dumps(body, separators=(",", ":")).encode()
         headers = self.signed_headers(encoded, "retrieve")

@@ -125,7 +125,7 @@ class ChatRing::Knowledge::Retriever
       binding_digest: index.provider_binding_digest,
       internal_key: ENV.fetch('DOCSGPT_INTERNAL_KEY'),
       service_secret: ENV.fetch('DOCSGPT_SERVICE_SECRET'),
-      score_threshold: index.config_snapshot.dig('retrieval', 'score_threshold') || ENV.fetch('DOCSGPT_SCORE_THRESHOLD'),
+      retrieval_configuration: index.config_snapshot.fetch('retrieval'),
       timeout_seconds: timeout_seconds
     )
   end

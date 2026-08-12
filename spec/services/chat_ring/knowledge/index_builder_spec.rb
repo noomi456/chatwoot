@@ -1,12 +1,6 @@
 require 'rails_helper'
 
 RSpec.describe ChatRing::Knowledge::IndexBuilder do
-  around do |example|
-    with_modified_env DOCSGPT_SCORE_THRESHOLD: '0.35' do
-      example.run
-    end
-  end
-
   let(:account) { create(:account) }
   let(:knowledge_base) { ChatRing::KnowledgeBase.for_account!(account) }
 
@@ -31,13 +25,13 @@ RSpec.describe ChatRing::Knowledge::IndexBuilder do
     make_ready(original)
     ChatRing::Knowledge::IndexActivationService.activate!(original)
 
-    replacement = with_modified_env(DOCSGPT_SCORE_THRESHOLD: '0.40') do
-      described_class.build!(knowledge_base)
-    end
+    stub_const('ChatRing::Knowledge::DocsGptProvider::RETRIEVAL_STRATEGY', 'replacement_strategy')
+    replacement = described_class.build!(knowledge_base)
 
     expect(replacement).to be_present
     expect(replacement).not_to eq(original)
-    expect(replacement.config_snapshot.dig('retrieval', 'score_threshold')).to eq(0.40)
+    expect(replacement.config_snapshot.dig('retrieval', 'strategy')).to eq('replacement_strategy')
+    expect(replacement.config_snapshot.dig('retrieval', 'candidate_selection')).to eq('exact_top_k')
     make_ready(replacement)
     expect(ChatRing::Knowledge::IndexActivationService.activate!(replacement)).to eq(:activated)
     expect(knowledge_base.reload.active_knowledge_index).to eq(replacement)

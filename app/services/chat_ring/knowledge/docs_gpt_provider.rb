@@ -7,7 +7,8 @@ require 'uri'
 # rubocop:disable Metrics/ClassLength
 class ChatRing::Knowledge::DocsGptProvider
   PROVIDER = 'docs_gpt'.freeze
-  RETRIEVAL_STRATEGY = 'docs_gpt_dispatcher_classic_cosine'.freeze
+  RETRIEVAL_STRATEGY = 'docs_gpt_dispatcher_classic_exact_candidates'.freeze
+  LEGACY_RETRIEVAL_STRATEGY = 'docs_gpt_dispatcher_classic_cosine'.freeze
   RETRIEVAL_PATH = '/api/internal/chatring/retrieve'.freeze
   DEFAULT_EVIDENCE_LIMIT = 8
   MAX_RESULTS = 20
@@ -45,13 +46,13 @@ class ChatRing::Knowledge::DocsGptProvider
 
   # rubocop:disable Metrics/ParameterLists
   def initialize(base_url:, provider_release:, provider_source_id:, account_id:, binding_digest:, internal_key:,
-                 service_secret:, score_threshold:, timeout_seconds: 10)
+                 service_secret:, retrieval_configuration:, timeout_seconds: 10)
     @base_url = normalize_base_url(base_url)
     @provider_release = required_string(provider_release, 'provider_release')
     @provider_source_id = required_string(provider_source_id, 'provider_source_id')
     @account_id = required_string(account_id, 'account_id')
     @binding_digest = sha256_digest(binding_digest, 'binding_digest')
-    @score_threshold = unit_float(score_threshold, 'score_threshold')
+    @retrieval_strategy, @score_threshold = normalize_retrieval_configuration(retrieval_configuration)
     @timeout_seconds = positive_integer(timeout_seconds, 'timeout_seconds')
     @auth = ChatRing::Knowledge::DocsGptAuth.new(
       internal_key: internal_key,
@@ -72,12 +73,15 @@ class ChatRing::Knowledge::DocsGptProvider
       source_id: @provider_source_id,
       # Fetch a bounded superset so a newly tombstoned or Assistant-scoped
       # top hit cannot hide still-valid evidence ranked just below it.
-      limit: MAX_RESULTS,
-      score_threshold: @score_threshold
+      limit: MAX_RESULTS
     }.to_json
     payload = fetch_payload(body, index_id)
     status = required_status(payload)
-    items = status == 'accepted' ? build_items(payload, index_id, manifest, resolved_query).first(result_limit) : []
+    items = if status == 'accepted'
+              filter_candidates(build_items(payload, index_id, manifest, resolved_query)).first(result_limit)
+            else
+              []
+            end
     status = 'insufficient_evidence' if status == 'accepted' && items.empty?
     build_evidence_set(index_id, resolved_query, result_limit, payload, status, items)
   rescue RequestError, ResponseError => e
@@ -161,7 +165,7 @@ class ChatRing::Knowledge::DocsGptProvider
     end.uniq(&:id).freeze
   end
 
-  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
+  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength
   def build_evidence(hit, rank, knowledge_index_id, manifest, _query)
     raise ResponseError, "DocsGPT result #{rank} must be an object" unless hit.is_a?(Hash)
 
@@ -174,8 +178,6 @@ class ChatRing::Knowledge::DocsGptProvider
 
     provider_chunk_id = required_response_string(hit['chunk_id'], rank, 'chunk_id')
     score = numeric_score(hit['score'], rank)
-    raise IntegrityError, "DocsGPT result #{rank} is below the provider threshold" if score < @score_threshold
-
     metadata = hit['metadata'].is_a?(Hash) ? hit['metadata'] : {}
     verify_chunk_content_hash!(metadata, excerpt, rank)
     heading_path = metadata['chatring_heading_path'].to_s.presence
@@ -203,10 +205,10 @@ class ChatRing::Knowledge::DocsGptProvider
       rank: numeric_rank(hit['rank'] || rank, rank),
       score: score,
       score_kind: required_response_string(hit['score_kind'], rank, 'score_kind'),
-      retrieval_strategy: RETRIEVAL_STRATEGY
+      retrieval_strategy: @retrieval_strategy
     )
   end
-  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
+  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength
 
   def build_evidence_set(index_id, query, limit, payload, status, items) # rubocop:disable Metrics/ParameterLists
     ChatRing::Knowledge::EvidenceSet.new(
@@ -217,7 +219,7 @@ class ChatRing::Knowledge::DocsGptProvider
       status: status,
       error_code: status == 'provider_error' ? payload['chatring_error_code'] || 'provider_unavailable' : nil,
       latency_ms: payload['latency_ms']&.to_i,
-      retrieval_strategy: RETRIEVAL_STRATEGY,
+      retrieval_strategy: @retrieval_strategy,
       retrieval_configuration: retrieval_configuration(limit, payload).freeze,
       items: items.freeze
     )
@@ -232,7 +234,7 @@ class ChatRing::Knowledge::DocsGptProvider
       status: status,
       error_code: error_code,
       latency_ms: nil,
-      retrieval_strategy: RETRIEVAL_STRATEGY,
+      retrieval_strategy: @retrieval_strategy,
       retrieval_configuration: retrieval_configuration(limit, {}).freeze,
       items: [].freeze
     )
@@ -242,10 +244,26 @@ class ChatRing::Knowledge::DocsGptProvider
     {
       'endpoint' => RETRIEVAL_PATH,
       'limit' => limit,
+      'candidate_selection' => @score_threshold.nil? ? 'exact_top_k' : 'legacy_cosine_threshold',
       'score_threshold' => @score_threshold,
       'binding_digest' => @binding_digest,
       'provider' => payload['retrieval']
     }.compact
+  end
+
+  def filter_candidates(items)
+    return items if @score_threshold.nil?
+
+    items.select { |item| item.score >= @score_threshold }
+  end
+
+  def normalize_retrieval_configuration(value)
+    config = value.to_h.deep_stringify_keys
+    strategy = required_string(config['strategy'], 'retrieval strategy')
+    return [strategy, nil] if strategy == RETRIEVAL_STRATEGY && config['candidate_selection'] == 'exact_top_k'
+    return [strategy, unit_float(config['score_threshold'], 'score_threshold')] if strategy == LEGACY_RETRIEVAL_STRATEGY
+
+    raise ConfigurationError, "Unsupported retrieval configuration #{strategy.inspect}"
   end
 
   def manifest_entry(manifest, provider_reference, rank)
@@ -410,13 +428,6 @@ class ChatRing::Knowledge::DocsGptProvider
     raise ConfigurationError, "#{name} must be an integer"
   end
 
-  def result_limit(value)
-    limit = positive_integer(value, 'limit')
-    raise ConfigurationError, "limit must be between 1 and #{MAX_RESULTS}" if limit > MAX_RESULTS
-
-    limit
-  end
-
   def unit_float(value, name)
     result = Float(value)
     raise ConfigurationError, "#{name} must be between 0 and 1" unless result.finite? && result.between?(0.0, 1.0)
@@ -424,6 +435,13 @@ class ChatRing::Knowledge::DocsGptProvider
     result
   rescue ArgumentError, TypeError
     raise ConfigurationError, "#{name} must be numeric"
+  end
+
+  def result_limit(value)
+    limit = positive_integer(value, 'limit')
+    raise ConfigurationError, "limit must be between 1 and #{MAX_RESULTS}" if limit > MAX_RESULTS
+
+    limit
   end
 
   def sha256_digest(value, name)
