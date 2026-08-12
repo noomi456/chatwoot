@@ -33,6 +33,7 @@ from application.storage.db.repositories.ingest_chunk_progress import (
 from application.storage.db.session import db_readonly, db_session
 from application.storage.db.source_config import RetrievalConfig
 from application.storage.storage_creator import StorageCreator
+from application.vectorstore.document_class import Document as VectorDocument
 from application.vectorstore.pgvector import PGVectorStore
 from application.vectorstore.vector_creator import VectorCreator
 
@@ -42,6 +43,7 @@ DEFAULT_EVIDENCE_LIMIT = 8
 MAX_RESULTS = 20
 MAX_CLOCK_SKEW_SECONDS = 90
 DOC_TOKEN_LIMIT = 50000
+PGVECTOR_CORRECTNESS_SOURCE_COMMIT = "795e39a6bc40ea499f92290ac19540a842713841"
 _HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 _SOURCE_BINDING = re.compile(
     # ``v`` is accepted only for provider sources created before the hidden
@@ -177,44 +179,83 @@ def _delete_ingest_progress(source_id: str) -> None:
         IngestChunkProgressRepository(connection).delete(source_id)
 
 
-def _strict_pgvector_search(self, question, k=2, *args, score_threshold=None, **kwargs):
-    """PGVector scored search that propagates failures on the ChatRing image."""
-    query_vector = self._embedding.embed_query(question)
+_ORIGINAL_PGVECTOR_SEARCH = PGVectorStore.search_with_scores
+
+
+def _pgvector_exact_fallback(self, question: str, k: int, ann_results: list):
+    """Port upstream's filtered-ANN completeness check, failing closed."""
     connection = self._get_connection()
+    try:
+        # The pinned native method catches SQL failures without rolling back.
+        # Ending its read transaction also clears that failed state before the
+        # authoritative completeness check.
+        connection.rollback()
+    except Exception:
+        pass
     cursor = connection.cursor()
     try:
-        query = f"""
-        SELECT id, {self._text_column}, {self._metadata_column},
-               ({self._vector_column} <=> %s::vector) AS distance
-        FROM {self._table_name}
-        WHERE source_id = %s
-        ORDER BY {self._vector_column} <=> %s::vector
-        LIMIT %s
-        """
-        cursor.execute(query, (query_vector, self._source_id, query_vector, k))
-        rows = cursor.fetchall()
-        max_distance = None if score_threshold is None else 1.0 - float(score_threshold)
-        results = []
-        for row_id, text, metadata, distance in rows:
-            if distance is None:
-                raise ChatRingProviderError("pgvector returned a result without distance")
-            resolved_distance = float(distance)
-            if not math.isfinite(resolved_distance):
-                raise ChatRingProviderError("pgvector returned a non-finite distance")
-            if max_distance is not None and resolved_distance > max_distance:
-                continue
-            values = dict(metadata or {})
-            values["chatring_provider_chunk_id"] = str(row_id)
-            score = 1.0 - resolved_distance
-            if not math.isfinite(score):
-                raise ChatRingProviderError("pgvector returned a non-finite score")
-            results.append((Document(text, extra_info=values).to_langchain_format(), score))
-        return results
-    except Exception:
+        cursor.execute(
+            f"SELECT count(*) FROM {self._table_name} WHERE source_id = %s",
+            (self._source_id,),
+        )
+        available = cursor.fetchone()[0]
+        if len(ann_results) >= min(k, available):
+            return ann_results
+
+        query_vector = self._embedding.embed_query(question)
+        cursor.execute("SET LOCAL enable_indexscan = off;")
+        cursor.execute("SET LOCAL enable_bitmapscan = off;")
+        cursor.execute(
+            f"""
+            SELECT {self._text_column}, {self._metadata_column},
+                   ({self._vector_column} <=> %s::vector) AS distance
+            FROM {self._table_name}
+            WHERE source_id = %s
+            ORDER BY {self._vector_column} <=> %s::vector
+            LIMIT %s;
+            """,
+            (query_vector, self._source_id, query_vector, k),
+        )
+        exact_rows = cursor.fetchall()
+        if len(exact_rows) < len(ann_results):
+            return ann_results
+        if len(exact_rows) > len(ann_results):
+            logger.info(
+                "Vector index under-returned for source %s (%d of %d); used exact search instead.",
+                self._source_id,
+                len(ann_results),
+                min(k, available),
+            )
+        return [
+            (VectorDocument(text, dict(metadata or {})), 1.0 - float(distance))
+            for text, metadata, distance in exact_rows
+        ]
+    except Exception as exc:
         connection.rollback()
-        raise
+        raise ChatRingProviderError("pgvector exact-search fallback failed") from exc
     finally:
+        try:
+            cursor.execute("RESET enable_indexscan;")
+            cursor.execute("RESET enable_bitmapscan;")
+        except Exception:
+            pass
         cursor.close()
+
+
+def _corrected_pgvector_search(self, question, k=2, *args, score_threshold=None, **kwargs):
+    """Delegate native retrieval, then add upstream completeness and strictness."""
+    native_results = _ORIGINAL_PGVECTOR_SEARCH(
+        self, question, k, *args, score_threshold=None, **kwargs
+    )
+    results = _pgvector_exact_fallback(self, question, k, native_results)
+    accepted = []
+    for document, score in results:
+        if score is None or not math.isfinite(float(score)):
+            raise ChatRingProviderError("pgvector returned a non-finite score")
+        resolved_score = float(score)
+        if score_threshold is None or resolved_score >= float(score_threshold):
+            accepted.append((document, resolved_score))
+    return accepted
 
 
 def _document_identity(metadata: dict[str, Any]) -> str:
@@ -347,9 +388,21 @@ def _chatring_labels_from_metadata(
     metadata: dict[str, Any], page_content: str, vectorstore_id: str
 ) -> dict[str, Any]:
     """Keep stable provenance on the scored documents returned by Dispatcher."""
+    values = dict(metadata)
+    values.pop("chatring_provider_chunk_id", None)
+    identity = (
+        values.get("chatring_document_id"),
+        values.get("chatring_chunk_index"),
+        values.get("chatring_content_hash"),
+    )
+    if all(value is not None for value in identity):
+        values["chatring_provider_chunk_id"] = hashlib.sha256(
+            "\n".join(str(value) for value in identity).encode("utf-8")
+        ).hexdigest()
     labels = _ORIGINAL_LABELS_FROM_METADATA(metadata, page_content, vectorstore_id)
+    labels.pop("chatring_provider_chunk_id", None)
     labels.update(
-        {key: metadata[key] for key in _PROVENANCE_KEYS if metadata.get(key) is not None}
+        {key: values[key] for key in _PROVENANCE_KEYS if values.get(key) is not None}
     )
     return labels
 
@@ -398,7 +451,7 @@ def _retrieve(source_id: str, query: str, limit: int, threshold: float):
     for rank, doc in enumerate(docs, start=1):
         chunk_id = doc.get("chatring_provider_chunk_id")
         if chunk_id is None:
-            raise ChatRingProviderError("retrieved chunk has no pgvector identity")
+            raise ChatRingProviderError("retrieved chunk has no stable provenance identity")
         chunks.append(
             {
                 "rank": rank,
@@ -592,7 +645,7 @@ def register_chat_ring_routes(blueprint):
             return jsonify({"status": "provider_error"}), 503
         return jsonify({"status": "deleted", "source_id": source_id}), 200
 
-PGVectorStore.search_with_scores = _strict_pgvector_search
+PGVectorStore.search_with_scores = _corrected_pgvector_search
 classic_rag_module.labels_from_metadata = _chatring_labels_from_metadata
 MarkdownParser.parse_file = _chatring_markdown_parse_file
 MarkdownChunker.chunk = _chatring_markdown_chunk

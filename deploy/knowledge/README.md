@@ -13,4 +13,4 @@ Required secrets and endpoints:
 
 No service publishes a host port. Do not deploy the DocsGPT frontend, final-answer Agent path, broad Celery Beat scheduler, or legacy `/api/search` route as ChatRing's evidence seam.
 
-After startup, verify the private health endpoint, ingestion worker, one account-level mixed website/file index, scored supported retrieval, zero-result abstention, wrong-scope rejection, and idempotent obsolete-source deletion. Public AI responses remain disabled until Architecture v2.1 Sections 15 and 21.7 pass.
+After startup, verify the private health endpoint, ingestion worker, one account-level mixed website/file index, scored supported retrieval, zero-result abstention, wrong-scope rejection, and idempotent obsolete-source deletion. Public release requires the v2.2 native-lifecycle gates and the complete Sales Core v1 production foundation; the testing gate may be enabled only for an explicitly bounded staging proof.

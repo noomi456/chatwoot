@@ -15,6 +15,7 @@ on:
       - codex/web-widget-core-production-proof
       - codex/sales-core-realtimekit-credentials
       - codex/sales-core-web-widget-live-test
+      - codex/knowledge-contextual-indexing
   workflow_dispatch:
 
 concurrency:
@@ -205,6 +206,7 @@ jobs:
           jq -e '.services["docs-gpt-backend"].environment.WSGI_THREADPOOL_WORKERS == "12"' /tmp/chatring-knowledge-compose.json
           jq -e '.services["docs-gpt-worker"].command | contains(["--concurrency=1", "--max-tasks-per-child=20"])' /tmp/chatring-knowledge-compose.json
           grep -q 'DocsGPT JWT startup-log contract changed' deploy/knowledge/Dockerfile
+          grep -q 'PGVECTOR_IVFFLAT_PROBES: Optional\[int\] = None' deploy/knowledge/Dockerfile
           grep -q 'Simple JWT authentication initialized' deploy/knowledge/Dockerfile
           grep -q 'request.headers.get("X-Internal-Key"' deploy/knowledge/docsgpt/chatring_extension.py
           grep -q '_internal_key(), provided_internal_key' deploy/knowledge/docsgpt/chatring_extension.py
@@ -212,7 +214,16 @@ jobs:
           grep -q 'classic_rag_module.labels_from_metadata = _chatring_labels_from_metadata' deploy/knowledge/docsgpt/chatring_extension.py
           grep -q 'DEFAULT_EVIDENCE_LIMIT = 8' deploy/knowledge/docsgpt/chatring_extension.py
           ! grep -q '_row_lookup' deploy/knowledge/docsgpt/chatring_extension.py
+          ! grep -q '_strict_pgvector_search' deploy/knowledge/docsgpt/chatring_extension.py
+          grep -q '_ORIGINAL_PGVECTOR_SEARCH' deploy/knowledge/docsgpt/chatring_extension.py
+          grep -q '_pgvector_exact_fallback' deploy/knowledge/docsgpt/chatring_extension.py
+          grep -q '795e39a6bc40ea499f92290ac19540a842713841' deploy/knowledge/docsgpt/chatring_extension.py
+          test "$(openssl dgst -sha256 deploy/knowledge/docsgpt/upstream/pgvector.py | awk '{print $2}')" = "34e9d74518cfa713b06ff8f437f4d6cd58325f28c54bcc32c6cc349225e59d8c"
+          ! grep -q 'USING ivfflat' deploy/knowledge/docsgpt/upstream/pgvector.py
+          grep -q '_apply_ivfflat_probes' deploy/knowledge/docsgpt/upstream/pgvector.py
+          grep -q '_exact_search' deploy/knowledge/docsgpt/upstream/pgvector.py
           python -m py_compile deploy/knowledge/docsgpt/chatring_extension.py
+          python -m py_compile deploy/knowledge/docsgpt/upstream/pgvector.py
 
   validate_knowledge_image:
     needs: [detect_changes, validate, validate-knowledge]
@@ -276,6 +287,7 @@ jobs:
       - name: Verify immutable source labels
         run: |
           test "$(docker image inspect --format '{{ index .Config.Labels "io.chatring.docsgpt.source_commit" }}' "${DOCSGPT_DERIVED_IMAGE}")" = "${DOCSGPT_SOURCE_COMMIT}"
+          test "$(docker image inspect --format '{{ index .Config.Labels "io.chatring.docsgpt.pgvector_backport" }}' "${DOCSGPT_DERIVED_IMAGE}")" = "795e39a6bc40ea499f92290ac19540a842713841"
           test "$(docker image inspect --format '{{ index .Config.Labels "io.chatring.docsgpt.base_digest" }}' "${DOCSGPT_DERIVED_IMAGE}")" = "${{ steps.upstream.outputs.digest }}"
           test "$(docker image inspect --format '{{ index .Config.Labels "io.chatring.source_commit" }}' "${DOCSGPT_DERIVED_IMAGE}")" = "${GITHUB_SHA}"
 
