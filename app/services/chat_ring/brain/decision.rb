@@ -1,26 +1,31 @@
 class ChatRing::Brain::Decision
   class Invalid < StandardError; end
 
-  TYPES = %w[reply clarification playbook request_appointment handoff abstain].freeze
+  TYPES = %w[reply clarification context_reply playbook request_appointment handoff abstain].freeze
   MAX_RESPONSE_LENGTH = 4000
   MAX_PLAYBOOK_RESPONSE_LENGTH = 900
   MAX_SUGGESTED_QUESTIONS = 2
   MAX_SUGGESTED_QUESTION_LENGTH = 160
   MAX_RESPONSE_OPTIONS = 6
+  HISTORY_REPLY_ERROR = 'Conversation replies require an explicit history request with prior public history'.freeze
+  HISTORY_KNOWLEDGE_REPLY_ERROR = 'Conversation-history requests cannot be answered as Business Knowledge'.freeze
 
   attr_reader :decision_type, :response_text, :reason_code, :evidence_ids, :suggested_questions, :response_options,
               :microsite_section_types, :tool_request, :playbook_control
 
-  def self.from_payload(payload, allowed_evidence_ids:, evidence_status:, playbook_context: nil)
+  def self.from_payload(payload, allowed_evidence_ids:, evidence_status:, playbook_context: nil,
+                        conversation_history_reply_allowed: false)
     new(
       payload,
       allowed_evidence_ids: allowed_evidence_ids,
       evidence_status: evidence_status,
-      playbook_context: playbook_context
+      playbook_context: playbook_context,
+      conversation_history_reply_allowed: conversation_history_reply_allowed
     )
   end
 
-  def initialize(payload, allowed_evidence_ids:, evidence_status:, playbook_context: nil) # rubocop:disable Metrics/AbcSize
+  def initialize(payload, allowed_evidence_ids:, evidence_status:, playbook_context: nil, # rubocop:disable Metrics/AbcSize
+                 conversation_history_reply_allowed: false)
     attributes = payload.to_h.stringify_keys
     @decision_type = attributes['decision_type'].to_s
     @response_text = attributes['response_text'].to_s.strip
@@ -32,6 +37,7 @@ class ChatRing::Brain::Decision
     @tool_request = build_tool_request(attributes['tool_request'])
     @playbook_control = build_playbook_control(attributes['playbook_control'])
     @playbook_context = playbook_context
+    @conversation_history_reply_allowed = conversation_history_reply_allowed
     validate!(Array(allowed_evidence_ids).map(&:to_s), evidence_status)
   end
 
@@ -65,6 +71,9 @@ class ChatRing::Brain::Decision
   def validate!(allowed_evidence_ids, evidence_status)
     raise Invalid, 'Unknown Brain decision type' unless TYPES.include?(decision_type)
     raise Invalid, 'Brain response exceeds the maximum length' if response_text.length > MAX_RESPONSE_LENGTH
+    if @conversation_history_reply_allowed && decision_type.in?(%w[reply clarification])
+      raise Invalid, HISTORY_KNOWLEDGE_REPLY_ERROR
+    end
 
     validate_response_text!
     validate_evidence!(allowed_evidence_ids, evidence_status)
@@ -106,7 +115,7 @@ class ChatRing::Brain::Decision
   end
 
   def validate_response_text!
-    return validate_reply_response! if %w[reply clarification].include?(decision_type)
+    return validate_reply_response! if %w[reply clarification context_reply].include?(decision_type)
     return validate_playbook_response! if decision_type == 'playbook'
 
     return if response_text.blank?
@@ -117,6 +126,7 @@ class ChatRing::Brain::Decision
   def validate_evidence!(allowed_evidence_ids, evidence_status)
     raise Invalid, 'Brain cited evidence outside the supplied set' unless evidence_ids.all? { |id| allowed_evidence_ids.include?(id) }
     return validate_reply_evidence!(evidence_status) if decision_type == 'reply'
+    return validate_context_reply! if decision_type == 'context_reply'
     return unless grounded_playbook_side_answer?
 
     raise Invalid, 'Grounded Playbook side answers require accepted evidence' unless evidence_status == 'accepted'
@@ -141,6 +151,13 @@ class ChatRing::Brain::Decision
     raise Invalid, 'Grounded replies require at least one evidence citation' if evidence_ids.empty?
   end
 
+  def validate_context_reply!
+    raise Invalid, HISTORY_REPLY_ERROR unless @conversation_history_reply_allowed
+
+    raise Invalid, 'Conversation replies cannot cite Business Knowledge evidence' if evidence_ids.present?
+    raise Invalid, 'Conversation replies require the conversation_history reason code' unless reason_code == 'conversation_history'
+  end
+
   def grounded_playbook_side_answer?
     decision_type == 'playbook' && playbook_control&.side_question?
   end
@@ -159,7 +176,7 @@ class ChatRing::Brain::Decision
     return validate_playbook_decision! if decision_type == 'playbook'
 
     raise Invalid, 'Non-Playbook decisions cannot contain Playbook control' if playbook_control
-    return unless @playbook_context.present? && decision_type.in?(%w[reply clarification])
+    return unless @playbook_context.present? && decision_type.in?(%w[reply clarification context_reply])
 
     raise Invalid, 'Active Playbook replies must use typed Playbook control'
   end

@@ -52,7 +52,76 @@ RSpec.describe ChatRing::Brain::Runner do
     expect(turn.evidence.first.heading_path).to eq([])
   end
 
-  it 'abstains deterministically without calling the model when retrieval has insufficient evidence' do
+  it 'retrieves the raw follow-up and its bounded native context before one model call' do
+    history_turn = build_turn(with_history: true)
+    history_turn.trigger_message.update!(content: 'How does it work?')
+    queries = []
+    retrieved_sets = []
+    allow(ChatRing::Knowledge::Retriever).to receive(:retrieve) do |query:, **|
+      queries << query
+      result = query.include?('Earlier question about the Website Widget') ? evidence_set : empty_evidence_set
+      retrieved_sets << result
+      result
+    end
+    allow(provider).to receive(:call).and_return(
+      provider_result(
+        'decision_type' => 'reply', 'response_text' => 'Widgets are supported.',
+        'reason_code' => 'answered', 'evidence_ids' => ['evidence-1']
+      )
+    )
+
+    described_class.new(history_turn, provider: provider).call
+
+    contextual_query = <<~QUERY.chomp
+      Earlier question about the Website Widget
+      How does it work?
+    QUERY
+    expect(queries).to contain_exactly('How does it work?', contextual_query)
+    expect(retrieved_sets.map { |set| [set.knowledge_index_id, set.provider, set.provider_release, set.status] }).to eq(
+      [[nil, 'docs_gpt', 'release', 'insufficient_evidence'], [nil, 'docs_gpt', 'release', 'accepted']]
+    )
+    expect(history_turn.reload).to have_attributes(status: 'ready_to_commit', failure_code: nil)
+    expect(provider).to have_received(:call).once
+    expect(history_turn.reload.evidence.pluck(:evidence_id)).to eq(['evidence-1'])
+  end
+
+  it 'uses bounded native history for a typed Conversation reply when retrieval has insufficient evidence' do
+    history_turn = build_turn(with_history: true)
+    history_turn.trigger_message.update!(content: 'What did I ask before?')
+    allow(ChatRing::Knowledge::Retriever).to receive(:retrieve).and_return(empty_evidence_set)
+    allow(provider).to receive(:call).and_return(
+      provider_result(
+        'decision_type' => 'context_reply',
+        'response_text' => 'You previously asked about the Website Widget.',
+        'reason_code' => 'conversation_history',
+        'evidence_ids' => []
+      )
+    )
+
+    described_class.new(history_turn, provider: provider).call
+
+    expect(provider).to have_received(:call).once
+    expect(history_turn.reload).to be_status_ready_to_commit
+    expect(history_turn.decision_payload).to include(
+      'decision_type' => 'context_reply', 'reason_code' => 'conversation_history'
+    )
+    expect(history_turn.outbound_commit).to be_outcome_type_reply
+  end
+
+  it 'does not let prior Conversation assertions authorize a factual answer without Knowledge evidence' do
+    history_turn = build_turn(with_history: :human_assertion)
+    history_turn.trigger_message.update!(content: 'Does Salesforce work?')
+    allow(ChatRing::Knowledge::Retriever).to receive(:retrieve).and_return(empty_evidence_set)
+
+    described_class.new(history_turn, provider: provider).call
+
+    expect(provider).not_to have_received(:call)
+    expect(history_turn.reload).to be_status_cancelled
+    expect(history_turn.decision_payload).to include('decision_type' => 'abstain', 'reason_code' => 'insufficient_evidence')
+    expect(history_turn.evidence).to be_empty
+  end
+
+  it 'uses the configured fallback without inference when neither evidence nor prior history exists' do
     allow(ChatRing::Knowledge::Retriever).to receive(:retrieve).and_return(empty_evidence_set)
 
     described_class.new(turn, provider: provider).call
@@ -380,7 +449,7 @@ RSpec.describe ChatRing::Brain::Runner do
     expect(provider).not_to have_received(:call)
   end
 
-  def build_turn(handoff_on_provider_failure: false, appointment_tool: false, playbook_question: nil)
+  def build_turn(handoff_on_provider_failure: false, appointment_tool: false, playbook_question: nil, with_history: false)
     account, workspace, inbox = build_runtime_scope
     connection = configure_runtime(
       workspace: workspace,
@@ -391,6 +460,15 @@ RSpec.describe ChatRing::Brain::Runner do
     publish_question_playbook(workspace, inbox, playbook_question) if playbook_question
     conversation = create(:conversation, account: account, inbox: inbox, status: :pending,
                                          assignee_agent_bot: connection.agent_bot)
+    if with_history == :human_assertion
+      create(:message, account: account, inbox: inbox, conversation: conversation,
+                       message_type: :outgoing, sender: create(:user, account: account), private: false,
+                       content: 'Salesforce is definitely supported.')
+    elsif with_history
+      create(:message, account: account, inbox: inbox, conversation: conversation,
+                       message_type: :incoming, sender: conversation.contact, private: false,
+                       content: 'Earlier question about the Website Widget')
+    end
     message = create_managed_message(
       account: account,
       inbox: inbox,

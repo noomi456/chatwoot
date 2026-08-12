@@ -2,7 +2,6 @@ class ChatRing::Brain::InboundInvocationBuilder
   MAX_HISTORY_MESSAGES = 20
   MAX_HISTORY_CHARACTERS = 16_000
   MAX_MESSAGE_CHARACTERS = 4000
-  MAX_RETRIEVAL_QUERY_CHARACTERS = ChatRing::Knowledge::DocsGptProvider::MAX_QUERY_LENGTH
 
   def initialize(turn)
     @turn = turn
@@ -12,6 +11,7 @@ class ChatRing::Brain::InboundInvocationBuilder
     validate_supported_policies!
     history, provenance = bounded_history
     trigger = project_message(turn.trigger_message)
+    query_resolution = retrieval_query_resolution(trigger, history, provenance)
     native_messages, native_provenance = current_turn_native_messages
     provenance.concat(native_provenance)
     provenance << provenance_for(turn.trigger_message, trigger.fetch('speaker'))
@@ -19,9 +19,10 @@ class ChatRing::Brain::InboundInvocationBuilder
     ChatRing::Brain::Invocation.new(
       kind: 'inbound_conversation',
       trusted_context: trusted_context,
-      model_context: model_context(history, trigger, native_messages),
-      audit_metadata: audit_metadata(provenance),
-      query: trigger.fetch('content').first(MAX_RETRIEVAL_QUERY_CHARACTERS),
+      model_context: model_context(history, trigger, native_messages, query_resolution),
+      audit_metadata: audit_metadata(provenance, query_resolution),
+      query: query_resolution.retrieval_query,
+      retrieval_queries: query_resolution.retrieval_queries,
       deadline_at: turn.deadline_at
     )
   end
@@ -60,13 +61,14 @@ class ChatRing::Brain::InboundInvocationBuilder
     }
   end
 
-  def model_context(history, trigger, native_messages)
+  def model_context(history, trigger, native_messages, query_resolution)
     version = turn.assistant_version
     {
       'assistant' => assistant_model_context(version),
       'conversation' => {
         'channel_type' => turn.conversation.inbox.channel_type,
-        'history' => history
+        'history' => history,
+        'history_request' => query_resolution.conversation_history_request
       },
       'active_playbook' => playbook_projection.model_context,
       'current_turn_native_messages' => native_messages,
@@ -87,6 +89,13 @@ class ChatRing::Brain::InboundInvocationBuilder
     }
   end
 
+  def retrieval_query_resolution(trigger, history, provenance)
+    ChatRing::Knowledge::RetrievalQueryResolver.new(
+      raw_query: trigger.fetch('content'),
+      history: history.zip(provenance).map { |item, source| item.slice('speaker', 'content').merge('message_id' => source.fetch('message_id')) }
+    ).call
+  end
+
   def available_tools
     ChatRing::Tools::AvailabilityResolver.new(
       inbox: turn.conversation.inbox,
@@ -95,11 +104,12 @@ class ChatRing::Brain::InboundInvocationBuilder
     ).call
   end
 
-  def audit_metadata(provenance)
+  def audit_metadata(provenance, query_resolution)
     {
       'projection_version' => 1,
       'contact_fields_included' => [],
-      'speaker_provenance' => provenance
+      'speaker_provenance' => provenance,
+      'retrieval_query' => query_resolution.audit_metadata
     }.merge(playbook_projection.audit_metadata)
   end
 

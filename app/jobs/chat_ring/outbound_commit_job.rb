@@ -10,7 +10,7 @@ class ChatRing::OutboundCommitJob < ApplicationJob
     return unless turn&.status_ready_to_commit?
 
     case turn.decision_type
-    when 'reply', 'clarification', 'playbook'
+    when 'reply', 'clarification', 'context_reply', 'playbook'
       commit_reply(turn)
     when 'handoff'
       commit_human_route_or_fallback(turn)

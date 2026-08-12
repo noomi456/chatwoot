@@ -18,6 +18,7 @@ on:
       - codex/knowledge-contextual-indexing
       - codex/knowledge-corpus-integrity
       - codex/knowledge-classic-candidate-retrieval
+      - codex/knowledge-history-resolution-final
   workflow_dispatch:
 
 concurrency:

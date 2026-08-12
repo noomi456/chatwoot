@@ -1,8 +1,8 @@
 class ChatRing::Brain::DecisionSchema < RubyLLM::Schema
   string :decision_type,
-         description: 'One of reply, clarification, playbook, request_appointment, handoff, or abstain.'
+         description: 'One of reply, clarification, context_reply, playbook, request_appointment, handoff, or abstain.'
   string :response_text,
-         description: 'Customer-facing plain text for reply, clarification, or grounded Playbook side answer; otherwise empty.',
+         description: 'Customer-facing plain text for reply, clarification, context_reply, or grounded Playbook side answer; otherwise empty.',
          max_length: 4000
   string :reason_code,
          description: 'Short stable snake_case reason for the decision.',

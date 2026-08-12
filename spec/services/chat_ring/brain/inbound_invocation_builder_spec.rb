@@ -72,7 +72,55 @@ RSpec.describe ChatRing::Brain::InboundInvocationBuilder do
     invocation = described_class.new(turn.reload).build
 
     expect(invocation.model_context.dig('trigger_message', 'content').length).to eq(4000)
-    expect(invocation.query.length).to eq(ChatRing::Knowledge::DocsGptProvider::MAX_QUERY_LENGTH)
+    expect(invocation.retrieval_queries).to all(satisfy { |query| query.length <= ChatRing::Knowledge::DocsGptProvider::MAX_QUERY_LENGTH })
+  end
+
+  it 'preserves the raw standalone question without adding identity or unrelated history' do
+    invocation = described_class.new(turn).build
+
+    expect(invocation.query).to eq('Current question')
+    expect(invocation.retrieval_queries).to eq(['Current question'])
+    expect(invocation.audit_metadata.fetch('retrieval_query')).to include(
+      'strategy' => 'current_turn_only', 'contextualized' => false, 'history_message_ids' => [], 'query_count' => 1
+    )
+    expect(invocation.model_context.dig('conversation', 'history_request')).to be(false)
+  end
+
+  it 'marks only an explicit transcript-recall question as a Conversation-history request' do
+    turn.trigger_message.update!(content: 'What did I ask before?')
+
+    invocation = described_class.new(turn.reload).build
+
+    expect(invocation.model_context.dig('conversation', 'history_request')).to be(true)
+  end
+
+  it 'contextualizes a reference-dependent follow-up from bounded native public history' do
+    prior_question = turn.conversation.messages.find_by!(content: 'Earlier customer')
+    turn.trigger_message.update!(content: 'How does it work?')
+
+    invocation = described_class.new(turn.reload).build
+
+    contextual_query = <<~QUERY.chomp
+      Earlier customer
+      How does it work?
+    QUERY
+    expect(invocation.retrieval_queries).to contain_exactly('How does it work?', contextual_query)
+    expect(invocation.query).to eq('How does it work?')
+    expect(invocation.audit_metadata.fetch('retrieval_query')).to include(
+      'strategy' => 'dual_query_minimum_antecedent',
+      'contextualized' => true,
+      'history_message_ids' => [prior_question.id],
+      'query_count' => 2
+    )
+  end
+
+  it 'does not contaminate an explicit topic switch with earlier Conversation history' do
+    turn.trigger_message.update!(content: 'What integrations are available?')
+
+    invocation = described_class.new(turn.reload).build
+
+    expect(invocation.query).to eq('What integrations are available?')
+    expect(invocation.query).not_to include('Earlier customer', 'External bot answer')
   end
 
   it 'projects a pinned Inbox Playbook step without exposing native target identifiers or collected values' do
@@ -136,7 +184,11 @@ RSpec.describe ChatRing::Brain::InboundInvocationBuilder do
     inbox = create(:channel_widget, account: account).inbox
     assistant = ChatRing::Assistant.create!(workspace: workspace, name: 'Sales')
     scope = workspace.knowledge_scopes.find_by!(business_wide: true)
-    ChatRing::AssistantVersions::Publisher.new(assistant: assistant, knowledge_scope: scope).call
+    ChatRing::AssistantVersions::Publisher.new(
+      assistant: assistant,
+      knowledge_scope: scope,
+      configuration: { identity: { 'name' => 'ChatRing AI' } }
+    ).call
     connection = ChatRing::AssistantProvisioning::AgentBotProvisioner.new(assistant: assistant).call
     ChatRing::AssistantProvisioning::InboxBindingActivator.new(assistant: assistant, inbox: inbox).call
     conversation = create(:conversation, account: account, inbox: inbox, status: :pending,
