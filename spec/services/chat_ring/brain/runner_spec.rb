@@ -380,7 +380,6 @@ RSpec.describe ChatRing::Brain::Runner do
     expect(provider).not_to have_received(:call)
   end
 
-  # rubocop:disable Metrics/MethodLength
   def build_turn(handoff_on_provider_failure: false, appointment_tool: false, playbook_question: nil)
     account, workspace, inbox = build_runtime_scope
     connection = configure_runtime(
@@ -401,8 +400,6 @@ RSpec.describe ChatRing::Brain::Runner do
     complete_native_automation(message)
     ChatRing::AiTurn.find_by!(workspace: workspace, conversation: conversation, trigger_message: message)
   end
-  # rubocop:enable Metrics/MethodLength
-
   def build_runtime_scope
     account = create(:account)
     [account, account.chat_ring_workspace, create(:channel_widget, account: account).inbox]

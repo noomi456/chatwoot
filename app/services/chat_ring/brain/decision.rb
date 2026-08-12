@@ -114,7 +114,7 @@ class ChatRing::Brain::Decision
     raise Invalid, 'Non-reply decisions cannot contain response text'
   end
 
-  def validate_evidence!(allowed_evidence_ids, evidence_status) # rubocop:disable Metrics/CyclomaticComplexity
+  def validate_evidence!(allowed_evidence_ids, evidence_status)
     raise Invalid, 'Brain cited evidence outside the supplied set' unless evidence_ids.all? { |id| allowed_evidence_ids.include?(id) }
     return validate_reply_evidence!(evidence_status) if decision_type == 'reply'
     return unless grounded_playbook_side_answer?

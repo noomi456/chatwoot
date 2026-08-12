@@ -52,7 +52,7 @@ class ChatRing::Brain::Runner # rubocop:disable Metrics/ClassLength
 
   attr_reader :turn, :provider, :attempt
 
-  def execute_claimed_turn # rubocop:disable Metrics/CyclomaticComplexity
+  def execute_claimed_turn
     invocation = prepare_invocation
     return unless invocation
 
