@@ -72,4 +72,22 @@ RSpec.describe ChatRing::Knowledge::SyncService do
     expect(described_class.new(index, docs_gpt: docs_gpt).tick).to eq(:retry)
     expect(WebMock).not_to have_requested(:post, /api\.firecrawl\.dev/)
   end
+
+  it 'does not demote an index activated while a duplicate sync is finishing' do
+    document = index.documents.first
+    document.update!(provider_task_id: 'task-1', provider_source_id: 'source-1', provider_status: 'processing')
+    allow(docs_gpt).to receive(:task_status).with(index, 'task-1', 'source-1').and_return('status' => 'SUCCESS')
+    allow(docs_gpt).to receive(:chunks).with(index, 'source-1').and_return([])
+    allow(ChatRing::Knowledge::ProviderChunkValidator).to receive(:validate!) do
+      index.update!(status: 'ready')
+      index.update!(status: 'active')
+      knowledge_base.update!(active_knowledge_index: index)
+      { document => '/inputs/example.md' }
+    end
+
+    expect(described_class.new(index, docs_gpt: docs_gpt).tick).to eq(:complete)
+
+    expect(index.reload.status).to eq('active')
+    expect(knowledge_base.reload.active_knowledge_index).to eq(index)
+  end
 end
