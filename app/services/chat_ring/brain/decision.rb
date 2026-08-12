@@ -8,6 +8,7 @@ class ChatRing::Brain::Decision
   MAX_SUGGESTED_QUESTION_LENGTH = 160
   MAX_RESPONSE_OPTIONS = 6
   HISTORY_REPLY_ERROR = 'Conversation replies require an explicit history request with prior public history'.freeze
+  HISTORY_KNOWLEDGE_REPLY_ERROR = 'Conversation-history requests cannot be answered as Business Knowledge'.freeze
 
   attr_reader :decision_type, :response_text, :reason_code, :evidence_ids, :suggested_questions, :response_options,
               :microsite_section_types, :tool_request, :playbook_control
@@ -70,6 +71,9 @@ class ChatRing::Brain::Decision
   def validate!(allowed_evidence_ids, evidence_status)
     raise Invalid, 'Unknown Brain decision type' unless TYPES.include?(decision_type)
     raise Invalid, 'Brain response exceeds the maximum length' if response_text.length > MAX_RESPONSE_LENGTH
+    if @conversation_history_reply_allowed && decision_type.in?(%w[reply clarification])
+      raise Invalid, HISTORY_KNOWLEDGE_REPLY_ERROR
+    end
 
     validate_response_text!
     validate_evidence!(allowed_evidence_ids, evidence_status)

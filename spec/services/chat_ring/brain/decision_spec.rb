@@ -148,6 +148,23 @@ RSpec.describe ChatRing::Brain::Decision do
     )
   end
 
+  it 'does not let accepted retrieval candidates turn transcript recall into a Knowledge reply' do
+    expect do
+      described_class.from_payload(
+        {
+          decision_type: 'reply', response_text: 'You previously asked about pricing.',
+          reason_code: 'answered', evidence_ids: ['evidence-1']
+        },
+        allowed_evidence_ids: ['evidence-1'],
+        evidence_status: 'accepted',
+        conversation_history_reply_allowed: true
+      )
+    end.to raise_error(
+      described_class::Invalid,
+      'Conversation-history requests cannot be answered as Business Knowledge'
+    )
+  end
+
   it 'rejects evidence IDs that were not supplied to the model' do
     expect do
       described_class.from_payload(
