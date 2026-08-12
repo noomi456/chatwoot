@@ -407,12 +407,12 @@ def _chatring_labels_from_metadata(
     return labels
 
 
-def _retrieve(source_id: str, query: str, limit: int, threshold: float):
+def _retrieve(source_id: str, query: str, limit: int):
     retrieval = RetrievalConfig(
         retriever="classic",
         exposure="prefetch",
         chunks=limit,
-        score_threshold=threshold,
+        score_threshold=None,
         rephrase_query=False,
     )
     kwargs = {}
@@ -439,7 +439,7 @@ def _retrieve(source_id: str, query: str, limit: int, threshold: float):
             settings.VECTOR_STORE, source_id, settings.EMBEDDINGS_KEY
         )
         direct_hits = store.search_with_scores(
-            query, k=limit, score_threshold=threshold
+            query, k=limit, score_threshold=None
         )
         if direct_hits:
             raise ChatRingProviderError(
@@ -580,10 +580,9 @@ def register_chat_ring_routes(blueprint):
             return jsonify({"status": "invalid_request"}), 400
         try:
             limit = int(body.get("limit", DEFAULT_EVIDENCE_LIMIT))
-            threshold = float(body.get("score_threshold"))
         except (TypeError, ValueError):
             return jsonify({"status": "invalid_request"}), 400
-        if not 1 <= limit <= MAX_RESULTS or not 0.0 <= threshold <= 1.0:
+        if not 1 <= limit <= MAX_RESULTS:
             return jsonify({"status": "invalid_request"}), 400
         source = _source(source_id)
         if source is None:
@@ -594,7 +593,7 @@ def register_chat_ring_routes(blueprint):
             return jsonify({"status": "forbidden"}), 403
         try:
             started = time.monotonic()
-            chunks, retrieval = _retrieve(source_id, query, limit, threshold)
+            chunks, retrieval = _retrieve(source_id, query, limit)
         except Exception:
             logger.exception("ChatRing DocsGPT retrieval failed")
             return jsonify({"status": "provider_error"}), 503

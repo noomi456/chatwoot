@@ -15,7 +15,7 @@ class ChatRing::Knowledge::SyncService
       'embedding_model' => 'huggingface_sentence-transformers/all-mpnet-base-v2',
       'retrieval' => {
         'strategy' => ChatRing::Knowledge::DocsGptProvider::RETRIEVAL_STRATEGY,
-        'score_threshold' => Float(ENV.fetch('DOCSGPT_SCORE_THRESHOLD'))
+        'candidate_selection' => 'exact_top_k'
       }
     }
   end

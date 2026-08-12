@@ -17,6 +17,7 @@ on:
       - codex/sales-core-web-widget-live-test
       - codex/knowledge-contextual-indexing
       - codex/knowledge-corpus-integrity
+      - codex/knowledge-classic-candidate-retrieval
   workflow_dispatch:
 
 concurrency:

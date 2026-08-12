@@ -10,7 +10,10 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
       binding_digest: 'a' * 64,
       internal_key: 'internal-secret',
       service_secret: 'service-secret',
-      score_threshold: 0.62
+      retrieval_configuration: {
+        strategy: described_class::RETRIEVAL_STRATEGY,
+        candidate_selection: 'exact_top_k'
+      }
     )
   end
 
@@ -43,7 +46,7 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
       status: 'accepted',
       source_id: 'source-uuid',
       latency_ms: 17,
-      retrieval: { retriever: 'classic', score_threshold: 0.62 },
+      retrieval: { retriever: 'classic', score_threshold: nil },
       chunks: [
         {
           rank: 1,
@@ -81,7 +84,7 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
       status: 'accepted',
       error_code: nil,
       latency_ms: 17,
-      retrieval_strategy: 'docs_gpt_dispatcher_classic_cosine'
+      retrieval_strategy: 'docs_gpt_dispatcher_classic_exact_candidates'
     )
     expect(evidence_set.items.first.to_h).to include(
       provider_source_id: 'source-uuid',
@@ -114,12 +117,12 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
         headers['x-chatring-knowledge-index'] == 'knowledge-v1' &&
         headers['x-chatring-binding-digest'] == 'a' * 64 &&
         headers['x-chatring-signature'].match?(/\A[0-9a-f]{64}\z/) &&
-        body == { 'query' => 'How much is Pro?', 'source_id' => 'source-uuid', 'limit' => 20, 'score_threshold' => 0.62 }
+        body == { 'query' => 'How much is Pro?', 'source_id' => 'source-uuid', 'limit' => 20 }
     end
     expect(WebMock).to request_matcher
   end
 
-  it 'returns a real insufficient-evidence result rather than forced top-k passages' do
+  it 'preserves a provider-reported empty candidate set' do
     stub_request(:post, retrieval_url).to_return(
       status: 200,
       headers: { 'Content-Type' => 'application/json' },
@@ -134,6 +137,46 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
 
     expect(result.status).to eq('insufficient_evidence')
     expect(result.items).to be_empty
+  end
+
+  it 'keeps a finite low-similarity candidate for the Brain instead of treating cosine as factual support' do
+    stub_request(:post, retrieval_url).to_return(
+      status: 200,
+      headers: { 'Content-Type' => 'application/json' },
+      body: accepted_payload(score: 0.28).to_json
+    )
+
+    result = provider.retrieve(
+      query: 'How do Playbooks work?',
+      knowledge_index_id: 'knowledge-v1',
+      source_manifest: source_manifest
+    )
+
+    expect(result).to have_attributes(status: 'accepted')
+    expect(result.items.first).to have_attributes(score: 0.28, score_kind: 'cosine_similarity')
+    expect(result.retrieval_configuration).to include('candidate_selection' => 'exact_top_k')
+  end
+
+  it 'preserves the stored threshold for an immutable legacy index' do
+    legacy_provider = described_class.new(
+      base_url: 'http://docsgpt.internal:7091', provider_release: '616e6fe9', provider_source_id: 'source-uuid',
+      account_id: '42', binding_digest: 'a' * 64, internal_key: 'internal-secret', service_secret: 'service-secret',
+      retrieval_configuration: { strategy: described_class::LEGACY_RETRIEVAL_STRATEGY, score_threshold: 0.40 }
+    )
+    stub_request(:post, retrieval_url).to_return(
+      status: 200, headers: { 'Content-Type' => 'application/json' }, body: accepted_payload(score: 0.28).to_json
+    )
+
+    result = legacy_provider.retrieve(
+      query: 'How do Playbooks work?', knowledge_index_id: 'knowledge-v1', source_manifest: source_manifest
+    )
+
+    expect(result).to have_attributes(
+      status: 'insufficient_evidence', retrieval_strategy: described_class::LEGACY_RETRIEVAL_STRATEGY
+    )
+    expect(result.retrieval_configuration).to include(
+      'candidate_selection' => 'legacy_cosine_threshold', 'score_threshold' => 0.40
+    )
   end
 
   it 'returns compliance and legal evidence with authority metadata for the Brain to evaluate' do
@@ -316,7 +359,7 @@ RSpec.describe ChatRing::Knowledge::DocsGptProvider do
         binding_digest: 'not-a-digest',
         internal_key: 'internal-secret',
         service_secret: 'service-secret',
-        score_threshold: 0.62
+        retrieval_configuration: { strategy: described_class::RETRIEVAL_STRATEGY, candidate_selection: 'exact_top_k' }
       )
     end.to raise_error(described_class::ConfigurationError, /binding_digest must be a SHA-256 digest/)
   end

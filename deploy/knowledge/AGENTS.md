@@ -26,7 +26,7 @@ Own the private DocsGPT API and ingestion worker used by ChatRing's account Know
 - The private ChatRing adapter must distinguish provider failure from insufficient evidence, reject non-finite scores, and derive durable chunk identity from immutable ChatRing provenance rather than pgvector row IDs. It may wrap native retrieval fail-closed, but must not replace DocsGPT's first search with a ChatRing-owned SQL implementation.
 - Source deletion must remove pgvector data, stored files, the DocsGPT source row, and ingest-progress state. Do not enable DocsGPT's broad Celery Beat scheduler.
 - Preserve the one-shot root volume initializer; the pinned DocsGPT image runs as non-root UID/GID 994 and cannot write fresh root-owned named volumes otherwise.
-- Keep `VECTOR_STORE=pgvector`, local `all-mpnet-base-v2` embeddings, classic retrieval, and GraphRAG disabled.
+- Keep `VECTOR_STORE=pgvector`, local `all-mpnet-base-v2` embeddings, classic exact top-k candidate retrieval, and GraphRAG disabled. Preserve cosine as a finite ranking diagnostic; do not use a global similarity threshold as factual evidence acceptance.
 - Do not expose legacy `POST /api/search` as ChatRing's production retrieval seam. Use the pinned DocsGPT Dispatcher with visible scores through a bounded private endpoint. Hybrid retrieval or reranking requires a fixed-corpus evaluation decision first.
 
 ## Verification
