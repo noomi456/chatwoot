@@ -400,6 +400,7 @@ RSpec.describe ChatRing::Brain::Runner do
     complete_native_automation(message)
     ChatRing::AiTurn.find_by!(workspace: workspace, conversation: conversation, trigger_message: message)
   end
+
   def build_runtime_scope
     account = create(:account)
     [account, account.chat_ring_workspace, create(:channel_widget, account: account).inbox]
